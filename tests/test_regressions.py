@@ -528,6 +528,35 @@ def test_running_is_false_once_a_run_has_failed():
     assert snapshot["status"] == "failed"
     assert snapshot["running"] is False, "a failed run is not in progress"
 
+
+def test_last_source_is_remembered_across_restarts():
+    """Restarting the agent left it watching nothing, so the dashboard came back
+    empty with "No logs yet" and the user had to re-attach to see anything."""
+    import tempfile, os
+    from pathlib import Path as _P
+
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
+        fh.write("10:00:01 INFO [api] Request received\n")
+        log_path = fh.name
+
+    runtime = RuntimeState()
+    session = runtime._SESSION_FILE
+    backup = session.read_text() if session.exists() else None
+    try:
+        runtime.attach_file(log_path)
+        assert session.exists(), "attaching must remember the source"
+
+        # A fresh instance stands in for a restart.
+        revived = RuntimeState()
+        assert revived.restore_last_source() is True
+        assert revived.snapshot()["source"]["type"] == "file"
+    finally:
+        os.unlink(log_path)
+        if backup is not None:
+            session.write_text(backup)
+        elif session.exists():
+            session.unlink()
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():

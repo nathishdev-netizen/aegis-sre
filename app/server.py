@@ -188,6 +188,10 @@ class ReusableHTTPServer(ThreadingHTTPServer):
 
 def main() -> None:
     runtime.refresh_ports()
+    # Resume the source watched before the last shutdown: an agent that comes back
+    # empty looks broken, and the user has to re-attach to see anything at all.
+    if runtime.restore_last_source():
+        print("  resumed watching the last source")
     server = ReusableHTTPServer((HOST, PORT), RequestHandler)
     backend = llm.status()
     print(f"Log Intelligence Agent running at http://{HOST}:{PORT}")

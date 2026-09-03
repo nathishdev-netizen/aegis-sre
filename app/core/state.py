@@ -555,6 +555,28 @@ class RuntimeState:
         self._watcher_thread = threading.Thread(target=loop, daemon=True)
         self._watcher_thread.start()
 
+    # Where the last attached source is remembered, so a restart resumes watching the
+    # same thing instead of coming back empty and looking broken.
+    _SESSION_FILE = Path.home() / ".loganalyst-session.json"
+
+    def _remember_source(self, path: str) -> None:
+        try:
+            self._SESSION_FILE.write_text(json.dumps({"path": path}), encoding="utf-8")
+        except OSError:
+            pass  # remembering is a convenience, never a requirement
+
+    def restore_last_source(self) -> bool:
+        """Re-attach to the source watched before the last shutdown."""
+        try:
+            data = json.loads(self._SESSION_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return False
+        path = data.get("path")
+        if not path or not Path(path).exists():
+            return False
+        self.attach_file(path)
+        return True
+
     def attach_file(self, raw_path: str) -> dict[str, Any]:
         path = Path(raw_path).expanduser()
         with self._lock:
@@ -563,6 +585,7 @@ class RuntimeState:
             self._clear_run_locked()
             self._watch_stop = threading.Event()
             self._watch_file(path)
+        self._remember_source(str(path))
         return self.snapshot()
 
     def set_external_source(self, label: str) -> dict[str, Any]:
