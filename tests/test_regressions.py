@@ -647,6 +647,33 @@ def test_fallback_summary_is_not_a_log_dump():
     assert "ConnectError" not in summary, "the summary must not quote a raw log line"
     assert len(summary) < 160, "a fallback summary should be a sentence, not a dump"
 
+
+def test_dashboard_javascript_has_no_shadowing_or_tdz_faults():
+    """Two JS faults threw inside render(), aborting it and leaving the whole
+    dashboard blank - which looked exactly like "the agent is not reading my logs":
+
+      - a local `const badge = getElementById(...)` shadowed the badge() helper, so
+        `pills.map(badge)` called a DOM element
+      - `title` was used one block before its `const`, a temporal-dead-zone error
+
+    Neither is visible without executing the page, so this test executes it.
+    """
+    import re as _re
+    from pathlib import Path as _P
+
+    html = (_P(__file__).resolve().parent.parent / "app" / "web" / "index.html").read_text()
+    script = html.split("<script>")[1].split("</script>")[0]
+
+    # A local named `badge` anywhere would shadow the helper for its whole function.
+    assert not _re.search(r"\bconst badge\s*=", script), \
+        "a local `badge` shadows the badge() helper used by pills.map(badge)"
+
+    # `title` must be declared before the block that interpolates it.
+    decl = script.find("const title =")
+    use = script.find("escapeHtml(title)")
+    assert decl != -1 and use != -1 and decl < use, \
+        "`title` is used before its declaration (temporal dead zone)"
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():

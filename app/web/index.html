@@ -983,6 +983,12 @@
         const extra = group.nodes.length - 1;
         const time = headline.timestamp || '';
 
+        // "runtime" is our own bucket for lines outside the project's vocabulary -
+        // name it for what it is rather than leaking an internal label. Declared here
+        // because `details` below uses it; a later `const` threw a TDZ error that
+        // aborted render() and left the whole dashboard blank.
+        const title = group.component === 'runtime' ? 'other output' : (group.component || 'Event');
+
         const details = extra > 0
           ? '<details class="story-more"><summary>' + extra + ' more from '
             + escapeHtml(title) + '</summary>'
@@ -991,10 +997,6 @@
                 + escapeHtml(n.message || n.label || '') + '</div>').join('')
             + '</details>'
           : '';
-
-        // "runtime" is our own bucket for lines outside the project's vocabulary -
-        // name it for what it is rather than leaking an internal label.
-        const title = group.component === 'runtime' ? 'other output' : (group.component || 'Event');
 
         flow.push(
           '<div class="story-event ' + escapeHtml(worst) + '">'
@@ -1090,12 +1092,15 @@
       bar.style.width = scored ? Math.min(100, state.confidence) + '%' : '0%';
       bar.parentElement.style.display = scored ? '' : 'none';
 
-      const badge = document.getElementById('backendBadge');
-      if (badge) {
+      // Named backendBadge, not `badge`: a local `badge` shadows the badge() helper
+      // for this whole function, and `pills.map(badge)` below then called a DOM
+      // element - throwing, which aborted render() and froze the entire dashboard.
+      const backendBadge = document.getElementById('backendBadge');
+      if (backendBadge) {
         const llmOn = state.backend?.available;
-        badge.textContent = llmOn ? 'AI reasoning' : 'Pattern matches only';
-        badge.className = 'backend-badge ' + (llmOn ? 'on' : 'off');
-        badge.title = state.backend?.detail || '';
+        backendBadge.textContent = llmOn ? 'AI reasoning' : 'Pattern matches only';
+        backendBadge.className = 'backend-badge ' + (llmOn ? 'on' : 'off');
+        backendBadge.title = state.backend?.detail || '';
       }
       document.getElementById('liveStatus').textContent =
         state.status === 'failed' ? 'Failed' :
