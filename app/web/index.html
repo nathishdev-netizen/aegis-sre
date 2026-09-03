@@ -240,8 +240,8 @@
     .headline.busy { color: var(--accent); }
     .headline.idle { color: var(--muted); }
     .headline .hl-sub {
-      display: block; font-size: 0.9rem; font-weight: 500; color: var(--muted);
-      margin-top: 6px; line-height: 1.5;
+      display: block; font-size: 1rem; font-weight: 450; color: var(--text);
+      margin-top: 10px; line-height: 1.65; max-width: 78ch; opacity: 0.88;
     }
 
     .sugg { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 12px; }
@@ -1033,9 +1033,13 @@
         text = failed.length === 1
           ? failed[0] + ' failed'
           : failed.slice(0, 2).join(' and ') + ' failed';
-        sub = state.reason && state.reason !== 'Execution completed successfully.'
-          ? state.reason
-          : (state.summary || '');
+        // Prefer the model's account of THIS run over the generic pattern label:
+        // "A dependency call failed" says far less than the summary it replaced.
+        sub = (state.interpretation === 'llm' && state.summary)
+          ? state.summary
+          : (state.reason && state.reason !== 'Execution completed successfully.'
+              ? state.reason
+              : (state.summary || ''));
       } else if (state.status === 'failed') {
         cls = 'bad'; icon = '●';
         text = 'This run failed';

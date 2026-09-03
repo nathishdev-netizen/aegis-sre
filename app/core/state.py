@@ -560,6 +560,11 @@ class RuntimeState:
     _SESSION_FILE = Path.home() / ".loganalyst-session.json"
 
     def _remember_source(self, path: str) -> None:
+        # Only remember a source that actually exists. A probe at a path that is not
+        # there, or a throwaway test fixture, silently replaced the user's real source
+        # and the agent came back watching nothing.
+        if not Path(path).is_file():
+            return
         try:
             self._SESSION_FILE.write_text(json.dumps({"path": path}), encoding="utf-8")
         except OSError:

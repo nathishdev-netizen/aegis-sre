@@ -414,6 +414,21 @@ def test_failed_port_probe_stops_instead_of_flooding():
     assert True
 
 
+def test_a_missing_path_is_never_remembered():
+    """Attaching to a path that does not exist overwrote the remembered source, so a
+    later restart came back watching nothing at all."""
+    runtime = RuntimeState()
+    session = runtime._SESSION_FILE
+    backup = session.read_text() if session.exists() else None
+    try:
+        runtime.attach_file("/nonexistent/path.log")
+        after = session.read_text() if session.exists() else ""
+        assert "/nonexistent/path.log" not in after, "a missing path must not be remembered"
+    finally:
+        if backup is not None:
+            session.write_text(backup)
+
+
 def test_port_click_prefers_the_apps_own_log_file():
     """Clicking a port used to probe seven HTTP endpoints, printing seven 404s in the
     console of any app that does not serve logs. The OS already knows which log file
