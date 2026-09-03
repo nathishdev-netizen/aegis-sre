@@ -17,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import settings  # noqa: E402
 from app.core import llm, sources  # noqa: E402
 from app.core.parser import parse_log_line, unwrap_payload  # noqa: E402
+from app.core.baselines import Baselines, extract_duration  # noqa: E402
 from app.core.state import RuntimeState  # noqa: E402
+from app.store import Store  # noqa: E402
 
 
 # --- Bug 1: the agent attached to itself and invented a failure ----------------
@@ -681,6 +683,114 @@ def test_llm_unavailable_without_key():
     if not settings.openai_api_key:
         assert llm.is_available() is False
         assert llm.status()["available"] is False
+
+
+# --- Bug 46: a config value was measured as if it were a duration -------------
+
+def test_settings_are_not_measurements():
+    """A startup banner's "timeout=45.0s" was read as a 45-second operation, which
+    poisoned the baseline it landed in. Same bug shape as v1's cause matcher reading
+    that line as an outage."""
+    assert extract_duration("[orch] Client ready timeout=45.0s retries=3") is None
+    assert extract_duration("[cache] ttl=300s max=1000") is None
+    # A real measurement on a line that also carries settings still counts.
+    assert extract_duration("[tts] Synthesised 60 chars in 1136ms") == (
+        "synthesised chars", 1136.0
+    )
+
+
+def test_version_strings_are_not_seconds():
+    """"model=bulbul:v3" nearly parsed as a 3-second operation - the seconds pattern
+    needs a delimiter, not just a trailing s."""
+    assert extract_duration("[tts] model=bulbul:v3 speaker=rohan") is None
+    assert extract_duration("[api] CALL END call=82050189 - 16s, hangup=NORMAL") == (
+        "call end", 16000.0
+    )
+
+
+def test_operation_name_excludes_logger_scaffolding():
+    """Every tts line began "INFO voice.tts:", so every distinct operation collapsed
+    into one bucket named after the logger and 34 false spikes were reported."""
+    op, ms = extract_duration("INFO voice.tts: [tts] Synthesised 60 chars in 1136ms")
+    assert "info" not in op and "voice" not in op, op
+    assert op == "synthesised chars"
+    assert ms == 1136.0
+
+
+def test_spike_is_measured_against_history_not_itself():
+    """Adding the sample before comparing let a spike shift the baseline it was being
+    judged against, so large outliers under-reported."""
+    baselines = Baselines()
+    for _ in range(12):
+        assert baselines.observe("tts", "[tts] done in 100ms") is None
+    finding = baselines.observe("tts", "[tts] done in 900ms")
+    assert finding is not None
+    assert finding["median_ms"] == 100.0, "compared against a baseline it had shifted"
+    assert finding["ratio"] == 9.0
+
+
+def test_no_verdict_without_enough_history():
+    """Two samples is an anecdote. Reporting "3x slower than usual" off them reads as
+    authoritative and is not."""
+    baselines = Baselines()
+    for _ in range(3):
+        baselines.observe("api", "[api] ready in 10ms")
+    assert baselines.observe("api", "[api] ready in 5000ms") is None
+    assert not baselines.summary()[0]["ready"]
+
+
+def test_baselines_survive_a_restart():
+    """History held only in RAM is lost when the window closes, so "is this normal?"
+    could never be answered on a fresh start."""
+    import tempfile, os
+
+    path = os.path.join(tempfile.mkdtemp(), "history.db")
+    store = Store(path)
+    first = Baselines(store, source="svc")
+    for _ in range(12):
+        first.observe("orch", "[orch] /chat returned in 800ms")
+    store.close()
+
+    store2 = Store(path)
+    second = Baselines(store2, source="svc")
+    assert second.summary(), "no history recovered after restart"
+    assert second.summary()[0]["ready"], "recovered history was not usable"
+    finding = second.observe("orch", "[orch] /chat returned in 6946ms")
+    assert finding is not None, "restart lost the baseline needed to spot the spike"
+    assert finding["ratio"] > 8
+    store2.close()
+
+
+def test_store_failure_never_stops_ingest():
+    """Reading logs is the job; history is an enhancement. A broken database must not
+    take the agent down with it."""
+
+    class BrokenStore:
+        def known_operations(self, source):
+            return []
+
+        def samples(self, *a):
+            return []
+
+        def record_duration(self, *a, **k):
+            raise RuntimeError("disk full")
+
+    baselines = Baselines(BrokenStore(), source="svc")
+    for _ in range(12):
+        baselines.observe("tts", "[tts] done in 100ms")
+    finding = baselines.observe("tts", "[tts] done in 900ms")
+    assert finding is not None, "a store error swallowed a real finding"
+
+
+def test_absence_is_reported_for_components_that_stopped():
+    """Nothing fires when a step simply stops happening - no error, no threshold."""
+    baselines = Baselines()
+    for _ in range(12):
+        baselines.observe("tts", "[tts] done in 100ms")
+    assert baselines.absences({"tts", "api"}) == []
+    missing = baselines.absences({"api"})
+    assert len(missing) == 1 and missing[0]["component"] == "tts"
+    assert "did not appear" in baselines.describe(missing[0])
 
 
 if __name__ == "__main__":

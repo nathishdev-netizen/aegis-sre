@@ -14,8 +14,10 @@ from urllib.request import Request, urlopen
 
 from app.config import settings
 from app.core import learn as learning
+from app.core.baselines import Baselines
 from app.core import llm, sources
 from app.core.discovery import discover_listening_ports
+from app.store import Store
 from app.core.parser import (
     detect_branch,
     is_run_start,
@@ -109,6 +111,8 @@ class Snapshot:
     backend: dict[str, Any] = field(default_factory=dict)
     # What has been learned about this source's own format and vocabulary.
     profile: dict[str, Any] = field(default_factory=dict)
+    # How this run compares to the same operations' own measured history.
+    baselines: dict[str, Any] = field(default_factory=dict)
 
 
 def _stage_list() -> list[StageState]:
@@ -133,7 +137,27 @@ class RuntimeState:
         self._interpreting = False
         self._pending_interpretation = False
         self._raw_for_learning: list[str] = []
+        # Durations measured per source, persisted so "is this normal?" is answerable on
+        # a fresh start rather than only after the agent has watched for a while.
+        self._store: Store | None = None
+        self._baselines = Baselines()
+        self._findings: list[dict[str, Any]] = []
         self._snapshot = self._fresh_snapshot()
+
+    def _use_baselines_for(self, source_key: str) -> None:
+        """Point history at a source. Each source keeps its own baselines - one
+        project's timings say nothing about another's."""
+        if self._store is None:
+            try:
+                self._store = Store()
+            except Exception:
+                # No history is survivable; refusing to start is not.
+                self._store = None
+        try:
+            self._baselines = Baselines(self._store, source=source_key)
+        except Exception:
+            self._baselines = Baselines()
+        self._findings = []
 
     def _fresh_snapshot(self) -> Snapshot:
         return Snapshot(
@@ -168,7 +192,30 @@ class RuntimeState:
             insights=[],
             backend=llm.status(),
             profile={},
+            baselines={"findings": [], "operations": [], "ready": 0},
         )
+
+    def _publish_baselines_locked(self) -> None:
+        """Put measured history on the snapshot for the UI.
+
+        Only baselines with enough samples are marked ready - the UI must be able to
+        say "not enough history yet" rather than present two samples as a norm.
+        """
+        try:
+            operations = self._baselines.summary()
+        except Exception:
+            return
+        ready = [op for op in operations if op["ready"]]
+        self._snapshot.baselines = {
+            # Newest first: the finding that just fired is the one being looked at.
+            "findings": [
+                {**finding, "text": self._baselines.describe(finding)}
+                for finding in reversed(self._findings[-5:])
+            ],
+            "operations": ready[:12],
+            "ready": len(ready),
+            "learning": len(operations) - len(ready),
+        }
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -632,6 +679,9 @@ class RuntimeState:
             self._stop_watcher_locked()
             self._stop_port_trace_locked()
             self._clear_run_locked()
+            # History is per source. Timings from one project say nothing about
+            # another's, so attaching elsewhere must not compare against them.
+            self._use_baselines_for(str(path))
             self._watch_stop = threading.Event()
             self._watch_file(path)
         self._remember_source(str(path))
@@ -717,6 +767,8 @@ class RuntimeState:
             # into the thread as locals, so replacing self._port_stop on a later
             # attach can never kill the new tracer or resurrect an orphaned one.
             self._clear_run_locked()
+            # A streamed port keeps its own history, keyed by port rather than path.
+            self._use_baselines_for(f"port:{port}")
             stop_event = threading.Event()
             self._port_stop = stop_event
             self._port_generation += 1
@@ -1013,6 +1065,16 @@ class RuntimeState:
                 if (self._snapshot.profile.get("components") or []) != previous:
                     self._relabel_lanes_locked()
         component = self._component_for(parsed["message"], raw_line)
+        # Measure before any interpretation: a duration is a fact about this run, and
+        # comparing it to the same operation's own history needs no model.
+        try:
+            finding = self._baselines.observe(component, parsed["message"], parsed["timestamp"])
+        except Exception:
+            finding = None
+        if finding:
+            with self._lock:
+                self._findings.append(finding)
+                self._findings = self._findings[-20:]
         transition = infer_transition(parsed["message"])
         branch = detect_branch(parsed["message"])
         skipped_component = infer_skipped_component(parsed["message"])
@@ -1199,6 +1261,7 @@ class RuntimeState:
             # X". The next interpretation pass replaces it properly.
             if self._snapshot.interpretation != "llm":
                 self._snapshot.summary = self._summarize()
+            self._publish_baselines_locked()
             self._snapshot.updated_at = now_iso()
 
         self.broadcast()
