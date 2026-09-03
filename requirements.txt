@@ -1,0 +1,9 @@
+# The agent runs on the Python standard library alone - both deps below are optional
+# and the app degrades honestly without them.
+
+# Reads .env. Without it, app/config.py falls back to a built-in KEY=VALUE parser.
+python-dotenv>=1.0.0
+
+# LLM interpretation. Without it (or without OPENAI_API_KEY) the agent runs in
+# pattern mode: it reports what matched and answers "unknown" instead of guessing.
+openai>=1.40.0

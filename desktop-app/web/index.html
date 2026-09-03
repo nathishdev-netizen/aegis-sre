@@ -1,0 +1,1268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Intelligence Agent</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: rgba(255, 255, 255, 0.94);
+      --panel-strong: #ffffff;
+      --line: rgba(29, 41, 57, 0.09);
+      --text: #102033;
+      --muted: #637287;
+      --accent: #2563eb;
+      --accent-soft: rgba(37, 99, 235, 0.1);
+      --warn: #d97706;
+      --fail: #dc2626;
+      --success: #059669;
+      --shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.09), transparent 28%),
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 24%),
+        linear-gradient(180deg, #f8fbff, #f3f6fb 54%, #eef3f8);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .shell { padding: 24px; max-width: 1540px; margin: 0 auto; }
+    .hero { display: grid; grid-template-columns: 1.45fr 0.95fr; gap: 18px; align-items: start; margin-bottom: 18px; }
+    .brand {
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.82));
+      box-shadow: var(--shadow);
+    }
+    .brand h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.05em; }
+    .brand p { margin: 10px 0 0; color: var(--muted); max-width: 840px; line-height: 1.6; }
+    .toolbar {
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .toolbar-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .source-strip {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .source-strip-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .source-strip-head h2 {
+      margin: 0;
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .port-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .port-chip {
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+    .port-chip span {
+      color: var(--muted);
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    .btn, .input {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-strong);
+      color: var(--text);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+    .btn {
+      padding: 12px 16px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .btn.primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      border-color: transparent;
+    }
+    .btn.ghost { background: #f8fbff; }
+    .input { padding: 12px 14px; width: 100%; outline: none; }
+    .grow { flex: 1; min-width: 240px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; margin-top: 18px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .summary-card {
+      padding: 20px;
+      border-radius: 24px;
+      background: linear-gradient(180deg, #ffffff, #fbfdff);
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    }
+    .summary-title {
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      font-weight: 800;
+    }
+    .summary-main { font-size: 1.08rem; line-height: 1.8; font-weight: 650; }
+    .summary-sub { color: var(--muted); margin-top: 10px; line-height: 1.6; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .pill {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+    .backend-badge {
+      font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
+      margin-left: 8px; vertical-align: middle;
+    }
+    .backend-badge.on { background: rgba(5,150,105,0.12); color: var(--success); }
+    .backend-badge.off { background: rgba(100,116,139,0.12); color: #64748b; }
+
+    .compcards {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px; margin: 4px 0 16px;
+    }
+    .ccard {
+      background: #ffffff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 13px 14px; position: relative; overflow: hidden;
+      transition: 0.15s; box-shadow: 0 6px 18px rgba(15,23,42,0.04);
+    }
+    .ccard::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--line);
+    }
+    .ccard.failed::before { background: var(--fail); }
+    .ccard.completed::before { background: var(--success); }
+    .ccard.running::before { background: var(--accent); }
+    .ccard.retrying::before, .ccard.skipped::before { background: var(--warn); }
+    .ccard-head {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; margin-bottom: 8px;
+    }
+    .ccard-name {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.86rem; font-weight: 700; letter-spacing: -0.01em;
+    }
+    .ccard-state {
+      font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
+    }
+    .ccard.failed .ccard-state { background: rgba(220,38,38,0.12); color: var(--fail); }
+    .ccard.completed .ccard-state { background: rgba(5,150,105,0.12); color: var(--success); }
+    .ccard.running .ccard-state { background: rgba(37,99,235,0.12); color: var(--accent); }
+    .ccard.retrying .ccard-state, .ccard.skipped .ccard-state { background: rgba(217,119,6,0.14); color: var(--warn); }
+    .ccard-stats {
+      display: flex; gap: 12px; font-size: 0.72rem; color: var(--muted);
+      font-variant-numeric: tabular-nums; margin-bottom: 8px;
+    }
+    .ccard-stats b { color: var(--text); font-weight: 700; }
+    .ccard-last {
+      font-size: 0.74rem; line-height: 1.45; color: var(--muted);
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ccard.failed .ccard-last { color: var(--fail); }
+
+    .story-count { font-size: 0.74rem; color: var(--muted); font-weight: 600; }
+    .story-chip.bad { background: rgba(220,38,38,0.12); color: var(--fail); border-color: transparent; }
+    .story-more { margin-top: 8px; }
+    .story-more summary {
+      cursor: pointer; font-size: 0.76rem; color: var(--muted); font-weight: 600;
+      list-style: none; padding: 2px 0;
+    }
+    .story-more summary::-webkit-details-marker { display: none; }
+    .story-more summary::before { content: '▸ '; }
+    .story-more[open] summary::before { content: '▾ '; }
+    .story-line {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.71rem; color: var(--muted); padding: 3px 0 3px 12px;
+      display: flex; gap: 8px;
+    }
+    .story-line span { opacity: 0.6; flex-shrink: 0; }
+
+    .headline {
+      font-size: 1.32rem; font-weight: 700; line-height: 1.4; letter-spacing: -0.015em;
+      margin: 6px 0 12px; text-wrap: balance;
+    }
+    .headline .hl-icon { margin-right: 8px; }
+    .headline.ok { color: var(--success); }
+    .headline.bad { color: var(--fail); }
+    .headline.busy { color: var(--accent); }
+    .headline.idle { color: var(--muted); }
+    .headline .hl-sub {
+      display: block; font-size: 0.9rem; font-weight: 500; color: var(--muted);
+      margin-top: 6px; line-height: 1.5;
+    }
+
+    .sugg { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 12px; }
+    .sugg button {
+      font-size: 0.74rem; padding: 5px 10px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--line); background: #ffffff; color: var(--muted);
+      font-weight: 600; transition: 0.12s;
+    }
+    .sugg button:hover { border-color: var(--accent); color: var(--accent); }
+    .msgs {
+      display: flex; flex-direction: column; gap: 10px;
+      max-height: 300px; overflow-y: auto; margin-bottom: 12px; padding-right: 2px;
+    }
+    .msg {
+      font-size: 0.88rem; line-height: 1.55; padding: 10px 13px;
+      border-radius: 14px; max-width: 92%; word-break: break-word;
+    }
+    .msg.you {
+      background: var(--accent); color: #ffffff;
+      align-self: flex-end; border-bottom-right-radius: 4px;
+    }
+    .msg.bot {
+      background: #f4f7fb; align-self: flex-start; border-bottom-left-radius: 4px;
+    }
+    .msg.muted-msg { color: var(--muted); }
+    .msg .verdict-pill {
+      display: inline-block; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.05em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 999px; margin-right: 6px;
+    }
+    .msg .verdict-pill.yes { background: rgba(5,150,105,0.13); color: var(--success); }
+    .msg .verdict-pill.no { background: rgba(217,119,6,0.14); color: var(--warn); }
+    .msg .verdict-pill.unknown { background: rgba(100,116,139,0.14); color: var(--muted); }
+    .msg .ev {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.71rem; margin-top: 8px; padding: 7px 9px; border-radius: 6px;
+      background: #ffffff; border-left: 2px solid var(--accent); color: var(--muted);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg .thinking { opacity: 0.6; }
+
+    .learnbar {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.76rem; padding: 9px 12px; border-radius: 8px;
+      background: rgba(100,116,139,0.08); margin-bottom: 10px;
+      display: flex; justify-content: space-between; gap: 10px;
+      flex-wrap: wrap; align-items: center;
+    }
+    .learnbar b { color: var(--accent, #2D5BD1); }
+    .learnbar .tag {
+      font-size: 0.66rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+      background: rgba(100,116,139,0.14); margin-left: 5px; letter-spacing: .04em;
+    }
+    .comprail {
+      display: flex; align-items: center; flex-wrap: wrap;
+      gap: 0; margin-bottom: 12px; min-height: 30px;
+    }
+    .comprail .cnode {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem; font-weight: 700; padding: 5px 11px; border-radius: 6px;
+      border: 1px solid rgba(100,116,139,0.25); background: rgba(100,116,139,0.07);
+      white-space: nowrap;
+    }
+    .comprail .cnode.completed { background: rgba(5,150,105,0.12); color: var(--success, #059669); border-color: transparent; }
+    .comprail .cnode.failed { background: rgba(220,38,38,0.12); color: var(--fail, #dc2626); border-color: transparent; }
+    .comprail .cnode.running { background: rgba(37,99,235,0.12); color: #2563eb; border-color: transparent; }
+    .comprail .cnode.retrying { background: rgba(180,112,14,0.14); color: #b4700e; border-color: transparent; }
+    .comprail .cnode.skipped { border-style: dashed; opacity: 0.65; }
+    .comprail .clink { opacity: .4; padding: 0 4px; font-size: .8rem; }
+
+    .confidence {
+      margin-top: 14px;
+      height: 10px;
+      border-radius: 999px;
+      background: #edf2f7;
+      overflow: hidden;
+    }
+    .confidence > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #2563eb, #0ea5e9);
+      border-radius: inherit;
+    }
+    .diagram { position: relative; overflow: auto; padding: 6px 2px 2px; }
+    .graph-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 100%;
+    }
+    .focus-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+    .focus-chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .focus-chip.alt { background: rgba(37,99,235,0.09); color: var(--accent); }
+    .focus-chip.soft { background: rgba(100,116,139,0.08); color: #64748b; }
+    .story-rail {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-left: 18px;
+    }
+    .story-rail::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 12px;
+      bottom: 12px;
+      width: 2px;
+      background: linear-gradient(180deg, rgba(37,99,235,0.18), rgba(37,99,235,0.05));
+    }
+    .story-event {
+      position: relative;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 14px 16px;
+      box-shadow: 0 10px 26px rgba(15,23,42,0.04);
+    }
+    .story-event::before {
+      content: "";
+      position: absolute;
+      left: -22px;
+      top: 20px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid #c7d2e5;
+      box-shadow: 0 0 0 6px rgba(255,255,255,0.92);
+    }
+    .story-event.completed::before { background: var(--success); border-color: rgba(5,150,105,0.2); box-shadow: 0 0 0 6px rgba(5,150,105,0.08); }
+    .story-event.running::before { background: var(--accent); border-color: rgba(37,99,235,0.2); box-shadow: 0 0 0 6px rgba(37,99,235,0.08); animation: pulse 1.3s infinite; }
+    .story-event.failed::before { background: var(--fail); border-color: rgba(220,38,38,0.2); box-shadow: 0 0 0 6px rgba(220,38,38,0.08); }
+    .story-event.retrying::before { background: var(--warn); border-color: rgba(217,119,6,0.2); box-shadow: 0 0 0 6px rgba(217,119,6,0.08); }
+    .story-event.skipped {
+      background: #f8fafc;
+      border-style: dashed;
+      color: #94a3b8;
+    }
+    .story-row { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .story-time { color: var(--muted); font-size: 0.84rem; }
+    .story-title { font-size: 1.02rem; font-weight: 800; margin-top: 4px; }
+    .story-message { margin-top: 8px; color: var(--text); line-height: 1.6; }
+    .story-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .story-chip {
+      padding: 6px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: #eef2f7;
+      color: #64748b;
+    }
+    .story-chip.branch { background: rgba(37,99,235,0.1); color: var(--accent); }
+    .story-chip.skip { background: rgba(100,116,139,0.1); color: #64748b; }
+    .story-branch {
+      margin: 2px 0 0 0;
+      padding: 10px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #fbfdff;
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 700;
+    }
+    .graph-note { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+    .graph-note .hint { color: var(--muted); font-size: 0.88rem; }
+    .drawer {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .drawer summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 16px 18px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+    .drawer summary::-webkit-details-marker { display: none; }
+    .drawer-body {
+      padding: 0 18px 18px;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+      100% { transform: scale(1); }
+    }
+    .timeline, .logbox {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 6px;
+    }
+    .logline, .tl-item {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+    }
+    .logline { grid-template-columns: 72px 60px 1fr; }
+    .logline .time, .tl-item .time { color: var(--muted); font-size: 0.86rem; }
+    .level.ERROR { color: var(--fail); }
+    .level.WARN { color: var(--warn); }
+    .level.INFO { color: var(--success); }
+    .list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .list li {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+    .inputbar { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-top: 16px; }
+    .input::placeholder { color: #94a3b8; }
+    .muted { color: var(--muted); }
+    .topline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+    .subtle-card { padding: 16px; border-radius: 18px; background: #ffffff; border: 1px solid var(--line); box-shadow: 0 10px 26px rgba(15,23,42,0.04); }
+    .brief-block {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: 1.35fr 0.65fr;
+      gap: 18px;
+    }
+    .brief-card {
+      padding: 22px;
+      border-radius: 24px;
+      background: linear-gradient(180deg, #ffffff, #fbfdff);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .brief-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .live-status {
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(37, 99, 235, 0.09);
+      color: var(--accent);
+    }
+    .brief-main {
+      margin-top: 14px;
+      font-size: clamp(1.1rem, 2vw, 1.4rem);
+      line-height: 1.75;
+      font-weight: 650;
+    }
+    .brief-reason {
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .ask-box {
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .ask-label {
+      font-size: 0.74rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .ask-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .ask-output {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      line-height: 1.6;
+      min-height: 48px;
+    }
+    .ask-output .verdict {
+      display: inline-block;
+      margin-right: 8px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .ask-output .verdict.yes { background: rgba(5,150,105,0.1); color: var(--success); }
+    .ask-output .verdict.no { background: rgba(220,38,38,0.1); color: var(--fail); }
+    .ask-output .verdict.unknown { background: rgba(100,116,139,0.1); color: #64748b; }
+    .ask-evidence {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ask-evidence .item {
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .mini-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .mini-summary .box {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .mini-summary .label {
+      font-size: 0.74rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .mini-summary ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mini-summary li {
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #f8fbff;
+      line-height: 1.5;
+    }
+    @media (max-width: 1100px) {
+      .hero, .grid, .brief-block { grid-template-columns: 1fr; }
+      .inputbar { grid-template-columns: 1fr; }
+      .logline { grid-template-columns: 72px 60px 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="brand">
+        <h1>Log Intelligence Agent</h1>
+        <p>A live AI co-pilot for running code. Pick a local port, follow its logs, and get the current story without reading a wall of text.</p>
+        <div class="topline" id="topline"></div>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <button class="btn primary" id="pickFileBtn">Choose log file…</button>
+          <button class="btn ghost" id="resetBtn">Clear run</button>
+        </div>
+        <div class="muted" id="toolbarHint">Pick a running app below, or choose a log file directly.</div>
+      </div>
+    </div>
+
+    <section class="source-strip">
+      <div class="source-strip-head">
+        <div>
+          <h2>Live Sources</h2>
+          <div class="muted">Choose a port and I’ll turn it into a live narrative.</div>
+        </div>
+        <button class="btn ghost" id="refreshPortsBtn">Refresh ports</button>
+      </div>
+      <div class="port-row" id="ports"></div>
+    </section>
+
+    <section class="brief-block">
+      <div class="brief-card">
+        <div class="brief-head">
+          <div>
+            <div class="summary-title">Live Brief <span class="backend-badge off" id="backendBadge">Pattern matches only</span></div>
+            <div class="live-status" id="liveStatus">Waiting</div>
+          </div>
+          <div class="pill-row" id="statsPills"></div>
+        </div>
+        <div class="headline" id="headline"></div>
+        <div class="brief-main" id="summary"></div>
+        <div class="brief-reason" id="reason"></div>
+        <div class="focus-row" id="focusChips"></div>
+        <div class="confidence"><span id="confidenceBar" style="width:0%"></span></div>
+      </div>
+      <div class="brief-card">
+        <div class="summary-title">Source</div>
+        <div class="summary-main" id="sourceLabel"></div>
+        <div class="summary-sub" id="sourcePath"></div>
+        <div style="height: 12px"></div>
+        <div class="summary-title">Why this is useful</div>
+        <div class="summary-sub">It stays close to the live run, so you get the current state, likely cause, and the next branch without decoding the whole log stream by hand.</div>
+        <div class="ask-box">
+          <div class="ask-label">Ask this run</div>
+          <div class="sugg" id="sugg"></div>
+          <div class="msgs" id="msgs">
+            <div class="msg bot muted-msg">Ask about what just happened &mdash; a component, a failure, a step you expected to run.</div>
+          </div>
+          <div class="ask-row">
+            <input class="input" id="askInput" placeholder="Ask about this run…" autocomplete="off" />
+            <button class="btn primary" id="askBtn">Ask</button>
+          </div>
+        </div>
+        <div style="height: 14px"></div>
+        <div class="mini-summary">
+          <div class="box">
+            <div class="label">Likely causes</div>
+            <ul id="causes"></ul>
+          </div>
+          <div class="box">
+            <div class="label">Suggested fixes</div>
+            <ul id="fixes"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top: 18px;">
+      <div class="graph-note">
+        <div class="hint">Grouped by component. Expand a card to see the individual lines.</div>
+        <div class="hint" id="graphNote"></div>
+      </div>
+      <div class="subtle-card">
+        <div class="learnbar" id="learnBar">
+          <span id="learnText">Waiting for a source.</span>
+          <span id="learnMeta"></span>
+        </div>
+        <div class="comprail" id="compRail"></div>
+        <div class="compcards" id="compCards"></div>
+        <div class="diagram" id="flow"></div>
+      </div>
+    </section>
+
+    <details class="drawer">
+      <summary>Show timeline and raw logs</summary>
+      <div class="drawer-body">
+        <div class="brief-block" style="margin-top: 0;">
+          <section class="brief-card" style="box-shadow: none;">
+            <div class="summary-title">Live Timeline</div>
+            <div class="timeline" id="timeline"></div>
+          </section>
+          <section class="brief-card" style="box-shadow: none;">
+            <div class="summary-title">Recent Logs</div>
+            <div class="logbox" id="logs"></div>
+          </section>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script>
+      const state = {
+      currentStage: 'idle',
+      currentLabel: 'Waiting for logs',
+      status: 'idle',
+      running: false,
+      confidence: 0,
+      summary: 'No logs yet.',
+      reason: 'Awaiting execution events.',
+      possibleCauses: [],
+      suggestedFixes: [],
+      timeline: [],
+      logLines: [],
+      stages: [],
+      ports: [],
+      graph: { lanes: [], edges: [], transition_counts: {}, current_branch: 'main', current_branch_label: 'Main path', branch_counter: 0, last_component: null, next_likely: null },
+      showAllBranches: false,
+      metrics: { total_events: 0, failures: 0, retries: 0, skipped: 0 },
+      source: { type: 'idle', label: 'Scanning for a live local source', path: null },
+      ask: { answer: 'No question asked yet.', verdict: 'unknown', confidence: 0, evidence: [] },
+      updatedAt: ''
+    };
+
+    function applyState(snapshot) {
+      if (!snapshot) return;
+      Object.assign(state, snapshot);
+      // The Node engine sends lanes ready-made; the renderer still expects the
+      // graph.lanes shape the HTTP version produced.
+      state.graph = state.graph || {};
+      state.graph.lanes = (snapshot.lanes || []).map((l) => ({
+        component: l.component,
+        status: l.status,
+        node_count: l.node_count,
+        branch_groups: [{ id: 'main', label: 'Main path',
+          nodes: (l.last ? [l.last] : []).concat(l.notable && l.notable !== l.last ? [l.notable] : []) }],
+      }));
+      state.logLines = snapshot.log_lines || [];
+      state.possibleCauses = snapshot.possible_causes || [];
+      state.suggestedFixes = snapshot.suggested_fixes || [];
+    }
+
+    function render() {
+      renderTopline();
+      renderPorts();
+      renderStats();
+      renderPipeline();
+      renderSummary();
+      renderSuggestions();
+      renderLists();
+      renderTimeline();
+      renderLogs();
+    }
+    function renderTopline() {
+      const el = document.getElementById('topline');
+      el.innerHTML = [
+        badge('Status: ' + state.status.toUpperCase()),
+        badge('Current: ' + state.currentLabel),
+        badge('Confidence: ' + state.confidence + '%'),
+        badge('Events: ' + state.metrics.total_events),
+        badge('Retries: ' + state.metrics.retries)
+      ].join('');
+    }
+    function badge(text) { return '<span class="pill">' + escapeHtml(text) + '</span>'; }
+    function renderStats() {
+      const statPills = [
+        'Running: ' + (state.running ? 'Yes' : 'No'),
+        'Retries: ' + state.metrics.retries,
+        'Skipped: ' + (state.metrics.skipped || 0),
+        'Confidence: ' + state.confidence + '%'
+      ];
+      document.getElementById('statsPills').innerHTML = statPills.map(badge).join('');
+    }
+    function renderPorts() {
+      const container = document.getElementById('ports');
+      const ports = state.ports || [];
+      if (!ports.length) {
+        container.innerHTML = '<div class="muted">No listening ports detected yet. Click refresh ports to scan your machine.</div>';
+        return;
+      }
+      container.innerHTML = ports.map((port) => `
+        <button class="port-chip" data-port="${escapeHtml(String(port.port))}">
+          ${escapeHtml(String(port.process || 'process'))}
+          <span>• ${escapeHtml(String(port.port))}</span>
+        </button>
+      `).join('');
+      container.querySelectorAll('button[data-port]').forEach((button) => {
+        button.addEventListener('click', () => tracePort(button.getAttribute('data-port')));
+      });
+    }
+    function renderDiscovery() {
+      const p = state.profile || {};
+      const text = document.getElementById('learnText');
+      const meta = document.getElementById('learnMeta');
+      const rail = document.getElementById('compRail');
+      if (!text || !rail) return;
+
+      const seen = p.lines_seen || 0;
+      const comps = p.components || [];
+
+      // Say exactly how far along learning is - never imply a pipeline we have not found.
+      if (!seen) {
+        text.innerHTML = 'Waiting for a source.';
+      } else if (seen < 8) {
+        text.innerHTML = 'Reading source\u2026 ' + seen + ' lines';
+      } else if (!comps.length) {
+        text.innerHTML = seen < 25
+          ? 'Detected <b>' + (p.line_format || '?') + '</b> format\u2026 ' + seen + ' lines'
+          : 'Detected <b>' + (p.line_format || '?') + '</b> format \u2014 no component tags found';
+      } else {
+        const shown = comps.slice(0, 5).join(', ');
+        const more = comps.length > 5 ? ' +' + (comps.length - 5) : '';
+        text.innerHTML = 'Found <b>' + comps.length + '</b> components: ' + shown + more;
+      }
+      meta.innerHTML = seen
+        ? '<span class="tag">' + (p.line_format || '?') + '</span>'
+          + '<span class="tag">' + (p.method || 'none') + '</span>'
+        : '';
+
+      // Component rail, built from the discovered vocabulary rather than fixed stages.
+      const lanes = ((state.graph && state.graph.lanes) || [])
+        .filter((l) => l.component !== 'runtime');
+      if (!comps.length || !lanes.length) {
+        rail.innerHTML = '';
+        return;
+      }
+      const statusOf = {};
+      lanes.forEach((l) => { statusOf[l.component] = l.status; });
+      const ordered = lanes.map((l) => l.component);
+      rail.innerHTML = ordered.map((name, i) =>
+        (i ? '<span class="clink">\u2192</span>' : '')
+        + '<span class="cnode ' + (statusOf[name] || '') + '">' + escapeHtml(name) + '</span>'
+      ).join('');
+
+      renderComponentCards(lanes);
+    }
+
+    // One card per component: its state, how much it did, and - when it failed - the
+    // line that says why. The rail shows the shape of the run; the cards show the
+    // detail you would otherwise go hunting for in the log panel.
+    function renderComponentCards(lanes) {
+      const box = document.getElementById('compCards');
+      if (!box) return;
+      if (!lanes || !lanes.length) { box.innerHTML = ''; return; }
+
+      const order = { failed: 0, retrying: 1, running: 2, skipped: 3, completed: 4 };
+      const cards = lanes.map((lane) => {
+        const nodes = (lane.branch_groups || []).flatMap((g) => g.nodes || []);
+        const errors = nodes.filter((n) => n.status === 'failed');
+        const times = nodes.map((n) => n.timestamp).filter(Boolean).sort();
+        // Show the failing line when there is one - that is the reason you opened this.
+        const notable = errors.length ? errors[errors.length - 1] : nodes[nodes.length - 1];
+        const state = lane.status || 'observed';
+        const label = state === 'completed' ? 'done'
+          : state === 'failed' ? 'failed'
+          : state === 'running' ? 'active'
+          : state === 'skipped' ? 'skipped'
+          : state === 'retrying' ? 'retried' : 'seen';
+
+        return {
+          sort: order[state] === undefined ? 5 : order[state],
+          html:
+            '<div class="ccard ' + escapeHtml(state) + '">'
+            + '<div class="ccard-head">'
+            + '<span class="ccard-name">' + escapeHtml(lane.component) + '</span>'
+            + '<span class="ccard-state">' + escapeHtml(label) + '</span>'
+            + '</div>'
+            + '<div class="ccard-stats">'
+            + '<span><b>' + nodes.length + '</b> events</span>'
+            + (errors.length ? '<span><b>' + errors.length + '</b> errors</span>' : '')
+            + (times.length ? '<span>' + escapeHtml(times[times.length - 1]) + '</span>' : '')
+            + '</div>'
+            + (notable ? '<div class="ccard-last">' + escapeHtml(notable.message || '') + '</div>' : '')
+            + '</div>'
+        };
+      });
+
+      // Failures first: what needs attention should not be below the fold.
+      cards.sort((a, b) => a.sort - b.sort);
+      box.innerHTML = cards.map((c) => c.html).join('');
+    }
+
+    function renderPipeline() {
+      renderDiscovery();
+      const lanes = (state.graph && state.graph.lanes) || [];
+      const note = document.getElementById('graphNote');
+      if (!lanes.length) {
+        document.getElementById('flow').innerHTML = '<div class="muted">No graph nodes inferred yet. The graph will build itself from the first logs.</div>';
+        if (note) note.textContent = '';
+        return;
+      }
+
+      const allNodes = [];
+      lanes.forEach((lane) => {
+        (lane.branch_groups || []).forEach((group) => {
+          (group.nodes || []).forEach((node, index) => {
+            allNodes.push({
+              ...node,
+              lane: lane.component,
+              groupId: group.id,
+              groupLabel: group.label || node.branch_label || 'Main path',
+              order: allNodes.length + index,
+            });
+          });
+        });
+      });
+
+      const activeBranch = state.graph?.current_branch || 'main';
+      if (note) note.textContent = state.showAllBranches ? 'Showing all observed paths.' : 'Focused on the active path: ' + (state.graph?.current_branch_label || 'Main path');
+
+      const displayNodes = state.showAllBranches
+        ? allNodes
+        : allNodes.filter((node) => node.groupId === 'main' || node.groupId === activeBranch);
+
+      if (!displayNodes.length) {
+        document.getElementById('flow').innerHTML = '<div class="muted">No graph nodes inferred yet. The graph will build itself from the first logs.</div>';
+        return;
+      }
+
+      const sorted = displayNodes.slice().sort((a, b) => {
+        const timeDiff = String(a.timestamp || '').localeCompare(String(b.timestamp || ''));
+        return timeDiff !== 0 ? timeDiff : (a.order || 0) - (b.order || 0);
+      });
+
+      // Group consecutive events from the same component. Rendering one card per log
+      // line duplicated the Recent Logs panel and buried the two lines that mattered
+      // under fifty that did not.
+      const groups = [];
+      sorted.forEach((node) => {
+        const last = groups[groups.length - 1];
+        if (last && last.component === node.component && last.branch === node.branch) {
+          last.nodes.push(node);
+        } else {
+          groups.push({ component: node.component, branch: node.branch,
+                        branchLabel: node.groupLabel, nodes: [node] });
+        }
+      });
+
+      const rank = { failed: 3, retrying: 2, skipped: 1 };
+      const flow = [];
+      let lastBranch = null;
+
+      groups.forEach((group) => {
+        if (state.showAllBranches && lastBranch !== null && lastBranch !== group.branch) {
+          flow.push('<div class="story-branch">Branch: ' + escapeHtml(String(group.branchLabel || group.branch)) + '</div>');
+        }
+        lastBranch = group.branch;
+
+        // The group takes the status of its most serious event - a component that
+        // failed once among ten successes has still failed.
+        const worst = group.nodes.reduce((acc, n) => {
+          const st = n.skipped ? 'skipped' : (n.status || 'observed');
+          return (rank[st] || 0) > (rank[acc] || 0) ? st : acc;
+        }, 'observed');
+
+        const pill = worst === 'skipped' ? 'Skipped' : worst === 'running' ? 'Live'
+          : worst === 'failed' ? 'Failed' : worst === 'retrying' ? 'Retry'
+          : worst === 'completed' ? 'Done' : 'Seen';
+
+        // Show the event that explains the group, not merely the newest one.
+        const headline = group.nodes.find((n) => (n.status === 'failed') || n.skipped)
+          || group.nodes[group.nodes.length - 1];
+        const extra = group.nodes.length - 1;
+        const time = headline.timestamp || '';
+
+        const details = extra > 0
+          ? '<details class="story-more"><summary>' + extra + ' more from '
+            + escapeHtml(title) + '</summary>'
+            + group.nodes.filter((n) => n !== headline).map((n) =>
+                '<div class="story-line"><span>' + escapeHtml(n.timestamp || '') + '</span>'
+                + escapeHtml(n.message || n.label || '') + '</div>').join('')
+            + '</details>'
+          : '';
+
+        // "runtime" is our own bucket for lines outside the project's vocabulary -
+        // name it for what it is rather than leaking an internal label.
+        const title = group.component === 'runtime' ? 'other output' : (group.component || 'Event');
+
+        flow.push(
+          '<div class="story-event ' + escapeHtml(worst) + '">'
+          + '<div class="story-row"><div>'
+          + '<div class="story-time">' + escapeHtml(time) + '</div>'
+          + '<div class="story-title">' + escapeHtml(title)
+          + (group.nodes.length > 1 ? ' <span class="story-count">×' + group.nodes.length + '</span>' : '')
+          + '</div></div>'
+          + '<span class="story-chip ' + (worst === 'failed' ? 'bad' : '') + '">' + escapeHtml(pill) + '</span>'
+          + '</div>'
+          + '<div class="story-message">' + escapeHtml(headline.message || headline.label || '') + '</div>'
+          + details
+          + '</div>'
+        );
+      });
+      document.getElementById('flow').innerHTML = '<div class="story-rail">' + flow.join('') + '</div>';
+    }
+    // One plain sentence, first thing on the page: what is happening and whether it
+    // needs attention. Everything technical belongs below this, not instead of it.
+    function renderHeadline() {
+      const el = document.getElementById('headline');
+      if (!el) return;
+
+      const lanes = (state.graph && state.graph.lanes) || [];
+      const failed = lanes.filter((l) => l.status === 'failed' && l.component !== 'runtime')
+                          .map((l) => l.component);
+      const metrics = state.metrics || {};
+      const events = metrics.total_events || 0;
+
+      let cls = 'idle';
+      let icon = '○';
+      let text = 'Waiting for a source';
+      let sub = 'Pick a port or attach a log file to start watching a run.';
+
+      if (!events) {
+        // keep the idle defaults
+      } else if (failed.length) {
+        cls = 'bad'; icon = '●';
+        text = failed.length === 1
+          ? failed[0] + ' failed'
+          : failed.slice(0, 2).join(' and ') + ' failed';
+        sub = state.reason && state.reason !== 'Execution completed successfully.'
+          ? state.reason
+          : (state.summary || '');
+      } else if (state.status === 'failed') {
+        cls = 'bad'; icon = '●';
+        text = 'This run failed';
+        sub = state.reason || state.summary || '';
+      } else if (state.running) {
+        cls = 'busy'; icon = '◐';
+        text = 'Run in progress';
+        sub = state.summary || '';
+      } else {
+        cls = 'ok'; icon = '●';
+        text = 'Everything looks healthy';
+        const parts = [events + ' events'];
+        if (metrics.skipped) parts.push(metrics.skipped + ' step(s) skipped');
+        if (metrics.retries) parts.push(metrics.retries + ' retry/retries');
+        sub = parts.join(' · ');
+      }
+
+      el.className = 'headline ' + cls;
+      el.innerHTML = '<span class="hl-icon">' + icon + '</span>' + escapeHtml(text)
+        + (sub ? '<span class="hl-sub">' + escapeHtml(sub) + '</span>' : '');
+    }
+
+    function renderSummary() {
+      renderHeadline();
+      document.getElementById('summary').textContent = state.summary;
+      document.getElementById('reason').textContent = state.reason;
+
+      // Only show a confidence bar when a model actually reasoned about the run.
+      // A regex hit on "timeout" is an observation, not a diagnosis, so it gets no bar.
+      const bar = document.getElementById('confidenceBar');
+      const scored = state.interpretation === 'llm' && state.confidence > 0;
+      bar.style.width = scored ? Math.min(100, state.confidence) + '%' : '0%';
+      bar.parentElement.style.display = scored ? '' : 'none';
+
+      const badge = document.getElementById('backendBadge');
+      if (badge) {
+        const llmOn = state.backend?.available;
+        badge.textContent = llmOn ? 'AI reasoning' : 'Pattern matches only';
+        badge.className = 'backend-badge ' + (llmOn ? 'on' : 'off');
+        badge.title = state.backend?.detail || '';
+      }
+      document.getElementById('liveStatus').textContent =
+        state.status === 'failed' ? 'Failed' :
+        state.running ? 'Live' :
+        state.status === 'success' ? 'Completed' :
+        'Waiting';
+      document.getElementById('sourceLabel').textContent = state.source?.label || 'No live source connected';
+      document.getElementById('sourcePath').textContent = state.source?.path || 'Pick a port and I’ll follow the live stream automatically.';
+      const chips = [
+        'Branch: ' + (state.graph?.current_branch_label || 'Main path'),
+        'Likely next: ' + (state.graph?.next_likely || 'unknown'),
+        'Mode: ' + (state.showAllBranches ? 'all paths' : 'focus'),
+      ];
+      document.getElementById('focusChips').innerHTML = chips.map((text, i) => '<span class="focus-chip ' + (i === 0 ? 'alt' : 'soft') + '">' + escapeHtml(text) + '</span>').join('');
+
+      const pills = [];
+      if (state.status === 'failed') pills.push('Failed');
+      else if (state.status === 'success') pills.push('Completed');
+      else if (state.running) pills.push('Live');
+      else pills.push('Idle');
+      pills.push('Confidence ' + state.confidence + '%');
+      pills.push('Events ' + state.metrics.total_events);
+      document.getElementById('statsPills').innerHTML = pills.map(badge).join('');
+      document.getElementById('sourcePath').textContent = state.source?.path || 'Pick a port and I’ll follow the live stream automatically.';
+    }
+    function bubble(cls, html) {
+      const msgs = document.getElementById('msgs');
+      if (!msgs) return null;
+      const placeholder = msgs.querySelector('.muted-msg');
+      if (placeholder) placeholder.remove();
+      const node = document.createElement('div');
+      node.className = 'msg ' + cls;
+      node.innerHTML = html;
+      msgs.appendChild(node);
+      msgs.scrollTop = msgs.scrollHeight;
+      return node;
+    }
+
+    function renderAsk() {
+      // Answers are appended as chat turns, so the thread of what was already asked
+      // stays visible - one replaced answer loses the reasoning that led to it.
+      const ask = state.ask || {};
+      if (!ask.answer || ask._rendered) return;
+      ask._rendered = true;
+
+      const verdict = ask.verdict || 'unknown';
+      const evidence = Array.isArray(ask.evidence) ? ask.evidence : [];
+      const html =
+        '<span class="verdict-pill ' + escapeHtml(verdict) + '">' + escapeHtml(verdict) + '</span>'
+        + escapeHtml(ask.answer)
+        + (evidence.length
+            ? '<div class="ev">' + evidence.map(escapeHtml).join('\n') + '</div>'
+            : '');
+
+      if (state._pendingBubble) {
+        state._pendingBubble.innerHTML = html;
+        state._pendingBubble = null;
+      } else {
+        bubble('bot', html);
+      }
+    }
+
+    // Suggestions come from the components actually discovered in THIS run, so they
+    // are always answerable - a generic list would ask about things that never ran.
+    function renderSuggestions() {
+      const box = document.getElementById('sugg');
+      if (!box) return;
+      const comps = (state.profile && state.profile.components) || [];
+      const failed = ((state.graph && state.graph.lanes) || [])
+        .filter((l) => l.status === 'failed').map((l) => l.component);
+
+      const questions = [];
+      if (failed.length) questions.push('Why did ' + failed[0] + ' fail?');
+      if (state.status === 'failed') questions.push('What failed in this run?');
+      comps.filter((c) => c !== 'runtime').slice(0, 2).forEach((c) => {
+        questions.push('Did ' + c + ' run?');
+      });
+      if (state.metrics && state.metrics.skipped) questions.push('What was skipped and why?');
+      if (!questions.length) questions.push('What happened in this run?', 'Did anything fail?');
+
+      box.innerHTML = questions.slice(0, 4)
+        .map((q) => '<button type="button" data-q="' + escapeHtml(q) + '">' + escapeHtml(q) + '</button>')
+        .join('');
+      box.querySelectorAll('button[data-q]').forEach((b) => {
+        b.addEventListener('click', () => {
+          document.getElementById('askInput').value = b.getAttribute('data-q');
+          askRun();
+        });
+      });
+    }
+    function renderLists() {
+      document.getElementById('causes').innerHTML = state.possibleCauses.length ? state.possibleCauses.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No causes inferred yet.</li>';
+      document.getElementById('fixes').innerHTML = state.suggestedFixes.length ? state.suggestedFixes.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No fixes suggested yet.</li>';
+    }
+    function renderTimeline() {
+      const timeline = document.getElementById('timeline');
+      timeline.innerHTML = state.timeline.length ? state.timeline.slice().reverse().map((item) => '<div class="tl-item"><div class="time">' + escapeHtml(item.time) + '</div><div><div><strong>' + escapeHtml(item.label) + '</strong></div><div class="muted" style="margin-top: 4px;">' + escapeHtml(item.message) + '</div></div></div>').join('') : '<div class="muted">Timeline will appear here as logs stream in.</div>';
+    }
+    function renderLogs() {
+      const logs = document.getElementById('logs');
+      logs.innerHTML = state.logLines.length ? state.logLines.slice().reverse().map((item) => '<div class="logline"><div class="time">' + escapeHtml(item.timestamp) + '</div><div class="level ' + escapeHtml(item.level) + '">' + escapeHtml(item.level) + '</div><div class="text">' + escapeHtml(item.message) + '</div></div>').join('') : '<div class="muted">No logs yet. Paste a line or run the demo stream.</div>';
+    }
+    function escapeHtml(value) {
+      return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    }
+    function statusIcon(status, active) {
+      if (status === 'completed') return '✓';
+      if (status === 'failed') return '!';
+      if (status === 'retrying') return '↻';
+      if (status === 'running' || active) return '●';
+      return '○';
+    }
+    async function sendLog() {
+      const input = document.getElementById('logInput');
+      const line = input.value.trim();
+      if (!line) return;
+      input.value = '';
+    }
+    async function call(path) {
+      if (path.includes('reset')) { applyState(await window.agent.reset()); render(); }
+    }
+    async function askRun() {
+      const input = document.getElementById('askInput');
+      const query = input.value.trim();
+      if (!query) return;
+      input.value = '';
+
+      bubble('you', escapeHtml(query));
+      // The model can take a few seconds; say so rather than leaving a dead panel.
+      state._pendingBubble = bubble('bot', '<span class="thinking">Reading the run…</span>');
+
+      try {
+        const payload = { ok: true, result: await window.agent.ask(query) };
+        if (payload.ok && payload.result) {
+          state.ask = payload.result;
+          renderAsk();
+        } else if (state._pendingBubble) {
+          state._pendingBubble.innerHTML = 'That question could not be answered just now.';
+          state._pendingBubble = null;
+        }
+      } catch (err) {
+        if (state._pendingBubble) {
+          state._pendingBubble.innerHTML = 'Could not reach the agent. Is it still running?';
+          state._pendingBubble = null;
+        }
+      }
+    }
+    async function refreshPorts() {
+      await window.agent.listPorts();
+    }
+    async function tracePort(port) {
+      applyState(await window.agent.attachPort(Number(port)));
+      render();
+      window.agent.interpret().then((st) => { applyState(st); render(); });
+    }
+    window.agent.onState((s) => { applyState(s); render(); });
+    window.agent.getState().then((s) => { applyState(s); render(); });
+    window.agent.listPorts().then((ports) => { state.ports = ports; render(); });
+    window.agent.backendStatus().then((b) => { state.backend = b; render(); });
+    document.getElementById('askBtn').addEventListener('click', askRun);
+    const resetBtn = document.getElementById('resetBtn');
+    if (resetBtn) resetBtn.addEventListener('click', async () => { applyState(await window.agent.reset()); render(); });
+    const pickBtn = document.getElementById('pickFileBtn');
+    if (pickBtn) pickBtn.addEventListener('click', async () => {
+      const s = await window.agent.pickFile();
+      if (s) { applyState(s); render(); window.agent.interpret().then((st) => { applyState(st); render(); }); }
+    });
+    const refreshBtn = document.getElementById('refreshPortsBtn');
+    if (refreshBtn) refreshBtn.addEventListener('click', refreshPorts);
+    document.getElementById('logInput').addEventListener('keydown', (event) => { if (event.key === 'Enter') sendLog(); });
+    document.getElementById('askInput').addEventListener('keydown', (event) => { if (event.key === 'Enter') askRun(); });
+    refreshPorts();
+    render();
+  </script>
+</body>
+</html>
