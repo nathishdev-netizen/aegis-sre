@@ -1254,6 +1254,14 @@
     })();
 
     const source = new EventSource('/events');
+    // Belt and braces: reload if the heartbeat reports a build newer than ours.
+    source.addEventListener('ping', (event) => {
+      try {
+        const { build } = JSON.parse(event.data);
+        if (build && window.__build && build !== window.__build) location.reload();
+        if (build) window.__build = window.__build || build;
+      } catch (e) { /* malformed heartbeat is not fatal */ }
+    });
     source.addEventListener('state', (event) => {
       const payload = JSON.parse(event.data);
       Object.assign(state, payload.state);

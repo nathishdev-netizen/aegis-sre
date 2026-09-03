@@ -91,9 +91,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             runtime.subscribe(self)
             try:
                 self.send_sse("state", json.dumps({"type": "state", "state": runtime.snapshot()}))
+                build = str(int(INDEX_HTML.stat().st_mtime))
                 while True:
-                    time.sleep(15)
-                    self.send_sse("ping", json.dumps({"ok": True}))
+                    time.sleep(5)
+                    # Carry the build id on the heartbeat: a page loaded before the
+                    # reload logic existed still listens here, so this is the only
+                    # channel that can reach it.
+                    self.send_sse("ping", json.dumps({"ok": True, "build": build}))
             except Exception:
                 pass
             finally:
