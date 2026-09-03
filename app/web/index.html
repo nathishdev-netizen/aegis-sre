@@ -1067,8 +1067,13 @@
 
     function renderSummary() {
       renderHeadline();
-      document.getElementById('summary').textContent = state.summary;
-      document.getElementById('reason').textContent = state.reason;
+      // The headline already shows the model's summary. Repeating it here printed the
+      // same paragraph twice, and repeating `reason` under it added a third line that
+      // often contradicted both.
+      const usedInHeadline = state.interpretation === 'llm' && state.summary;
+      document.getElementById('summary').textContent = usedInHeadline ? '' : (state.summary || '');
+      document.getElementById('reason').textContent =
+        (usedInHeadline || state.reason === 'Execution completed successfully.') ? '' : (state.reason || '');
 
       // Only show a confidence bar when a model actually reasoned about the run.
       // A regex hit on "timeout" is an observation, not a diagnosis, so it gets no bar.

@@ -1037,6 +1037,8 @@ class RuntimeState:
                     self._snapshot.suggested_fixes = []
                     self._snapshot.evidence = []
                     self._snapshot.confidence = 0
+                    # The previous run's model summary does not describe this one.
+                    self._snapshot.interpretation = "patterns"
                 if transition["stage"]:
                     self._set_stage_flow(transition["stage"], transition["status"])
                 if transition["status"] == "retrying":
@@ -1094,6 +1096,11 @@ class RuntimeState:
                     self._snapshot.status = "success"
                     self._snapshot.reason = "Execution completed successfully."
                     self._snapshot.confidence = 0
+                elif self._snapshot.reason == "Execution completed successfully.":
+                    # A completion line arrived after a failure: the run finished, but
+                    # it did not succeed. Leaving the success text made the brief say
+                    # "completed successfully" directly above the failure that caused it.
+                    self._snapshot.reason = "The run reached its end, but a step failed."
 
             # A node describes the line that produced it. Stamping every node with the
             # run's overall status marked "Authentication passed" as failed once any
@@ -1121,7 +1128,12 @@ class RuntimeState:
 
             # A run is "running" only while it has neither failed nor completed.
             self._snapshot.running = self._snapshot.status not in {"failed", "success", "idle"}
-            self._snapshot.summary = self._summarize()
+            # Do not overwrite a model-written summary with the template. Ingest runs
+            # on every line, so a tailed file destroyed the AI summary seconds after
+            # it arrived - which is why the brief kept reverting to "The run failed at
+            # X". The next interpretation pass replaces it properly.
+            if self._snapshot.interpretation != "llm":
+                self._snapshot.summary = self._summarize()
             self._snapshot.updated_at = now_iso()
 
         self.broadcast()

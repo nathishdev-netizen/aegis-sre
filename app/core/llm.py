@@ -126,6 +126,13 @@ def _chat(messages: list[dict[str, str]], *, max_tokens: int = 700) -> str | Non
 
 INTERPRET_SYSTEM = """You interpret backend execution logs for a developer watching a run live.
 
+The lines may span SEVERAL separate runs (requests, calls, jobs). Describe the MOST
+RECENT one, and say so. Do not blend outcomes: if an earlier run succeeded and the
+latest failed, the answer is that the latest failed - never "completed successfully"
+in the same breath as a failure. Where the logs mark boundaries (CALL START/CALL END,
+Request received/Response sent, a correlation id), use them to find where the last
+run begins.
+
 You are given only what was actually observed. Ground every claim in that evidence.
 
 Rules:
