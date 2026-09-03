@@ -164,9 +164,17 @@ Rules:
   explicit, low when you are reading between the lines.
 - If the run has not failed, reason and causes must be empty and status must not be "failed".
 
+Write the summary the way a colleague would say it out loud. State what happened -
+never narrate your own reading of the logs. Say "A call from 916... was answered and
+greeted", not "The most recent run involved a call". No phrases like "the run", "the
+system", "the logs indicate", "it appears that".
+
+Lead with the outcome. If something failed, the first sentence says what failed and
+why; the detail comes after.
+
 Return JSON only:
 {
-  "summary": "2-3 sentences in plain English: what the run did and where it stands now.",
+  "summary": "2-3 sentences, plain spoken English. Outcome first. No log jargon.",
   "status": "running" | "failed" | "success" | "idle",
   "reason": "why it failed, or empty string if it has not failed",
   "causes": ["likely causes, most probable first; empty if not failed or if unknowable"],

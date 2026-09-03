@@ -1049,7 +1049,10 @@
         sub = state.reason || state.summary || '';
       } else if (state.running && state.status !== 'failed') {
         cls = 'busy'; icon = '◐';
-        text = 'Run in progress';
+        // A summary that describes a finished call should not sit under "in progress".
+        const finished = state.interpretation === 'llm' && state.summary
+          && /\b(ended|completed|finished|hung up|closed)\b/i.test(state.summary);
+        text = finished ? 'Last run finished' : 'Run in progress';
         sub = state.summary || '';
       } else {
         cls = 'ok'; icon = '●';
@@ -1070,10 +1073,15 @@
       // The headline already shows the model's summary. Repeating it here printed the
       // same paragraph twice, and repeating `reason` under it added a third line that
       // often contradicted both.
+      // Once the headline carries the model's summary, nothing below should repeat it
+      // or add a filler line beneath it. Placeholder reasons ("Run in progress.",
+      // "Execution completed successfully.") say nothing the headline has not said.
       const usedInHeadline = state.interpretation === 'llm' && state.summary;
+      const FILLER = ['Run in progress.', 'Execution completed successfully.',
+                      'Awaiting execution events.', ''];
       document.getElementById('summary').textContent = usedInHeadline ? '' : (state.summary || '');
       document.getElementById('reason').textContent =
-        (usedInHeadline || state.reason === 'Execution completed successfully.') ? '' : (state.reason || '');
+        (usedInHeadline || FILLER.includes(state.reason)) ? '' : (state.reason || '');
 
       // Only show a confidence bar when a model actually reasoned about the run.
       // A regex hit on "timeout" is an observation, not a diagnosis, so it gets no bar.
