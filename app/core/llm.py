@@ -172,6 +172,10 @@ system", "the logs indicate", "it appears that".
 Lead with the outcome. If something failed, the first sentence says what failed and
 why; the detail comes after.
 
+Also report what the numbers in the run mean. Durations, counts and repeated
+patterns are where the useful detail is - a step that took 6.9s, a turn that was
+skipped, a retry that succeeded. Only state what the lines actually show.
+
 Return JSON only:
 {
   "summary": "2-3 sentences, plain spoken English. Outcome first. No log jargon.",
@@ -179,6 +183,7 @@ Return JSON only:
   "reason": "why it failed, or empty string if it has not failed",
   "causes": ["likely causes, most probable first; empty if not failed or if unknowable"],
   "fixes": ["concrete next steps a developer can take; empty if nothing is wrong"],
+  "insights": ["notable observations about THIS run - slow steps with their timings, skipped work and why, retries, anything a developer would want flagged. Empty if nothing stands out."],
   "confidence": 0-100,
   "evidence": ["exact log lines that support your reading"]
 }"""
@@ -207,8 +212,14 @@ def interpret_run(snapshot: dict[str, Any]) -> dict[str, Any] | None:
         "summary": str(data.get("summary", "")).strip(),
         "status": data.get("status"),
         "reason": str(data.get("reason", "")).strip(),
-        "causes": [str(c) for c in data.get("causes", []) if str(c).strip()],
+        # A cause of "unknown" is not a cause - it fills the panel with a word that
+        # says less than an empty panel would.
+        "causes": [
+            str(c) for c in data.get("causes", [])
+            if str(c).strip() and str(c).strip().lower() not in {"unknown", "n/a", "none", "unclear"}
+        ],
         "fixes": [str(f) for f in data.get("fixes", []) if str(f).strip()],
+        "insights": [str(i) for i in data.get("insights", []) if str(i).strip()][:5],
         "confidence": max(0, min(100, int(data.get("confidence", 0) or 0))),
         "evidence": [str(e) for e in data.get("evidence", []) if str(e).strip()],
         "source": "llm",

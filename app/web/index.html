@@ -240,8 +240,9 @@
     .headline.busy { color: var(--accent); }
     .headline.idle { color: var(--muted); }
     .headline .hl-sub {
-      display: block; font-size: 1rem; font-weight: 450; color: var(--text);
-      margin-top: 10px; line-height: 1.65; max-width: 78ch; opacity: 0.88;
+      display: block; font-size: 1.16rem; font-weight: 600; color: var(--text);
+      margin-top: 12px; line-height: 1.6; max-width: 74ch; opacity: 1;
+      letter-spacing: -0.005em;
     }
 
     .sugg { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 12px; }
@@ -592,6 +593,10 @@
       border: 1px solid var(--line);
       background: #fff;
     }
+    .box-note {
+      font-size: 0.74rem; color: var(--muted); margin-top: 8px;
+      padding-top: 8px; border-top: 1px solid var(--line); line-height: 1.5;
+    }
     .mini-summary .label {
       font-size: 0.74rem;
       letter-spacing: 0.14em;
@@ -686,12 +691,17 @@
         <div style="height: 14px"></div>
         <div class="mini-summary">
           <div class="box">
-            <div class="label">Likely causes</div>
+            <div class="label">Why it failed</div>
             <ul id="causes"></ul>
+            <div class="box-note" id="causesNote"></div>
           </div>
           <div class="box">
-            <div class="label">Suggested fixes</div>
+            <div class="label">What to try</div>
             <ul id="fixes"></ul>
+          </div>
+          <div class="box" id="insightsBox" hidden>
+            <div class="label">Worth knowing</div>
+            <ul id="insights"></ul>
           </div>
         </div>
       </div>
@@ -1192,8 +1202,30 @@
       });
     }
     function renderLists() {
-      document.getElementById('causes').innerHTML = (state.possible_causes || []).length ? (state.possible_causes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No causes inferred yet.</li>';
-      document.getElementById('fixes').innerHTML = (state.suggested_fixes || []).length ? (state.suggested_fixes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No fixes suggested yet.</li>';
+      document.getElementById('causes').innerHTML = (state.possible_causes || []).length ? (state.possible_causes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No failure detected in this run.</li>';
+      document.getElementById('fixes').innerHTML = (state.suggested_fixes || []).length ? (state.suggested_fixes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>Nothing to fix - no failure detected.</li>';
+
+      // Say where the diagnosis came from. A bare list gives no way to judge whether
+      // it is a model reading the run or a regex that matched a keyword.
+      // Detail the developer would otherwise dig for: slow steps, skipped work,
+      // retries. Hidden entirely when the run has nothing notable to report.
+      const insightsBox = document.getElementById('insightsBox');
+      const insights = state.insights || [];
+      if (insightsBox) {
+        insightsBox.hidden = !insights.length;
+        if (insights.length) {
+          document.getElementById('insights').innerHTML =
+            insights.map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
+        }
+      }
+
+      const note = document.getElementById('causesNote');
+      if (note) {
+        note.textContent = !(state.possible_causes || []).length ? ''
+          : state.interpretation === 'llm'
+            ? 'Read from this run by ' + (state.backend?.detail || 'the model').replace(/^Interpreting with /, '').replace(/\.$/, '') + '.'
+            : 'Matched from log patterns, not reasoned - add OPENAI_API_KEY for a real diagnosis.';
+      }
     }
     function renderTimeline() {
       const timeline = document.getElementById('timeline');

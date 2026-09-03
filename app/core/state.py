@@ -104,6 +104,8 @@ class Snapshot:
     # to avoid presenting a pattern match as if it were an explanation.
     interpretation: str = "patterns"
     evidence: list[str] = field(default_factory=list)
+    # Notable observations about this run - slow steps, skipped work, retries.
+    insights: list[str] = field(default_factory=list)
     backend: dict[str, Any] = field(default_factory=dict)
     # What has been learned about this source's own format and vocabulary.
     profile: dict[str, Any] = field(default_factory=dict)
@@ -163,6 +165,7 @@ class RuntimeState:
             updated_at=now_iso(),
             interpretation="patterns",
             evidence=[],
+            insights=[],
             backend=llm.status(),
             profile={},
         )
@@ -1053,6 +1056,11 @@ class RuntimeState:
                     self._snapshot.metrics["skipped"] += 1
 
             if skipped_component:
+                # Route through the discovered vocabulary too: a synthetic skip node
+                # built from infer_component put "API / Gateway" beside the project's
+                # own "api" lane, showing one component twice under two names.
+                skipped_component = self._component_for(parsed["message"], raw_line) \
+                    if (self._snapshot.profile.get("components") or []) else skipped_component
                 self._add_graph_node(
                     component=skipped_component,
                     label=f"{skipped_component} skipped",
@@ -1229,6 +1237,7 @@ class RuntimeState:
                         self._snapshot.suggested_fixes = result["fixes"]
                     self._snapshot.confidence = result["confidence"]
                     self._snapshot.evidence = result["evidence"]
+                    self._snapshot.insights = result.get("insights") or []
                     self._snapshot.interpretation = "llm"
                     self._snapshot.updated_at = now_iso()
                 self.broadcast()
