@@ -514,6 +514,20 @@ def test_infrastructure_is_not_offered_as_a_source():
     offered = [p for p in ports if sources.is_plausible_source(p)]
     assert [p["port"] for p in offered] == [6003], "only real app ports may be offered"
 
+
+def test_running_is_false_once_a_run_has_failed():
+    """Every ingested line set running=True, so a tailed file kept the run marked
+    "in progress" long after it failed - the headline read "Run in progress" beside
+    a FAILED badge."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 INFO [api] Request received", source="test")
+    assert runtime.snapshot()["running"] is True
+
+    runtime.ingest_line("10:00:02 ERROR [db] 500 Internal Server Error", source="test")
+    snapshot = runtime.snapshot()
+    assert snapshot["status"] == "failed"
+    assert snapshot["running"] is False, "a failed run is not in progress"
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():

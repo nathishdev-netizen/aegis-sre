@@ -1040,7 +1040,7 @@
         cls = 'bad'; icon = '●';
         text = 'This run failed';
         sub = state.reason || state.summary || '';
-      } else if (state.running) {
+      } else if (state.running && state.status !== 'failed') {
         cls = 'busy'; icon = '◐';
         text = 'Run in progress';
         sub = state.summary || '';

@@ -946,7 +946,9 @@ class RuntimeState:
         skipped_component = infer_skipped_component(parsed["message"])
         with self._lock:
             self._event_counter += 1
-            self._snapshot.running = True
+            # `running` is derived from the verdict below, not set on every line: a
+            # tailed file keeps delivering lines long after a run has failed, so
+            # "a line arrived" is not evidence that the run is still healthy.
             self._snapshot.metrics["total_events"] += 1
             self._snapshot.log_lines.append({**parsed, "source": source})
             self._snapshot.log_lines = self._snapshot.log_lines[-settings.max_log_lines:]
@@ -1048,7 +1050,9 @@ class RuntimeState:
                 self._snapshot.confidence = 0
                 self._snapshot.interpretation = "patterns"
                 self._snapshot.status = "failed"
-                self._snapshot.running = True
+                # `running` means "still executing", not "a failure was seen". Setting
+                # it here made the headline read "Run in progress" on a failed run,
+                # directly contradicting the FAILED badge beside it.
 
             if self._looks_like_completion(parsed["message"], transition):
                 self._snapshot.running = False
@@ -1087,6 +1091,8 @@ class RuntimeState:
             self._snapshot.graph["last_node_id"] = node["id"]
             self._snapshot.graph["next_likely"] = self._most_likely_successor(component)
 
+            # A run is "running" only while it has neither failed nor completed.
+            self._snapshot.running = self._snapshot.status not in {"failed", "success", "idle"}
             self._snapshot.summary = self._summarize()
             self._snapshot.updated_at = now_iso()
 
