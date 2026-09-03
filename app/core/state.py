@@ -129,6 +129,7 @@ class RuntimeState:
         self._selected_port: int | None = None
         self._event_counter = 0
         self._interpreting = False
+        self._pending_interpretation = False
         self._raw_for_learning: list[str] = []
         self._snapshot = self._fresh_snapshot()
 
@@ -320,18 +321,52 @@ class RuntimeState:
         self._snapshot.timeline = self._snapshot.timeline[-settings.max_timeline:]
 
     def _summarize(self) -> str:
+        """A plain-English sentence for when no model has interpreted the run yet.
+
+        This is a fallback, not a log dump. The previous version pasted a whole raw
+        ERROR line into the sentence, which produced the wall of text it was meant to
+        spare the reader.
+        """
         timeline = list(reversed(self._snapshot.timeline))
         last_failure = next((item for item in timeline if item["status"] == "failed"), None)
+
+        # Name the component that failed rather than quoting the line that says so.
+        failed = [
+            lane["component"] for lane in self._snapshot.graph["lanes"]
+            if lane["status"] == "failed" and lane["component"] != "runtime"
+        ]
+        where = failed[0] if failed else None
+
         if self._snapshot.status == "failed":
-            tail = f" Latest evidence: {last_failure['message']}" if last_failure else ""
-            return f"The run failed at {self._snapshot.current_label}.{tail}".strip()
+            # Fall back to the failing line's own component when no lane has been
+            # built yet - "This run failed" alone tells the reader nothing.
+            if not where and last_failure:
+                where = self._component_for(last_failure["message"], last_failure["message"])
+                if where == "runtime":
+                    where = None
+            detail = self._snapshot.reason
+            if detail in {"Run in progress.", "Awaiting execution events.", ""}:
+                detail = None
+            if where and detail:
+                return f"{where} failed. {detail}"
+            if where:
+                return f"{where} failed during this run."
+            return detail or "This run failed - the logs do not say why."
+
         if self._snapshot.status == "success":
-            return f"The run completed successfully after {self._snapshot.metrics['total_events']} events."
+            components = len([
+                lane for lane in self._snapshot.graph["lanes"]
+                if lane["component"] != "runtime"
+            ])
+            return f"The run finished normally across {components} component(s)."
+
         if self._snapshot.running:
-            if last_failure:
-                return f"The run is currently at {self._snapshot.current_label}, and the latest issue was {last_failure['message']}."
-            return f"The run is currently at {self._snapshot.current_label}."
-        return "Waiting for logs."
+            active = self._snapshot.current_label or "the current step"
+            if where:
+                return f"Still running at {active}, but {where} has already failed."
+            return f"Still running at {active}."
+
+        return "Nothing to report yet - waiting for the first log line."
 
     def _looks_like_completion(self, message: str, transition: dict[str, Any] | None) -> bool:
         lowered = message.lower()
@@ -516,6 +551,11 @@ class RuntimeState:
 
         for line in backfill:
             self.ingest_line(line, source=f"file:{path.name}")
+        # Interpret what was just backfilled. Otherwise a file that has stopped
+        # growing never triggers a model pass, and the brief shows the pattern
+        # template forever - which is exactly what the user kept seeing.
+        if backfill:
+            self._request_interpretation()
 
         def loop() -> None:
             while not self._watch_stop.is_set():
@@ -1167,6 +1207,7 @@ class RuntimeState:
             return
         with self._lock:
             if self._interpreting:
+                self._pending_interpretation = True
                 return
             self._interpreting = True
 
@@ -1194,6 +1235,12 @@ class RuntimeState:
             finally:
                 with self._lock:
                     self._interpreting = False
+                    stale = self._pending_interpretation
+                    self._pending_interpretation = False
+                # Lines that arrived mid-call were skipped by the in-flight guard;
+                # run once more so the brief reflects them.
+                if stale:
+                    self._request_interpretation()
 
         threading.Thread(target=run, daemon=True).start()
 

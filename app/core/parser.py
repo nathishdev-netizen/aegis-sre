@@ -202,7 +202,7 @@ def is_run_start(message: str) -> bool:
 
 
 TRANSITIONS = [
-    (RUN_START, {"stage": "request", "status": "running", "label": "Run started"}),
+    (RUN_START, {"stage": "request", "status": "running", "label": "the start of a new run"}),
     (re.compile(r"auth|authentication|authorized|login", re.I), {"stage": "auth", "status": "completed", "label": "Authentication passed"}),
     (re.compile(r"parse|parsing|extract", re.I), {"stage": "parse", "status": "completed", "label": "Input parsed"}),
     (re.compile(r"retrieve|retriev", re.I), {"stage": "retrieve", "status": "running", "label": "Retrieval in progress"}),

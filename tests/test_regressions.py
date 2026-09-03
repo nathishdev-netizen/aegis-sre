@@ -609,6 +609,44 @@ def test_model_context_is_scoped_to_the_latest_run():
     assert len(latest) == 2, "context must start at the most recent run boundary"
     assert "CALL START call=bbb" in latest[0]["message"]
 
+
+def test_backfilled_history_is_interpreted():
+    """Interpretation was only requested from ingest_line, so a file that had stopped
+    growing never triggered a model pass - the brief showed the pattern template
+    forever, however long the user waited."""
+    import tempfile, os
+
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
+        fh.write("10:00:01 INFO [api] CALL START call=aaa\n")
+        fh.write("10:00:02 ERROR [db] Connection refused\n")
+        path = fh.name
+
+    runtime = RuntimeState()
+    requested = []
+    runtime._request_interpretation = lambda: requested.append(True)
+    try:
+        runtime.attach_file(path)
+        import time as _t
+        _t.sleep(1.0)
+        assert requested, "attaching to an existing file must request interpretation"
+    finally:
+        os.unlink(path)
+
+
+def test_fallback_summary_is_not_a_log_dump():
+    """The template pasted a whole raw ERROR line into its sentence, producing the
+    wall of text it was supposed to spare the reader."""
+    runtime = RuntimeState()
+    runtime.ingest_line("12:18:41 INFO [api] CALL START call=aaa from=919095797973", source="test")
+    runtime.ingest_line(
+        "12:18:41 ERROR [identity] Lookup FAILED against http://localhost:6004/identity "
+        "(ConnectError: All connection attempts failed) - failing closed",
+        source="test")
+
+    summary = runtime.snapshot()["summary"]
+    assert "ConnectError" not in summary, "the summary must not quote a raw log line"
+    assert len(summary) < 160, "a fallback summary should be a sentence, not a dump"
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():
