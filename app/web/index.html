@@ -240,9 +240,9 @@
     .headline.busy { color: var(--accent); }
     .headline.idle { color: var(--muted); }
     .headline .hl-sub {
-      display: block; font-size: 1.16rem; font-weight: 600; color: var(--text);
-      margin-top: 12px; line-height: 1.6; max-width: 74ch; opacity: 1;
-      letter-spacing: -0.005em;
+      display: block; font-size: clamp(1.24rem, 1.9vw, 1.5rem); font-weight: 600;
+      color: var(--text); margin-top: 14px; line-height: 1.55; max-width: 72ch;
+      opacity: 1; letter-spacing: -0.011em;
     }
 
     .sugg { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 12px; }
@@ -333,6 +333,9 @@
       min-width: 100%;
     }
     .focus-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+    /* Emptied by the renderer once the headline carries the summary. Without this
+       they keep their margins and leave a blank band under the brief. */
+    .brief-main:empty, .brief-reason:empty, .focus-row:empty { display: none; }
     .focus-chip {
       padding: 7px 10px;
       border-radius: 999px;
@@ -1091,9 +1094,16 @@
       const usedInHeadline = state.interpretation === 'llm' && state.summary;
       const FILLER = ['Run in progress.', 'Execution completed successfully.',
                       'Awaiting execution events.', ''];
-      document.getElementById('summary').textContent = usedInHeadline ? '' : (state.summary || '');
-      document.getElementById('reason').textContent =
-        (usedInHeadline || FILLER.includes(state.reason)) ? '' : (state.reason || '');
+      // Hide rather than merely empty: an emptied element keeps its margins, which
+      // is the blank band that appeared under the brief.
+      const summaryEl = document.getElementById('summary');
+      const reasonEl = document.getElementById('reason');
+      const summaryText = usedInHeadline ? '' : (state.summary || '');
+      const reasonText = (usedInHeadline || FILLER.includes(state.reason)) ? '' : (state.reason || '');
+      summaryEl.textContent = summaryText;
+      summaryEl.hidden = !summaryText;
+      reasonEl.textContent = reasonText;
+      reasonEl.hidden = !reasonText;
 
       // Only show a confidence bar when a model actually reasoned about the run.
       // A regex hit on "timeout" is an observation, not a diagnosis, so it gets no bar.
@@ -1124,7 +1134,9 @@
         'Likely next: ' + (state.graph?.next_likely || 'unknown'),
         'Mode: ' + (state.showAllBranches ? 'all paths' : 'focus'),
       ];
-      document.getElementById('focusChips').innerHTML = chips.map((text, i) => '<span class="focus-chip ' + (i === 0 ? 'alt' : 'soft') + '">' + escapeHtml(text) + '</span>').join('');
+      const focusEl = document.getElementById('focusChips');
+      focusEl.innerHTML = chips.map((text, i) => '<span class="focus-chip ' + (i === 0 ? 'alt' : 'soft') + '">' + escapeHtml(text) + '</span>').join('');
+      focusEl.hidden = !chips.length;
 
       const pills = [];
       if (state.status === 'failed') pills.push('Failed');
