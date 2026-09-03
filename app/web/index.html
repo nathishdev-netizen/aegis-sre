@@ -735,16 +735,19 @@
   </div>
 
   <script>
+      // Field names must match what the server sends. They were camelCase here while
+      // the API is snake_case, so these placeholders were never replaced by real data
+      // and the page showed "Waiting for logs" with a run already in progress.
       const state = {
-      currentStage: 'idle',
-      currentLabel: 'Waiting for logs',
+      current_stage: 'idle',
+      current_label: '',
       status: 'idle',
       running: false,
       confidence: 0,
-      summary: 'No logs yet.',
-      reason: 'Awaiting execution events.',
-      possibleCauses: [],
-      suggestedFixes: [],
+      summary: '',
+      reason: '',
+      possible_causes: [],
+      suggested_fixes: [],
       timeline: [],
       logLines: [],
       stages: [],
@@ -772,7 +775,7 @@
       const el = document.getElementById('topline');
       el.innerHTML = [
         badge('Status: ' + state.status.toUpperCase()),
-        badge('Current: ' + (state.current_label || 'Waiting for logs')),
+        badge('Current: ' + (state.current_label || (state.metrics && state.metrics.total_events ? 'running' : 'no source attached'))),
         badge('Confidence: ' + state.confidence + '%'),
         badge('Events: ' + state.metrics.total_events),
         badge('Retries: ' + state.metrics.retries)
