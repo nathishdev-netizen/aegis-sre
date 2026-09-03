@@ -68,6 +68,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(html)
             return
 
+        if self.path == "/api/build":
+            # The dashboard is edited while the agent runs. A page that never notices
+            # leaves the user hard-refreshing to see fixes - so it checks this instead.
+            write_json(self, HTTPStatus.OK, {"build": str(int(INDEX_HTML.stat().st_mtime))})
+            return
+
         if self.path == "/api/state":
             write_json(self, HTTPStatus.OK, {"state": runtime.snapshot()})
             return

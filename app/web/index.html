@@ -1237,6 +1237,22 @@
         body: JSON.stringify({ port: Number(port) })
       });
     }
+    // Reload when the dashboard's own code changes on disk. Without this the user
+    // has to know to hard-refresh, and silently sees a stale page instead of fixes.
+    (async () => {
+      let build = null;
+      const check = async () => {
+        try {
+          const r = await fetch('/api/build', { cache: 'no-store' });
+          const { build: current } = await r.json();
+          if (build && current !== build) location.reload();
+          build = current;
+        } catch (e) { /* agent restarting; try again next tick */ }
+      };
+      await check();
+      setInterval(check, 2000);
+    })();
+
     const source = new EventSource('/events');
     source.addEventListener('state', (event) => {
       const payload = JSON.parse(event.data);
