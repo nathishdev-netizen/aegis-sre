@@ -24,11 +24,22 @@ OWN_PID = os.getpid()
 
 # Ports that are never useful to attach to, even though they are listening.
 IGNORED_PORTS = frozenset({
-    5432,   # postgres
-    3306,   # mysql
-    6379,   # redis
-    27017,  # mongodb
-    11211,  # memcached
+    5432, 5433,   # postgres
+    3306,         # mysql
+    6379,         # redis
+    27017,        # mongodb
+    11211,        # memcached
+    9200, 9300,   # elasticsearch
+    2379,         # etcd
+    4040,         # ngrok inspector
+    7000, 5000,   # macOS AirPlay / ControlCenter
+})
+
+# Processes that are infrastructure, whatever port they hold. A database writes a log
+# file, so a port click on one "succeeds" and floods the dashboard with noise.
+IGNORED_PROCESSES = frozenset({
+    "postgres", "postmaster", "mysqld", "redis-server", "mongod", "memcached",
+    "rapportd", "controlce", "controlcenter", "ngrok",
 })
 
 
@@ -57,7 +68,10 @@ def is_plausible_source(item: dict[str, Any]) -> bool:
     """Whether a listening port is worth probing for logs at all."""
     if is_self(item):
         return False
-    return int(item.get("port", 0) or 0) not in IGNORED_PORTS
+    if int(item.get("port", 0) or 0) in IGNORED_PORTS:
+        return False
+    name = str(item.get("process", "")).lower()
+    return not any(name.startswith(p) for p in IGNORED_PROCESSES)
 
 
 def rank_candidates(ports: list[dict[str, Any]]) -> list[dict[str, Any]]:

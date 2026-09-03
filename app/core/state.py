@@ -461,7 +461,10 @@ class RuntimeState:
     def refresh_ports(self) -> list[dict[str, Any]]:
         # Never offer or attach to ourselves: reading our own SSE feed makes the
         # agent parse its own state JSON and invent failures that never happened.
-        ports = [item for item in discover_listening_ports() if not self._is_self(item)]
+        # Filter the list the UI OFFERS, not just auto-attach candidates. Postgres is
+        # listening and writes a log file, so clicking it "worked" - and filled the
+        # dashboard with 2600 lines of database noise instead of the user's app.
+        ports = [item for item in discover_listening_ports() if sources.is_plausible_source(item)]
         auto_attach_port = self._pick_auto_port(ports) if settings.auto_attach else None
         with self._lock:
             self._snapshot.ports = ports

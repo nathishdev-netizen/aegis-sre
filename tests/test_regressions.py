@@ -501,6 +501,19 @@ def test_upstream_5xx_is_diagnosed():
     ]:
         assert infer_cause(line) is not None, f"no cause found for: {line}"
 
+
+def test_infrastructure_is_not_offered_as_a_source():
+    """Postgres was listed as a clickable source. It listens AND writes a log file, so
+    clicking it "worked" - and filled the dashboard with 2600 lines of database noise
+    instead of the user's own application."""
+    ports = [
+        {"pid": 1, "port": 5432, "process": "postgres"},
+        {"pid": 2, "port": 6003, "process": "Python"},
+        {"pid": 3, "port": 7000, "process": "ControlCe"},
+    ]
+    offered = [p for p in ports if sources.is_plausible_source(p)]
+    assert [p["port"] for p in offered] == [6003], "only real app ports may be offered"
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():

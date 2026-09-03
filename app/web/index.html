@@ -772,7 +772,7 @@
       const el = document.getElementById('topline');
       el.innerHTML = [
         badge('Status: ' + state.status.toUpperCase()),
-        badge('Current: ' + state.currentLabel),
+        badge('Current: ' + (state.current_label || 'Waiting for logs')),
         badge('Confidence: ' + state.confidence + '%'),
         badge('Events: ' + state.metrics.total_events),
         badge('Retries: ' + state.metrics.retries)
@@ -1167,8 +1167,8 @@
       });
     }
     function renderLists() {
-      document.getElementById('causes').innerHTML = state.possibleCauses.length ? state.possibleCauses.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No causes inferred yet.</li>';
-      document.getElementById('fixes').innerHTML = state.suggestedFixes.length ? state.suggestedFixes.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No fixes suggested yet.</li>';
+      document.getElementById('causes').innerHTML = (state.possible_causes || []).length ? (state.possible_causes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No causes inferred yet.</li>';
+      document.getElementById('fixes').innerHTML = (state.suggested_fixes || []).length ? (state.suggested_fixes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No fixes suggested yet.</li>';
     }
     function renderTimeline() {
       const timeline = document.getElementById('timeline');
@@ -1176,7 +1176,7 @@
     }
     function renderLogs() {
       const logs = document.getElementById('logs');
-      logs.innerHTML = state.logLines.length ? state.logLines.slice().reverse().map((item) => '<div class="logline"><div class="time">' + escapeHtml(item.timestamp) + '</div><div class="level ' + escapeHtml(item.level) + '">' + escapeHtml(item.level) + '</div><div class="text">' + escapeHtml(item.message) + '</div></div>').join('') : '<div class="muted">No logs yet. Paste a line or run the demo stream.</div>';
+      logs.innerHTML = (state.log_lines || []).length ? (state.log_lines || []).slice().reverse().map((item) => '<div class="logline"><div class="time">' + escapeHtml(item.timestamp) + '</div><div class="level ' + escapeHtml(item.level) + '">' + escapeHtml(item.level) + '</div><div class="text">' + escapeHtml(item.message) + '</div></div>').join('') : '<div class="muted">No logs yet. Paste a line or run the demo stream.</div>';
     }
     function escapeHtml(value) {
       return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
