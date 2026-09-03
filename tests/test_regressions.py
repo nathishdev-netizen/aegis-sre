@@ -572,6 +572,43 @@ def test_last_source_is_remembered_across_restarts():
         elif session.exists():
             session.unlink()
 
+
+def test_a_new_run_clears_the_previous_verdict():
+    """A successful call that followed a failed one still reported the failure: the
+    reset only ran for a stage literally named "request", so a voice gateway logging
+    "CALL START" never began a new run and inherited the old verdict forever."""
+    runtime = RuntimeState()
+    runtime.ingest_line("12:18:41 INFO [api] CALL START call=aaa from=111", source="test")
+    runtime.ingest_line("12:18:41 ERROR [identity] Lookup FAILED - connection refused", source="test")
+    assert runtime.snapshot()["status"] == "failed"
+
+    # A new call begins. Its verdict must be its own.
+    runtime.ingest_line("13:26:47 INFO [api] CALL START call=bbb from=222", source="test")
+    runtime.ingest_line("13:26:47 INFO [identity] Resolved 222 - allowed=True", source="test")
+
+    snapshot = runtime.snapshot()
+    assert snapshot["status"] != "failed", "a new run must not inherit the last failure"
+    assert snapshot["metrics"]["failures"] == 0
+    assert snapshot["possible_causes"] == []
+
+
+def test_model_context_is_scoped_to_the_latest_run():
+    """Handed 200 lines spanning five calls, the model described an old failure while
+    the newest call had succeeded. Telling it to focus was not enough - the context
+    itself has to be cut."""
+    from app.core.llm import _latest_run
+
+    logs = [
+        {"message": "[api] CALL START call=aaa"},
+        {"message": "[identity] Lookup FAILED"},
+        {"message": "[api] CALL END call=aaa"},
+        {"message": "[api] CALL START call=bbb"},
+        {"message": "[identity] Resolved - allowed=True"},
+    ]
+    latest = _latest_run(logs)
+    assert len(latest) == 2, "context must start at the most recent run boundary"
+    assert "CALL START call=bbb" in latest[0]["message"]
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():

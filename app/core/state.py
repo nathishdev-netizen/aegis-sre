@@ -18,6 +18,7 @@ from app.core import llm, sources
 from app.core.discovery import discover_listening_ports
 from app.core.parser import (
     detect_branch,
+    is_run_start,
     is_continuation,
     strip_ansi,
     unwrap_payload,
@@ -1027,10 +1028,26 @@ class RuntimeState:
                 self._snapshot.metrics.setdefault("skipped", 0)
                 self._snapshot.metrics["skipped"] += 1
 
+            # A new run starts here, whatever this project calls it. Checked BEFORE the
+            # transition branch and regardless of current status: a successful call that
+            # followed a failed one kept reporting the failure, because the reset only
+            # ran for a stage named "request" and only when status was already terminal.
+            if is_run_start(parsed["message"]):
+                self._snapshot.status = "running"
+                self._snapshot.reason = "Run in progress."
+                self._snapshot.possible_causes = []
+                self._snapshot.suggested_fixes = []
+                self._snapshot.evidence = []
+                self._snapshot.confidence = 0
+                self._snapshot.interpretation = "patterns"
+                # Lane statuses describe the previous run; a fresh run redraws them.
+                self._snapshot.graph["lanes"] = []
+                self._snapshot.metrics["failures"] = 0
+                self._snapshot.metrics["retries"] = 0
+                self._snapshot.metrics["skipped"] = 0
+
             if transition:
-                # A new request starts a new run: clear the previous cycle's verdict so
-                # a stale "completed successfully" cannot sit next to a fresh failure.
-                if transition["stage"] == "request" and self._snapshot.status in {"failed", "success"}:
+                if False:
                     self._snapshot.status = "running"
                     self._snapshot.reason = "Run in progress."
                     self._snapshot.possible_causes = []

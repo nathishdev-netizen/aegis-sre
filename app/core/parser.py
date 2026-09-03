@@ -185,8 +185,24 @@ COMPONENT_RULES = [
 ]
 
 
+# A run boundary is whatever THIS project calls the start of a unit of work. Only
+# "request received" was recognised, so a voice gateway logging "CALL START" never
+# began a new run - and every call inherited the previous one's verdict.
+RUN_START = re.compile(
+    r"\b(request received|incoming request|received request|call start|"
+    r"job start(?:ed|ing)?|task start(?:ed|ing)?|run start(?:ed|ing)?|"
+    r"starting (?:run|job|task|request)|invocation start)\b",
+    re.I,
+)
+
+
+def is_run_start(message: str) -> bool:
+    """Whether this line opens a new unit of work."""
+    return bool(RUN_START.search(message or ""))
+
+
 TRANSITIONS = [
-    (re.compile(r"request received|incoming request|received request", re.I), {"stage": "request", "status": "running", "label": "Request received"}),
+    (RUN_START, {"stage": "request", "status": "running", "label": "Run started"}),
     (re.compile(r"auth|authentication|authorized|login", re.I), {"stage": "auth", "status": "completed", "label": "Authentication passed"}),
     (re.compile(r"parse|parsing|extract", re.I), {"stage": "parse", "status": "completed", "label": "Input parsed"}),
     (re.compile(r"retrieve|retriev", re.I), {"stage": "retrieve", "status": "running", "label": "Retrieval in progress"}),

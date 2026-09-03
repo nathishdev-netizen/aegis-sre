@@ -68,10 +68,31 @@ def status() -> dict[str, Any]:
     return {"mode": "llm", "available": True, "detail": f"Interpreting with {settings.model}."}
 
 
+RUN_START_RE = re.compile(
+    r"\b(request received|incoming request|received request|call start|"
+    r"job start(?:ed|ing)?|task start(?:ed|ing)?|run start(?:ed|ing)?|"
+    r"starting (?:run|job|task|request)|invocation start)\b",
+    re.I,
+)
+
+
+def _latest_run(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Trim to the most recent run, if the logs mark where one begins.
+
+    Telling the model to "describe the latest run" is not enough when it is handed
+    200 lines spanning five calls - it described an old failure while the newest call
+    had succeeded. Cutting the context is what actually scopes the answer.
+    """
+    for index in range(len(logs) - 1, -1, -1):
+        if RUN_START_RE.search(str(logs[index].get("message", ""))):
+            return logs[index:]
+    return logs
+
+
 def _run_context(snapshot: dict[str, Any]) -> str:
     """Compact, factual view of the run. Only observed data - no derived guesses."""
     timeline = snapshot.get("timeline", [])[-settings.llm_timeline_window:]
-    logs = snapshot.get("log_lines", [])[-settings.llm_log_window:]
+    logs = _latest_run(snapshot.get("log_lines", []))[-settings.llm_log_window:]
     stages = [s for s in snapshot.get("stages", []) if s.get("seen")]
 
     lines = [
