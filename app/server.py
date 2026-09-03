@@ -55,6 +55,17 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/":
+            # Redirect to a build-stamped URL. A tab holding pre-auto-reload code has
+            # no way to notice new code exists, and a plain refresh may serve the
+            # cached copy - so the URL itself changes when the dashboard changes.
+            build = str(int(INDEX_HTML.stat().st_mtime))
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", f"/?b={build}")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+
+        if self.path.startswith("/?b="):
             html = read_file(INDEX_HTML).encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
