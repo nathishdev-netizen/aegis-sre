@@ -115,25 +115,6 @@ def test_redaction_runs_before_fingerprinting():
         fingerprinter.add(redactor.redact(f"[api] CALL START from={number}").text)
     assert fingerprinter.template_count == 1
 
-
-if __name__ == "__main__":
-    failures = 0
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            try:
-                fn()
-                print(f"  PASS  {name}")
-            except AssertionError as exc:
-                failures += 1
-                print(f"  FAIL  {name}: {exc}")
-            except Exception as exc:  # noqa: BLE001
-                failures += 1
-                print(f"  ERROR {name}: {exc.__class__.__name__}: {exc}")
-    print(f"\n{'FAILED' if failures else 'All Phase 0 tests passed'}"
-          f"{f' ({failures} failing)' if failures else ''}")
-    sys.exit(1 if failures else 0)
-
-
 # --- Normalizer folding (Phase 0b) -------------------------------------------
 
 def _events(lines, **kw):
@@ -166,7 +147,12 @@ def test_dump_title_starts_its_own_event():
         "2026-09-01 19:00:47 INFO voice: │  BillDuration = 60",
     ])
     assert len(events) >= 2
-    assert events[1].text_redacted.startswith("┌─ PLIVO")
+    # The title must live in its own event (with its rows folded under it),
+    # not inside the previous one. Its logger scaffold may legitimately
+    # precede the ┌ character, so assert containment, not prefix.
+    assert "┌─ PLIVO" not in events[0].text_redacted
+    assert "┌─ PLIVO" in events[1].text_redacted
+    assert events[1].fields.get("folded_lines") == 1
 
 
 def test_template_names_the_head_not_the_body():
@@ -200,3 +186,21 @@ def test_normalizer_redacts_folded_bodies_too():
     ])
     assert "919449248040" not in events[0].text_redacted
     assert events[0].redactions.get("PHONE") == 1
+
+
+if __name__ == "__main__":
+    failures = 0
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print(f"  PASS  {name}")
+            except AssertionError as exc:
+                failures += 1
+                print(f"  FAIL  {name}: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                failures += 1
+                print(f"  ERROR {name}: {exc.__class__.__name__}: {exc}")
+    print(f"\n{'FAILED' if failures else 'All Phase 0 tests passed'}"
+          f"{f' ({failures} failing)' if failures else ''}")
+    sys.exit(1 if failures else 0)
