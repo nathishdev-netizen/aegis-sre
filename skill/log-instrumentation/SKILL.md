@@ -325,6 +325,40 @@ service.
 
 ---
 
+## Step 6 - Make the run's OUTCOME loggable, not just its steps
+
+Steps say what the program did. The outcome says whether it was worth doing -
+and they are different facts. A voice call that greets, prompts, and hangs up
+with `NORMAL_CLEARING` logged every step perfectly and achieved nothing; on
+real data, half of one service's runs turned out to be exactly this shape, and
+no error-based tool could see it because there was no error.
+
+Three lines make a run's outcome judgeable. Add them (additively, as always):
+
+1. **A purpose line** - emitted only when the run does the thing it exists to
+   do, worded differently from "finished":
+
+   ```
+   ORDER COMPLETED order=8412 total=3 items      <- purpose achieved
+   ORDER FLOW ENDED order=8412                    <- merely finished
+   ```
+
+   If the run can finish without this line appearing, an analyzer can now
+   tell a hollow run from a good one. If the purpose line always appears
+   whenever the flow ends, it is a step line wearing an outcome's name -
+   reword until the two can differ.
+
+2. **An outcome id** - the same `order=`/`call=`/`request_id=` the run opened
+   with, on the purpose line, so the outcome joins the rest of its story.
+
+3. **A denial line for the deliberate no** - when the run correctly refuses
+   ("card declined", "caller not authorised"), say so at WARN with the
+   reason. A refusal is an achieved outcome; silence makes it look hollow.
+
+The test for this step: pick one successful run and one that went nowhere,
+and read only their logs. If you cannot say which was which inside ten
+seconds, the outcome is not loggable yet.
+
 ## Anti-patterns
 
 | Do not | Instead |

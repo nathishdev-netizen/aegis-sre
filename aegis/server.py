@@ -30,6 +30,7 @@ from aegis.l4_understanding.conformance import ConformanceEngine  # noqa: E402
 from aegis.l4_understanding.flowspec import (  # noqa: E402
     FlowMiner, FlowSpec, synthesize_critical)
 from aegis.l7_reasoning.explainer import Explainer  # noqa: E402
+from aegis.l7_reasoning.gaps import GapReporter  # noqa: E402
 from aegis.l7_reasoning.governance import Budget  # noqa: E402
 from aegis.l7_reasoning.router import ModelRouter  # noqa: E402
 from aegis.pipeline import Pipeline  # noqa: E402
@@ -123,6 +124,15 @@ class AegisApp:
             incident["precedents"] = self.pipeline.memory.similar(incident, top=2)
 
         purpose_marked = bool(spec and any(s.critical for s in spec.steps))
+        spec_view = {
+            "exists": spec is not None,
+            "purpose_marked": purpose_marked,
+        }
+        gaps = GapReporter().report(
+            stats=stats, verdicts=verdicts, spec=spec_view,
+            incidents=incidents,
+            timed_components={op["component"] for op in []},
+        )
         return {
             "project": self.project,
             "stats": stats,
@@ -144,6 +154,7 @@ class AegisApp:
                 "steps": [s.to_dict() for s in spec.steps] if spec else [],
                 "path": str(self._spec_path()),
             },
+            "gaps": gaps,
             "model": {
                 "available": self.router.available(),
                 "calls_made": self.router.budget.calls_made,
