@@ -45,6 +45,9 @@ PROVIDERS = {
 ROUTES = {
     "explain_incident": ("groq", "openai/gpt-oss-120b"),
     "answer_question": ("groq", "openai/gpt-oss-120b"),
+    "synthesize_flow": ("groq", "openai/gpt-oss-120b"),
+    "write_reproducer": ("groq", "openai/gpt-oss-120b"),
+    "write_patch": ("groq", "openai/gpt-oss-120b"),
 }
 
 
