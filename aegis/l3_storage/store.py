@@ -69,6 +69,30 @@ class HotRing:
         return len(self._items)
 
 
+class TraceIndex:
+    """trace_id -> its events, for fast assembly (the doc's C4 sub-component).
+    Bounded: conformance needs recent complete traces, not history."""
+
+    def __init__(self, max_traces: int = 50) -> None:
+        self.max_traces = max_traces
+        self._traces: dict[str, list[Event]] = {}
+
+    def add(self, event: Event) -> None:
+        if not event.trace_id:
+            return
+        bucket = self._traces.setdefault(event.trace_id, [])
+        bucket.append(event)
+        while len(self._traces) > self.max_traces:
+            oldest = next(iter(self._traces))
+            del self._traces[oldest]
+
+    def traces(self) -> dict[str, list[Event]]:
+        return dict(self._traces)
+
+    def __len__(self) -> int:
+        return len(self._traces)
+
+
 class ProjectStore:
     """One project's derived data, in that project's own database file."""
 

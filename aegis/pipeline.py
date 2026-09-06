@@ -14,7 +14,7 @@ from typing import Any
 from aegis.l1_ingestion.file_collector import FileCollector
 from aegis.l2_normalization.normalizer import Normalizer
 from aegis.l2_normalization.tracelinker import TraceLinker
-from aegis.l3_storage.store import HotRing, ProjectStore
+from aegis.l3_storage.store import HotRing, ProjectStore, TraceIndex
 from aegis.l5_detection.detectors import DetectionEngine
 from aegis.l6_correlation.incidents import IncidentManager
 
@@ -28,6 +28,7 @@ class Pipeline:
         self.linker = TraceLinker()
         self.store = ProjectStore(project, root=store_root)
         self.hot = HotRing()
+        self.trace_index = TraceIndex()
         self.detect = DetectionEngine(service=project)
         self.incidents = IncidentManager()
 
@@ -76,5 +77,6 @@ class Pipeline:
         self.linker.link(event)
         self.store.record_event(event)
         self.hot.add(event)
+        self.trace_index.add(event)
         for signal in self.detect.observe(event):
             self.incidents.observe(signal, self.detect.last_now)
