@@ -44,6 +44,20 @@ CREATE TABLE IF NOT EXISTS template_minutes (
     count       INTEGER DEFAULT 0,
     PRIMARY KEY (template_id, minute)
 );
+-- C15: resolved incidents as retrievable precedents. Signature and hypothesis
+-- are JSON; everything here was redacted at ingest.
+CREATE TABLE IF NOT EXISTS incident_archive (
+    id           TEXT PRIMARY KEY,
+    opened_at    TEXT DEFAULT '',
+    resolved_at  TEXT DEFAULT '',
+    severity     TEXT DEFAULT '',
+    signature    TEXT DEFAULT '',
+    cause        TEXT DEFAULT '',
+    hypothesis   TEXT DEFAULT '',
+    outcome      TEXT DEFAULT '',
+    outcome_note TEXT DEFAULT '',
+    archived_at  TEXT DEFAULT ''
+);
 """
 
 
@@ -169,6 +183,34 @@ class ProjectStore:
             row = self._conn.execute(
                 "SELECT COALESCE(SUM(count), 0) AS n FROM templates").fetchone()
         return int(row["n"])
+
+    # -- C15 incident archive ------------------------------------------------
+
+    def archive_incident(self, record: dict[str, Any]) -> None:
+        columns = ("id", "opened_at", "resolved_at", "severity", "signature",
+                   "cause", "hypothesis", "outcome", "outcome_note", "archived_at")
+        with self._lock:
+            self._conn.execute(
+                f"INSERT OR REPLACE INTO incident_archive ({','.join(columns)})"
+                f" VALUES ({','.join('?' for _ in columns)})",
+                tuple(str(record.get(c, "")) for c in columns),
+            )
+            self._conn.commit()
+
+    def set_incident_outcome(self, incident_id: str, outcome: str, note: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE incident_archive SET outcome = ?, outcome_note = ?"
+                " WHERE id = ?", (outcome, note, incident_id))
+            self._conn.commit()
+
+    def archived_incidents(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self._lock:
+            self._conn.commit()
+            rows = self._conn.execute(
+                "SELECT * FROM incident_archive ORDER BY archived_at DESC, id DESC"
+                " LIMIT ?", (limit,)).fetchall()
+        return [dict(row) for row in rows]
 
     def close(self) -> None:
         with self._lock:

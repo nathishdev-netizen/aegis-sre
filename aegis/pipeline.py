@@ -17,6 +17,7 @@ from aegis.l2_normalization.tracelinker import TraceLinker
 from aegis.l3_storage.store import HotRing, ProjectStore, TraceIndex
 from aegis.l5_detection.detectors import DetectionEngine
 from aegis.l6_correlation.incidents import IncidentManager
+from aegis.l6_correlation.memory import IncidentMemory
 
 
 class Pipeline:
@@ -31,6 +32,8 @@ class Pipeline:
         self.trace_index = TraceIndex()
         self.detect = DetectionEngine(service=project)
         self.incidents = IncidentManager()
+        self.memory = IncidentMemory(self.store)
+        self.incidents.on_resolve = self.memory.remember
 
     def run_once(self) -> int:
         """Process every line currently available. Returns events committed."""

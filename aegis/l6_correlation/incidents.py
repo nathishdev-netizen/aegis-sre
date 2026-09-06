@@ -91,6 +91,10 @@ class IncidentManager:
 
     def __init__(self) -> None:
         self.incidents: list[Incident] = []
+        # Called with the incident dict when one resolves - how memory (C15)
+        # learns without this layer knowing memory exists. A callback failure
+        # must never break incident handling.
+        self.on_resolve = None
         # P4 signals that matched no incident: visible, but they page nobody.
         self.notes: list[Signal] = []
         self._ids = itertools.count(1)
@@ -227,6 +231,11 @@ class IncidentManager:
                     "detail": f"no further signals for {self.RESOLVE_QUIET_S:.0f}s"
                               " - sustained recovery",
                 })
+                if self.on_resolve is not None:
+                    try:
+                        self.on_resolve(incident.to_dict())
+                    except Exception:
+                        pass
 
     # -- reporting -----------------------------------------------------------
 

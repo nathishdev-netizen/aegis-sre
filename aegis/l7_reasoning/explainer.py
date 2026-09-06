@@ -28,6 +28,7 @@ _PROMPT = """You are explaining one incident from a production log to the engine
 
 INCIDENT (signals were produced by statistical detectors, not by you):
 {incident}
+{precedents}
 
 Reply with ONLY a JSON object:
 {{
@@ -41,7 +42,22 @@ Reply with ONLY a JSON object:
 Rules:
 - evidence_refs must be copied exactly from the evidence lines given. Do not paraphrase them.
 - If the evidence cannot settle the cause, say so in the statement and use confidence "low".
-- Never invent services, numbers, or errors that do not appear above."""
+- Never invent services, numbers, or errors that do not appear above.
+- PRECEDENTS, if present, are hints from past incidents - not conclusions. Systems change. Use one only if THIS incident's evidence is consistent with it, and say when you did."""
+
+
+def _precedent_block(precedents: list[dict[str, Any]] | None) -> str:
+    if not precedents:
+        return ""
+    lines = ["\nPRECEDENTS (past incidents with a similar signature - hints, not conclusions):"]
+    for p in precedents[:3]:
+        lines.append(
+            f"- {p.get('id')} (similarity {p.get('similarity')}): "
+            f"cause line then: {p.get('cause', '')[:90]!r}; "
+            f"diagnosis then: {p.get('diagnosis_then') or 'none recorded'}; "
+            f"outcome: {p.get('outcome')}"
+            + (f" ({p.get('outcome_note')})" if p.get("outcome_note") else ""))
+    return "\n".join(lines)
 
 
 def _normalise(text: str) -> str:
@@ -75,7 +91,8 @@ class Explainer:
         self.router = router or ModelRouter()
 
     def explain(self, incident: dict[str, Any], provider: str | None = None,
-                model: str | None = None) -> dict[str, Any] | None:
+                model: str | None = None,
+                precedents: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
         """One incident in, one grounded Hypothesis out. None when the model
         layer is unavailable - everything below keeps working (P8)."""
         evidence = list(incident.get("evidence") or [])
@@ -100,7 +117,8 @@ class Explainer:
         raw = self.router.chat(
             "explain_incident",
             [{"role": "user",
-              "content": _PROMPT.format(incident=json.dumps(payload, indent=1))}],
+              "content": _PROMPT.format(incident=json.dumps(payload, indent=1),
+                                        precedents=_precedent_block(precedents))}],
             purpose=f"explain {incident.get('id')}",
             provider=provider, model=model,
         )
@@ -128,4 +146,5 @@ class Explainer:
             "immediate_action": str(parsed.get("immediate_action", "")).strip(),
             "durable_fix": str(parsed.get("durable_fix", "")).strip(),
             "model_used": model or "routed",
+            "precedents_considered": [p.get("id") for p in (precedents or [])],
         }
