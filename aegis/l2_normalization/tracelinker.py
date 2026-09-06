@@ -39,8 +39,18 @@ _KEY_PATTERNS = (
     re.compile(r"\b(?:request|correlation|session)[_-]?id[=:]\s*([\w-]{8,})", re.I),
 )
 
-# A session is over when its owner says so...
-_CLOSERS = re.compile(r"\b(?:CALL END|hangup|session (?:closed|ended)|disconnected)\b", re.I)
+# Session boundaries, learned from the project's own vocabulary rather than
+# hardcoded. The first attempt said "CALL END" - the reference project's word -
+# and every other project's sessions stayed open forever. The second attempt
+# said any "END" - and the reference project's "TURN END" closed the whole
+# call mid-conversation. The rule that survives both: an opener like
+# "CALL START" or "ORDER START" names the session's own noun, and only that
+# noun's END closes it. Hard closers (hangup, disconnected) close regardless,
+# and a session opened without a named noun accepts any end-word.
+_OPENER = re.compile(r"\b(\w+)\s+START(?:ED)?\b", re.I)
+_NOUN_END = re.compile(r"\b(\w+)\s+END(?:ED)?\b", re.I)
+_HARD_CLOSERS = re.compile(r"\b(?:hangup|hung up|disconnected)\b", re.I)
+_GENERIC_END = re.compile(r"\b(?:end(?:ed)?|closed|completed?|finished)\b", re.I)
 # ...or when it has been silent this long. Without a timeout, a crash that
 # never logs its END would leave the session open forever and every later
 # unkeyed line would be inferred into a call that finished an hour ago.
@@ -60,6 +70,8 @@ def _epoch(ts: str) -> float | None:
 class _Session:
     key: str
     last_seen: float | None
+    # The session's own word for itself ("CALL", "ORDER"), from its opener.
+    noun: str = ""
 
 
 class TraceLinker:
@@ -82,11 +94,18 @@ class TraceLinker:
             event.trace_id = key
             event.correlation_basis = CORRELATION_EXTRACTED
             self.extracted += 1
-            if _CLOSERS.search(event.text_redacted):
+            session = self._open.get(key)
+            if session is None:
+                session = _Session(key=key, last_seen=now)
+                self._open[key] = session
+            else:
+                session.last_seen = now or session.last_seen
+            opener = _OPENER.search(event.text_redacted)
+            if opener and not session.noun:
+                session.noun = opener.group(1).upper()
+            if self._closes(event.text_redacted, session):
                 # The closing line itself still belongs to the session.
                 self._open.pop(key, None)
-            else:
-                self._open[key] = _Session(key=key, last_seen=now)
             return event
 
         if len(self._open) == 1:
@@ -101,6 +120,15 @@ class TraceLinker:
             event.correlation_basis = CORRELATION_NONE
             self.unattributed += 1
         return event
+
+    @staticmethod
+    def _closes(text: str, session: _Session) -> bool:
+        if _HARD_CLOSERS.search(text):
+            return True
+        if session.noun:
+            match = _NOUN_END.search(text)
+            return bool(match and match.group(1).upper() == session.noun)
+        return bool(_GENERIC_END.search(text))
 
     def _extract_key(self, text: str) -> str | None:
         for pattern in _KEY_PATTERNS:
