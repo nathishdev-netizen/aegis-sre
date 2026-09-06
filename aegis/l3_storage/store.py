@@ -198,10 +198,12 @@ class ProjectStore:
             self._conn.commit()
 
     def set_incident_outcome(self, incident_id: str, outcome: str, note: str) -> None:
+        # Accepts the bare incident id or the dated archive key.
         with self._lock:
             self._conn.execute(
                 "UPDATE incident_archive SET outcome = ?, outcome_note = ?"
-                " WHERE id = ?", (outcome, note, incident_id))
+                " WHERE id = ? OR id LIKE ? || '@%'",
+                (outcome, note, incident_id, incident_id))
             self._conn.commit()
 
     def archived_incidents(self, limit: int = 200) -> list[dict[str, Any]]:

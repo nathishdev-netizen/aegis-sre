@@ -92,8 +92,12 @@ class IncidentMemory:
     def remember(self, incident: dict[str, Any],
                  hypothesis: dict[str, Any] | None = None) -> None:
         cause_evidence = (incident.get("evidence") or [""])[0]
+        # Session counters restart at INC-1, so the bare id would make today's
+        # INC-1 OVERWRITE yesterday's precedent. The archive key carries the
+        # opening time; replaying the same file replaces the same rows (no
+        # duplicates) while a new day's incidents archive alongside the old.
         self.store.archive_incident({
-            "id": str(incident.get("id", "")),
+            "id": f"{incident.get('id', '')}@{incident.get('opened_at', '')}",
             "opened_at": incident.get("opened_at", ""),
             "resolved_at": incident.get("resolved_at") or "",
             "severity": incident.get("severity", ""),
@@ -120,10 +124,10 @@ class IncidentMemory:
 
     def similar(self, incident: dict[str, Any], top: int = 3) -> list[dict[str, Any]]:
         target = SignatureExtractor.extract(incident)
-        own_id = str(incident.get("id", ""))
+        own_key = f"{incident.get('id', '')}@{incident.get('opened_at', '')}"
         matches = []
         for row in self.store.archived_incidents():
-            if row["id"] == own_id:
+            if row["id"] == own_key:
                 continue
             try:
                 signature = json.loads(row["signature"] or "{}")
@@ -136,7 +140,8 @@ class IncidentMemory:
                 except ValueError:
                     hypothesis = {}
                 matches.append({
-                    "id": row["id"],
+                    "id": row["id"].split("@")[0],
+                    "key": row["id"],
                     "similarity": score,
                     "opened_at": row["opened_at"],
                     "severity": row["severity"],

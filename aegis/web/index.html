@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aegis</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#242c37; --text:#dbe3ec; --dim:#8b98a8;
+    --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; --purple:#bc8cff;
+  }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  h1{font-size:19px;margin:0} h1 small{color:var(--dim);font-weight:400}
+  .funnel{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
+  .funnel .cell{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:8px 14px;text-align:center}
+  .cell b{display:block;font-size:19px} .cell span{color:var(--dim);font-size:11px}
+  .funnel .arrow{align-self:center;color:var(--dim)}
+  h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+    margin:24px 0 10px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+  .verdict{border-left:4px solid var(--dim)}
+  .verdict.achieved{border-left-color:var(--green)}
+  .verdict.hollow{border-left-color:var(--purple)}
+  .verdict.failed{border-left-color:var(--red)}
+  .verdict.degraded{border-left-color:var(--amber)}
+  .verdict .tag{font-weight:700;font-size:12px;letter-spacing:.06em}
+  .verdict.achieved .tag{color:var(--green)} .verdict.hollow .tag{color:var(--purple)}
+  .verdict.failed .tag{color:var(--red)} .verdict.degraded .tag{color:var(--amber)}
+  .verdict p{margin:6px 0 0;color:var(--dim);font-size:12.5px}
+  .muted{color:var(--dim)} .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .inc-head{display:flex;gap:10px;align-items:center;cursor:pointer}
+  .sev{font-size:11px;font-weight:700;border-radius:5px;padding:1px 7px}
+  .sev.P2{background:#3d1d1d;color:var(--red)} .sev.P3{background:#3b2f14;color:var(--amber)}
+  .sev.P1{background:#4b1414;color:#ff7b72} .sev.P4{background:#20262e;color:var(--dim)}
+  .status{font-size:11px;color:var(--dim)}
+  .members{margin:10px 0 0;padding:0;list-style:none}
+  .members li{padding:3px 0;border-top:1px dashed var(--line);font-size:12.5px}
+  .cause{color:var(--blue)}
+  .why{margin:8px 0 0;color:var(--dim);font-size:12px}
+  button{background:#21262d;border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12.5px}
+  button:hover{border-color:var(--blue)} button:disabled{opacity:.5;cursor:default}
+  .hyp{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+  .hyp .conf{font-size:11px;font-weight:700}
+  .hyp .grounded{color:var(--green)} .hyp .unverified{color:var(--red)}
+  .hyp .ev{color:var(--dim);font-size:12px;margin:2px 0}
+  .prec{margin-top:8px;font-size:12px;color:var(--dim);border-top:1px dashed var(--line);padding-top:8px}
+  .steps{max-height:280px;overflow:auto}
+  .steps div{padding:2px 0;font-size:12.5px;border-top:1px dashed var(--line)}
+  .crit{color:var(--purple);font-weight:700}
+  .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  footer{margin:26px 0 8px;color:var(--dim);font-size:12px}
+  .pill{background:#20262e;border-radius:99px;padding:2px 10px;font-size:11.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Aegis <small id="project"></small></h1>
+    <span class="pill" id="model"></span>
+    <span class="pill" id="updated"></span>
+  </header>
+
+  <div class="funnel" id="funnel"></div>
+
+  <h2>Run verdicts — did each run achieve anything?</h2>
+  <div class="vgrid" id="verdicts"></div>
+  <div class="muted" id="verdict-note" style="margin-top:8px;font-size:12.5px"></div>
+
+  <h2>Incidents</h2>
+  <div id="incidents"></div>
+
+  <div class="grid">
+    <div>
+      <h2>Flow spec <span class="muted" style="text-transform:none">(human-editable file)</span></h2>
+      <div class="card">
+        <div class="bar">
+          <span class="muted mono" id="spec-path" style="font-size:11px"></span>
+          <button id="mark-btn">Mark purpose steps (1 model call)</button>
+        </div>
+        <div class="steps" id="steps"></div>
+      </div>
+    </div>
+    <div>
+      <h2>Recurring patterns</h2>
+      <div class="card" id="patterns"></div>
+      <h2>Quiet notes <span class="muted" style="text-transform:none">(P4 — paging nobody)</span></h2>
+      <div class="card" id="notes"></div>
+    </div>
+  </div>
+
+  <footer>Read-only on your log · data in ~/.aegis/projects/ · detection is arithmetic,
+    the model only explains, and only when you click.</footer>
+</div>
+
+<script>
+"use strict";
+
+function el(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+var open = {};        // incident id -> expanded?
+var explaining = {};  // incident id -> in-flight?
+
+function renderFunnel(funnel) {
+  var parts = [];
+  for (var i = 0; i < funnel.length; i++) {
+    if (i) parts.push('<div class="arrow">→</div>');
+    parts.push('<div class="cell"><b>' + esc(funnel[i][1]) + '</b><span>' +
+               esc(funnel[i][0]) + '</span></div>');
+  }
+  el("funnel").innerHTML = parts.join("");
+}
+
+function renderVerdicts(verdicts, specInfo) {
+  if (!verdicts.length) {
+    el("verdicts").innerHTML = '<div class="card muted">No completed traces yet.</div>';
+    el("verdict-note").textContent = "";
+    return;
+  }
+  el("verdicts").innerHTML = verdicts.map(function (v) {
+    return '<div class="card verdict ' + esc(v.verdict) + '">' +
+      '<span class="tag">' + esc(v.verdict.toUpperCase()) + '</span> ' +
+      '<span class="mono muted">' + esc(v.trace_id.slice(0, 8)) + '</span>' +
+      '<span class="muted"> @' + esc(v.opened_at) + ' · ' + esc(v.duration_s) + 's · ' +
+      esc(v.events) + ' events</span>' +
+      '<p>' + esc(v.reason) + '</p></div>';
+  }).join("");
+  el("verdict-note").textContent = specInfo.purpose_marked ? "" :
+    "Verdicts show unknown until purpose steps are marked — use the button in " +
+    "the Flow spec panel, or edit the spec file by hand.";
+}
+
+function hypothesisHtml(h) {
+  if (!h) return "";
+  var cls = h.verified ? "grounded" : "unverified";
+  var mark = h.verified ? "grounded" : "UNVERIFIED — citations were fabricated";
+  var out = '<div class="hyp"><span class="conf ' + cls + '">' +
+    esc(h.confidence) + " · " + mark + "</span><div>" + esc(h.statement) + "</div>";
+  (h.evidence_refs || []).slice(0, 3).forEach(function (r) {
+    out += '<div class="ev mono">evidence: ' + esc(r.slice(0, 100)) + "</div>";
+  });
+  if (h.immediate_action) out += '<div class="ev">now: ' + esc(h.immediate_action) + "</div>";
+  if (h.durable_fix) out += '<div class="ev">later: ' + esc(h.durable_fix) + "</div>";
+  return out + "</div>";
+}
+
+function renderIncidents(incidents, model) {
+  if (!incidents.length) {
+    el("incidents").innerHTML = '<div class="card muted">No incidents.</div>';
+    return;
+  }
+  el("incidents").innerHTML = incidents.map(function (inc) {
+    var causeSig = null;
+    (inc.signals || []).forEach(function (s) {
+      if (s.id === inc.ranked_cause) causeSig = s;
+    });
+    var head = causeSig && causeSig.evidence && causeSig.evidence[0] ?
+               causeSig.evidence[0] : "";
+    var body = "";
+    if (open[inc.id]) {
+      body += '<ul class="members">' + (inc.signals || []).map(function (s) {
+        var star = s.id === inc.ranked_cause ? ' <span class="cause">◄ ranked cause</span>' : "";
+        var line = s.evidence && s.evidence[0] ? s.evidence[0] : s.metric;
+        return "<li><b>" + esc(s.detector) + "</b> <span class='muted'>@" +
+               esc(s.started_at) + "</span> " + esc(String(line).slice(0, 90)) + star + "</li>";
+      }).join("") + "</ul>";
+      body += '<div class="why">why ranked: ' +
+              (inc.cause_why || []).map(esc).join(" · ") + "</div>";
+      if (inc.precedents && inc.precedents.length) {
+        body += '<div class="prec">memory: ';
+        body += inc.precedents.map(function (p) {
+          return esc(p.id) + " (sim " + esc(p.similarity) + ", outcome: " +
+                 esc(p.outcome) + ")";
+        }).join(" · ");
+        body += " — precedent, not conclusion</div>";
+      }
+      var canExplain = model.available && !explaining[inc.id];
+      body += '<div style="margin-top:10px"><button data-explain="' + esc(inc.id) +
+              '"' + (canExplain ? "" : " disabled") + ">" +
+              (explaining[inc.id] ? "asking the model…" : "Explain (1 model call)") +
+              "</button></div>";
+      body += hypothesisHtml(inc.hypothesis);
+    }
+    return '<div class="card" style="margin-bottom:10px">' +
+      '<div class="inc-head" data-toggle="' + esc(inc.id) + '">' +
+      '<span class="sev ' + esc(inc.severity) + '">' + esc(inc.severity) + "</span>" +
+      "<b>" + esc(inc.id) + "</b>" +
+      '<span class="status">' + esc(inc.status) + " · " +
+      esc((inc.signals || []).length) + " signals · opened @" + esc(inc.opened_at) +
+      "</span></div>" +
+      '<div class="muted" style="margin-top:4px;font-size:12.5px">' +
+      esc(String(head).slice(0, 110)) + "</div>" + body + "</div>";
+  }).join("");
+}
+
+function renderSpec(spec) {
+  el("spec-path").textContent = spec.exists ? spec.path : "not enough traces yet";
+  el("mark-btn").disabled = !spec.exists;
+  el("steps").innerHTML = (spec.steps || []).map(function (s) {
+    var crit = s.critical ? ' <span class="crit">CRITICAL (' +
+               esc(s.critical_source) + ")</span>" : "";
+    return "<div><span class='muted mono'>" + Math.round(s.presence * 100) +
+           "%</span> " + esc(String(s.label).slice(0, 64)) + crit + "</div>";
+  }).join("") || '<div class="muted">—</div>';
+}
+
+function renderSide(state) {
+  el("patterns").innerHTML = (state.patterns || []).map(function (p) {
+    return "<div style='padding:3px 0'>" + esc(p.text) + "</div>";
+  }).join("") || '<div class="muted">no recurring themes yet</div>';
+  el("notes").innerHTML = (state.notes || []).slice(-6).map(function (n) {
+    var line = n.evidence && n.evidence[0] ? n.evidence[0] : n.metric;
+    return "<div style='padding:3px 0' class='muted'>" +
+           esc(String(line).slice(0, 90)) + "</div>";
+  }).join("") || '<div class="muted">none</div>';
+}
+
+function render(state) {
+  el("project").textContent = state.project;
+  el("updated").textContent = "updated " + state.updated_at;
+  el("model").textContent = state.model.available ?
+    "model: ready · " + state.model.calls_made + "/" + state.model.budget + " calls used" :
+    "model: unavailable (everything else still works)";
+  renderFunnel(state.funnel);
+  renderVerdicts(state.verdicts, state.spec);
+  renderIncidents(state.incidents, state.model);
+  renderSpec(state.spec);
+  renderSide(state);
+}
+
+function refresh() {
+  fetch("/api/state").then(function (r) { return r.json(); })
+    .then(render).catch(function () {});
+}
+
+document.addEventListener("click", function (event) {
+  var toggle = event.target.closest("[data-toggle]");
+  if (toggle) {
+    var id = toggle.getAttribute("data-toggle");
+    open[id] = !open[id];
+    refresh();
+    return;
+  }
+  var explainBtn = event.target.closest("[data-explain]");
+  if (explainBtn) {
+    var incId = explainBtn.getAttribute("data-explain");
+    explaining[incId] = true;
+    refresh();
+    fetch("/api/explain/" + incId, { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function () { explaining[incId] = false; refresh(); })
+      .catch(function () { explaining[incId] = false; refresh(); });
+  }
+});
+
+el("mark-btn").addEventListener("click", function () {
+  el("mark-btn").disabled = true;
+  el("mark-btn").textContent = "asking the model…";
+  fetch("/api/mark-purpose", { method: "POST" })
+    .then(function (r) { return r.json(); })
+    .then(function () {
+      el("mark-btn").textContent = "Mark purpose steps (1 model call)";
+      el("mark-btn").disabled = false;
+      refresh();
+    });
+});
+
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>
