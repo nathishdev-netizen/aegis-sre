@@ -16,6 +16,7 @@ from aegis.l2_normalization.normalizer import Normalizer
 from aegis.l2_normalization.tracelinker import TraceLinker
 from aegis.l3_storage.store import HotRing, ProjectStore
 from aegis.l5_detection.detectors import DetectionEngine
+from aegis.l6_correlation.incidents import IncidentManager
 
 
 class Pipeline:
@@ -28,6 +29,7 @@ class Pipeline:
         self.store = ProjectStore(project, root=store_root)
         self.hot = HotRing()
         self.detect = DetectionEngine(service=project)
+        self.incidents = IncidentManager()
 
     def run_once(self) -> int:
         """Process every line currently available. Returns events committed."""
@@ -48,6 +50,7 @@ class Pipeline:
         if event is not None:
             self._commit(event)
             committed = 1
+        self.incidents.finalize(self.detect.last_now)
         self.store.flush()
         return committed
 
@@ -62,6 +65,7 @@ class Pipeline:
             "inferred": self.linker.inferred,
             "unattributed": self.linker.unattributed,
             "signals": len(self.detect.signals),
+            **self.incidents.summary(),
         }
 
     def close(self) -> None:
@@ -72,4 +76,5 @@ class Pipeline:
         self.linker.link(event)
         self.store.record_event(event)
         self.hot.add(event)
-        self.detect.observe(event)
+        for signal in self.detect.observe(event):
+            self.incidents.observe(signal, self.detect.last_now)

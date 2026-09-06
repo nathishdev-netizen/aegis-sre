@@ -139,6 +139,11 @@ class DetectionEngine:
         self._events_seen = 0
         self._day_offset = 0.0
 
+    @property
+    def last_now(self) -> float | None:
+        """The stream's own clock - log time, never wall time."""
+        return self._last_event_at
+
     # -- the one entry point -------------------------------------------------
 
     def observe(self, event: Event) -> list[Signal]:
