@@ -27,6 +27,13 @@ WILDCARD = "<*>"
 # Tokens replaced before matching, so that two lines differing only in an id or
 # a duration land on the same template. Ordered: specific before general.
 _VARIABLE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Quoted strings first, so their whole content collapses to one token. The
+    # doc's own template example writes `sku <STR>` - and without this, fifteen
+    # occurrences of the same warning quoting different filler text became
+    # fifteen templates and fifteen novelty signals. Bounded at 80 chars so a
+    # stray apostrophe cannot swallow half a line.
+    (re.compile(r"'[^'\n]{0,80}'"), "<STR>"),
+    (re.compile(r'"[^"\n]{0,80}"'), "<STR>"),
     (re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I), "<UUID>"),
     (re.compile(r"\b[0-9a-f]{16,}\b", re.I), "<HEX>"),
     (re.compile(r"https?://\S+"), "<URL>"),

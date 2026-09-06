@@ -15,6 +15,7 @@ from aegis.l1_ingestion.file_collector import FileCollector
 from aegis.l2_normalization.normalizer import Normalizer
 from aegis.l2_normalization.tracelinker import TraceLinker
 from aegis.l3_storage.store import HotRing, ProjectStore
+from aegis.l5_detection.detectors import DetectionEngine
 
 
 class Pipeline:
@@ -26,6 +27,7 @@ class Pipeline:
         self.linker = TraceLinker()
         self.store = ProjectStore(project, root=store_root)
         self.hot = HotRing()
+        self.detect = DetectionEngine(service=project)
 
     def run_once(self) -> int:
         """Process every line currently available. Returns events committed."""
@@ -59,6 +61,7 @@ class Pipeline:
             "extracted": self.linker.extracted,
             "inferred": self.linker.inferred,
             "unattributed": self.linker.unattributed,
+            "signals": len(self.detect.signals),
         }
 
     def close(self) -> None:
@@ -69,3 +72,4 @@ class Pipeline:
         self.linker.link(event)
         self.store.record_event(event)
         self.hot.add(event)
+        self.detect.observe(event)
