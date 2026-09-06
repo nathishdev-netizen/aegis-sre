@@ -86,6 +86,7 @@ class Normalizer:
         self.redactor = redactor or Redactor()
         self.fingerprinter = fingerprinter or Fingerprinter()
         self._pending: _Pending | None = None
+        self._last_real_ts = ""
         self._ids = itertools.count(1)
         self.lines_in = 0
         self.events_out = 0
@@ -99,6 +100,15 @@ class Normalizer:
         self.lines_in += 1
 
         parsed = parse_log_line(raw_line.rstrip())
+        # The v1 parser stamps wall-clock "now" on a line that carries no
+        # timestamp - right for live tailing, but on a historical file it
+        # fabricates a time that appears nowhere in the evidence. A timestamp
+        # is real only if the line actually contains it; otherwise the line
+        # inherits the last real one, like a reader would assume.
+        if parsed["timestamp"] and parsed["timestamp"] not in raw_line:
+            parsed["timestamp"] = self._last_real_ts
+        else:
+            self._last_real_ts = parsed["timestamp"]
         if self._pending is not None \
                 and _continues_previous(raw_line, parsed["message"]) \
                 and len(self._pending.extra_lines) < MAX_CONTINUATION_LINES:
