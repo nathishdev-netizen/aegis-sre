@@ -10,6 +10,7 @@ not from a fixture.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,9 @@ from aegis.l2_normalization.fingerprint import Fingerprinter  # noqa: E402
 from aegis.l2_normalization.redactor import Redactor  # noqa: E402
 from app.core.parser import parse_log_line  # noqa: E402
 
-DEFAULT_LOG = "/Users/nathish/Desktop/Nathish/tt/Demos/voice-gateway/.logs/voice-gateway.log"
+# A demo with no argument uses AEGIS_DEMO_LOG - a product has no
+# business hardcoding one machine's paths.
+DEFAULT_LOG = os.environ.get("AEGIS_DEMO_LOG", "")
 
 
 def rule(title: str) -> None:

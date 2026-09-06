@@ -21,6 +21,7 @@ nothing in app/ imports aegis - the existing agent stays provably unaffected.
 from __future__ import annotations
 
 import itertools
+import json
 import re
 from dataclasses import dataclass
 from typing import Iterator
@@ -34,6 +35,34 @@ from aegis.l2_normalization.redactor import Redactor
 # A dump can be long, but an unbounded fold would let one malformed stream
 # swallow the whole file into a single event.
 MAX_CONTINUATION_LINES = 200
+
+# Structured-log metadata keys: consumed by parsing (level, time) or already
+# the message itself. Everything ELSE in a JSON log line is payload the v1
+# parser used to throw away - unwrapping {"msg": ..., "reqId": ..., "durationMs":
+# ...} to just the msg discarded the very fields correlation and baselines
+# feed on. They are re-attached as key=value text, which turns every JSON log
+# into logfmt - one downstream idiom instead of two.
+_JSON_META_KEYS = {"level", "severity", "time", "timestamp", "ts", "@timestamp",
+                   "msg", "message", "log", "logger", "name", "hostname", "pid", "v"}
+
+
+def _flatten_json_fields(raw_line: str, parsed_message: str) -> str:
+    stripped = raw_line.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return parsed_message
+    try:
+        payload = json.loads(stripped)
+    except ValueError:
+        return parsed_message
+    if not isinstance(payload, dict):
+        return parsed_message
+    extras = [f"{key}={value}" for key, value in payload.items()
+              if key.lower() not in _JSON_META_KEYS
+              and not isinstance(value, (dict, list)) and value is not None]
+    if not extras:
+        return parsed_message
+    return f"{parsed_message} {' '.join(extras)}".strip()
+
 
 # Logger scaffolding ("INFO voice.tts:") that sits between the timestamp and the
 # actual content in this format family.
@@ -100,6 +129,7 @@ class Normalizer:
         self.lines_in += 1
 
         parsed = parse_log_line(raw_line.rstrip())
+        parsed["message"] = _flatten_json_fields(raw_line, parsed["message"])
         # The v1 parser stamps wall-clock "now" on a line that carries no
         # timestamp - right for live tailing, but on a historical file it
         # fabricates a time that appears nowhere in the evidence. A timestamp
@@ -160,6 +190,9 @@ class Normalizer:
         )
 
         self.events_out += 1
+        fields = {"template_pattern": match.pattern}
+        if pending.extra_lines:
+            fields["folded_lines"] = len(pending.extra_lines)
         return Event(
             id=f"E-{next(self._ids)}",
             ts=pending.parsed["timestamp"],
@@ -169,5 +202,5 @@ class Normalizer:
             template_id=match.template_id,
             redactions=redaction.counts,
             is_novel=match.is_novel,
-            fields={"folded_lines": len(pending.extra_lines)} if pending.extra_lines else {},
+            fields=fields,
         )

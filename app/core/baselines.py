@@ -41,6 +41,8 @@ DURATION_PATTERNS = (
     re.compile(r"\btook\s+(\d+(?:\.\d+)?)\s*ms\b", re.I),
     re.compile(r"\bduration[=:\s]+(\d+(?:\.\d+)?)\s*ms\b", re.I),
     re.compile(r"\belapsed[=:\s]+(\d+(?:\.\d+)?)\s*ms\b", re.I),
+    # JSON idiom: the unit lives in the KEY ("durationMs": 45, latency_ms=12).
+    re.compile(r"\b(?:duration|latency|elapsed|took)[_]?ms[\"']?\s*[=:]\s*[\"']?(\d+(?:\.\d+)?)", re.I),
     re.compile(r"\b(\d+(?:\.\d+)?)\s*ms\b", re.I),
 )
 

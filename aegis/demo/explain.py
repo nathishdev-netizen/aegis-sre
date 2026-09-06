@@ -12,6 +12,7 @@ Every hypothesis printed shows whether its citations survived grounding.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -26,7 +27,9 @@ from aegis.l7_reasoning.governance import Budget  # noqa: E402
 from aegis.l7_reasoning.router import ModelRouter  # noqa: E402
 from aegis.pipeline import Pipeline  # noqa: E402
 
-DEFAULT_LOG = "/Users/nathish/Desktop/Nathish/tt/Demos/voice-gateway/.logs/voice-gateway.log"
+# A demo with no argument uses AEGIS_DEMO_LOG - a product has no
+# business hardcoding one machine's paths.
+DEFAULT_LOG = os.environ.get("AEGIS_DEMO_LOG", "")
 
 
 def show(tag: str, hypothesis: dict | None) -> None:

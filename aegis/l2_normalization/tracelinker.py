@@ -34,9 +34,12 @@ from aegis.contracts.events import (
 # Explicit keys, in order of trust. A real trace_id outranks an application's
 # own call id, which outranks a generic request id.
 _KEY_PATTERNS = (
-    re.compile(r"\btrace[_-]?id[=:]\s*([\w-]{8,})", re.I),
+    re.compile(r"\btrace[_-]?id[\"']?\s*[=:]\s*[\"']?([\w-]{8,})", re.I),
     re.compile(r"\bcall(?:_?uuid|_?id)?[=:]\s*([\w-]{8,})", re.I),
-    re.compile(r"\b(?:request|correlation|session)[_-]?id[=:]\s*([\w-]{8,})", re.I),
+    # Quotes are optional so the same rule reads logfmt (requestID=abc) and
+    # JSON ("reqId":"req-9f1c") - the world's most common structured formats,
+    # and the first corpus run showed neither was being read at all.
+    re.compile(r"\b(?:req|request|correlation|session)[_-]?id[\"']?\s*[=:]\s*[\"']?([\w-]{6,})", re.I),
 )
 
 # Session boundaries, learned from the project's own vocabulary rather than

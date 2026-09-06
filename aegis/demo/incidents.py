@@ -8,6 +8,7 @@ matched, the ranked cause with its stated basis, blast radius, timeline.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -16,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from aegis.pipeline import Pipeline  # noqa: E402
 
-DEFAULT_LOG = "/Users/nathish/Desktop/Nathish/tt/Demos/voice-gateway/.logs/voice-gateway.log"
+# A demo with no argument uses AEGIS_DEMO_LOG - a product has no
+# business hardcoding one machine's paths.
+DEFAULT_LOG = os.environ.get("AEGIS_DEMO_LOG", "")
 
 
 def rule(title: str) -> None:

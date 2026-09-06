@@ -137,7 +137,10 @@ class ProjectStore:
                 "   pattern = excluded.pattern",
                 (
                     event.template_id,
-                    _first_line(event),
+                    # The tokenized pattern when the normalizer supplied it -
+                    # this column stored a raw example line for four phases,
+                    # which the generality suite finally caught.
+                    str(event.fields.get("template_pattern") or _first_line(event)),
                     event.service,
                     event.ts,
                     event.ts,
