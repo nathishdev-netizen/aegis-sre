@@ -427,6 +427,63 @@
     }
     .graph-note { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
     .graph-note .hint { color: var(--muted); font-size: 0.88rem; }
+
+    /* --- Aegis sections (run quality intelligence), in v1's own language --- */
+    .aegis-title { font-weight: 700; font-size: 1.02rem; margin-bottom: 2px; }
+    .aegis-sub { color: var(--muted); font-size: 0.86rem; margin-bottom: 12px; }
+    .verdict-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+    .verdict-card { background: var(--panel-strong); border: 1px solid var(--line);
+      border-left: 4px solid var(--muted); border-radius: 12px; padding: 10px 13px; }
+    .verdict-card .vtag { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em; }
+    .verdict-card.achieved { border-left-color: var(--success); }
+    .verdict-card.achieved .vtag { color: var(--success); }
+    .verdict-card.hollow { border-left-color: #7c3aed; }
+    .verdict-card.hollow .vtag { color: #7c3aed; }
+    .verdict-card.failed { border-left-color: var(--fail); }
+    .verdict-card.failed .vtag { color: var(--fail); }
+    .verdict-card.degraded { border-left-color: var(--warn); }
+    .verdict-card.degraded .vtag { color: var(--warn); }
+    .verdict-card.unknown .vtag { color: var(--muted); }
+    .verdict-card .vmeta { color: var(--muted); font-size: 0.78rem; margin-left: 6px; }
+    .verdict-card p { margin: 5px 0 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .aegis-inc { background: var(--panel-strong); border: 1px solid var(--line);
+      border-radius: 12px; padding: 11px 14px; margin-top: 10px; }
+    .aegis-inc .head { display: flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; }
+    .aegis-inc .sevtag { font-size: 0.68rem; font-weight: 800; border-radius: 6px; padding: 2px 8px; }
+    .aegis-inc .sevtag.P1, .aegis-inc .sevtag.P2 { background: rgba(220,38,38,.1); color: var(--fail); }
+    .aegis-inc .sevtag.P3 { background: rgba(217,119,6,.12); color: var(--warn); }
+    .aegis-inc .sevtag.P4 { background: rgba(99,114,135,.12); color: var(--muted); }
+    .aegis-inc .when { margin-left: auto; color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+    .aegis-inc .causeline { color: var(--muted); font-size: 0.84rem; margin-top: 5px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .aegis-inc .body { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+    .aegis-inc .mem { display: flex; gap: 8px; padding: 3.5px 0; font-size: 0.82rem;
+      border-bottom: 1px dashed var(--line); align-items: baseline; }
+    .aegis-inc .mem:last-child { border-bottom: none; }
+    .aegis-inc .mem .det { color: var(--accent); font-weight: 600; min-width: 112px; }
+    .aegis-inc .mem .at { color: var(--muted); font-size: 0.74rem; min-width: 58px; }
+    .aegis-inc .mem .txt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .aegis-inc .mem.cause .txt { color: var(--text); }
+    .aegis-cause-badge { background: rgba(124,58,237,.1); color: #7c3aed; font-size: 0.66rem;
+      font-weight: 800; border-radius: 5px; padding: 1px 7px; white-space: nowrap; }
+    .aegis-why { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+    .aegis-prec { background: var(--accent-soft); border-radius: 9px; padding: 8px 11px;
+      font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+    .aegis-hyp { background: #f7f9fd; border: 1px solid var(--line); border-radius: 9px;
+      padding: 10px 12px; margin-top: 10px; font-size: 0.86rem; }
+    .aegis-hyp .hbadge { font-size: 0.68rem; font-weight: 800; border-radius: 5px; padding: 2px 8px; }
+    .aegis-hyp .hbadge.ok { background: rgba(5,150,105,.1); color: var(--success); }
+    .aegis-hyp .hbadge.bad { background: rgba(220,38,38,.1); color: var(--fail); }
+    .aegis-hyp .hev { color: var(--muted); font-size: 0.78rem; border-left: 2px solid var(--line);
+      padding-left: 9px; margin: 4px 0; font-family: ui-monospace, Menlo, monospace; }
+    .aegis-gap { border-left: 3px solid var(--warn); padding: 5px 0 5px 11px; margin: 8px 0; }
+    .aegis-gap .gk { font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em;
+      color: var(--warn); text-transform: uppercase; }
+    .aegis-gap .gw { font-size: 0.84rem; margin: 2px 0; }
+    .aegis-gap .gm { font-size: 0.76rem; color: var(--muted); }
+    .aegis-cols { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 900px) { .aegis-cols { grid-template-columns: 1fr; } }
     .drawer {
       margin-top: 18px;
       border: 1px solid var(--line);
@@ -705,6 +762,30 @@
           <div class="box" id="insightsBox" hidden>
             <div class="label">Worth knowing</div>
             <ul id="insights"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top: 18px;" id="aegisPanel" hidden>
+      <div class="aegis-title">Run quality</div>
+      <div class="aegis-sub" id="aegisSub">Every completed run judged against what a run of this
+        kind is supposed to do. <b>Hollow</b> = finished cleanly, achieved nothing - the failure
+        no error can show.</div>
+      <div class="verdict-grid" id="aegisVerdicts"></div>
+      <div class="hint" id="aegisVerdictNote" style="margin-top:8px;"></div>
+      <div class="aegis-cols" style="margin-top:16px;">
+        <div>
+          <div class="aegis-title" style="font-size:0.95rem;">Incidents</div>
+          <div class="aegis-sub">One incident per story, cause ranked first.</div>
+          <div id="aegisIncidents"></div>
+        </div>
+        <div>
+          <div class="aegis-title" style="font-size:0.95rem;">What to log next</div>
+          <div class="aegis-sub">Gaps the analysis hit, each with its measurement.</div>
+          <div id="aegisGaps"></div>
+          <div style="margin-top:14px;">
+            <button class="btn ghost" id="aegisMarkBtn" hidden>Mark purpose steps (1 model call)</button>
           </div>
         </div>
       </div>
@@ -1346,5 +1427,165 @@
     refreshPorts();
     render();
   </script>
+<script>
+/* --- Aegis: run-quality intelligence, self-contained. If the bridge is
+   unavailable the panel simply stays hidden and v1 behaves as always. --- */
+(function () {
+  "use strict";
+
+  function aegisEl(id) { return document.getElementById(id); }
+  function aegisEsc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  var aegisOpen = {};
+  var aegisBusy = {};
+
+  function renderVerdicts(state) {
+    var verdicts = state.verdicts || [];
+    aegisEl("aegisVerdicts").innerHTML = verdicts.map(function (v) {
+      return '<div class="verdict-card ' + aegisEsc(v.verdict) + '">' +
+        '<span class="vtag">' + aegisEsc(v.verdict.toUpperCase()) + "</span>" +
+        '<span class="vmeta">@' + aegisEsc(v.opened_at) + " · " +
+        aegisEsc(v.duration_s) + "s</span><p>" + aegisEsc(v.reason) + "</p></div>";
+    }).join("");
+    var marked = state.spec && state.spec.purpose_marked;
+    aegisEl("aegisVerdictNote").textContent = verdicts.length && !marked ?
+      "Verdicts stay unknown until purpose steps are marked - use the button on the right." : "";
+    aegisEl("aegisMarkBtn").hidden = !(state.spec && state.spec.exists && !marked);
+  }
+
+  function hypBlock(h) {
+    if (!h) return "";
+    var out = '<div class="aegis-hyp"><span class="hbadge ' +
+      (h.verified ? "ok" : "bad") + '">' +
+      (h.verified ? "GROUNDED · " + aegisEsc(h.confidence)
+                  : "UNVERIFIED - citations were fabricated") + "</span>" +
+      "<div style='margin-top:6px'>" + aegisEsc(h.statement) + "</div>";
+    (h.evidence_refs || []).slice(0, 3).forEach(function (r) {
+      out += '<div class="hev">' + aegisEsc(r.slice(0, 105)) + "</div>";
+    });
+    if (h.immediate_action) out += '<div class="aegis-why"><b>now</b> · ' +
+      aegisEsc(h.immediate_action) + "</div>";
+    if (h.durable_fix) out += '<div class="aegis-why"><b>later</b> · ' +
+      aegisEsc(h.durable_fix) + "</div>";
+    return out + "</div>";
+  }
+
+  function renderIncidents(state) {
+    var incidents = state.incidents || [];
+    if (!incidents.length) {
+      aegisEl("aegisIncidents").innerHTML =
+        '<div class="hint" style="padding:6px 0;">No incidents.</div>';
+      return;
+    }
+    var model = state.model || {};
+    aegisEl("aegisIncidents").innerHTML = incidents.map(function (inc) {
+      var causeLine = "";
+      (inc.signals || []).forEach(function (sg) {
+        if (sg.id === inc.ranked_cause && sg.evidence && sg.evidence[0])
+          causeLine = sg.evidence[0];
+      });
+      var body = "";
+      if (aegisOpen[inc.id]) {
+        body = '<div class="body">' + (inc.signals || []).map(function (sg) {
+          var isCause = sg.id === inc.ranked_cause;
+          var line = sg.evidence && sg.evidence[0] ? sg.evidence[0] : sg.metric;
+          return '<div class="mem' + (isCause ? " cause" : "") + '">' +
+            '<span class="det">' + aegisEsc(sg.detector) + "</span>" +
+            '<span class="at">@' + aegisEsc(sg.started_at) + "</span>" +
+            '<span class="txt">' + aegisEsc(String(line).slice(0, 95)) + "</span>" +
+            (isCause ? '<span class="aegis-cause-badge">RANKED CAUSE</span>' : "") +
+            "</div>";
+        }).join("");
+        body += '<div class="aegis-why"><b>why ranked:</b> ' +
+          (inc.cause_why || []).map(aegisEsc).join(" · ") + "</div>";
+        if (inc.precedents && inc.precedents.length) {
+          body += '<div class="aegis-prec"><b>memory:</b> ' +
+            inc.precedents.map(function (pr) {
+              return aegisEsc(pr.id) + " (sim " + aegisEsc(pr.similarity) +
+                ", outcome: " + aegisEsc(pr.outcome) + ")";
+            }).join(" · ") + " - precedent, not conclusion</div>";
+        }
+        var busy = !!aegisBusy[inc.id];
+        body += '<div style="margin-top:10px;"><button class="btn primary" ' +
+          'data-aegis-explain="' + aegisEsc(inc.id) + '"' +
+          (model.available && !busy ? "" : " disabled") + ">" +
+          (busy ? "asking the model…" : "Explain - 1 model call") +
+          "</button></div>" + hypBlock(inc.hypothesis) + "</div>";
+      }
+      return '<div class="aegis-inc"><div class="head" data-aegis-toggle="' +
+        aegisEsc(inc.id) + '">' +
+        '<span class="sevtag ' + aegisEsc(inc.severity) + '">' +
+        aegisEsc(inc.severity) + "</span><b>" + aegisEsc(inc.id) + "</b>" +
+        '<span class="hint">' + aegisEsc(inc.status) + "</span>" +
+        '<span class="when">' + aegisEsc((inc.signals || []).length) +
+        " signals · @" + aegisEsc(inc.opened_at) + "</span></div>" +
+        '<div class="causeline">' + aegisEsc(causeLine.slice(0, 120)) + "</div>" +
+        body + "</div>";
+    }).join("");
+  }
+
+  function renderGaps(state) {
+    var gaps = state.gaps || [];
+    aegisEl("aegisGaps").innerHTML = gaps.length ? gaps.map(function (g) {
+      return '<div class="aegis-gap"><div class="gk">' + aegisEsc(g.kind) +
+        '</div><div class="gw">' + aegisEsc(g.what_to_add) +
+        '</div><div class="gm">' + aegisEsc(g.measured) + "</div></div>";
+    }).join("") :
+    '<div class="hint" style="padding:4px 0;">No gaps - everything claimed was grounded.</div>';
+  }
+
+  function aegisRefresh() {
+    fetch("/api/aegis/state").then(function (r) { return r.json(); })
+      .then(function (state) {
+        if (!state.attached) { aegisEl("aegisPanel").hidden = true; return; }
+        aegisEl("aegisPanel").hidden = false;
+        renderVerdicts(state);
+        renderIncidents(state);
+        renderGaps(state);
+      })
+      .catch(function () { aegisEl("aegisPanel").hidden = true; });
+  }
+
+  document.addEventListener("click", function (event) {
+    var toggle = event.target.closest("[data-aegis-toggle]");
+    if (toggle) {
+      var id = toggle.getAttribute("data-aegis-toggle");
+      aegisOpen[id] = !aegisOpen[id];
+      aegisRefresh();
+      return;
+    }
+    var explain = event.target.closest("[data-aegis-explain]");
+    if (explain) {
+      var incId = explain.getAttribute("data-aegis-explain");
+      aegisBusy[incId] = true;
+      aegisRefresh();
+      fetch("/api/aegis/explain/" + incId, { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .then(function () { aegisBusy[incId] = false; aegisRefresh(); })
+        .catch(function () { aegisBusy[incId] = false; aegisRefresh(); });
+    }
+  });
+
+  aegisEl("aegisMarkBtn").addEventListener("click", function () {
+    var btn = aegisEl("aegisMarkBtn");
+    btn.disabled = true;
+    btn.textContent = "asking the model…";
+    fetch("/api/aegis/mark-purpose", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        btn.textContent = "Mark purpose steps (1 model call)";
+        btn.disabled = false;
+        aegisRefresh();
+      });
+  });
+
+  aegisRefresh();
+  setInterval(aegisRefresh, 3000);
+})();
+</script>
 </body>
 </html>

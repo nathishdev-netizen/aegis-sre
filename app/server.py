@@ -20,6 +20,51 @@ PORT = settings.port
 runtime = RuntimeState()
 
 
+# --- Aegis bridge (v2 intelligence inside the v1 UI) -------------------------
+# The v1 flow is untouched: Aegis runs its own read-only pipeline over the
+# SAME file v1 attaches, in this same process, and the page renders its
+# verdicts/incidents/gaps in new sections. If anything here fails, v1 works
+# exactly as before - the bridge degrades to "aegis: unavailable".
+
+_aegis_app = None
+_aegis_error = ""
+
+
+def _aegis():
+    global _aegis_app, _aegis_error
+    if _aegis_app is None and not _aegis_error:
+        try:
+            from aegis.server import AegisApp
+            _aegis_app = AegisApp()
+        except Exception as exc:  # degrade, never block v1
+            _aegis_error = f"{exc.__class__.__name__}: {exc}"
+    return _aegis_app
+
+
+def _aegis_follow_source() -> None:
+    """Every few seconds: if v1 is watching a file Aegis is not, attach it."""
+    import threading as _threading
+    import time as _time
+
+    def loop() -> None:
+        while True:
+            try:
+                app = _aegis()
+                if app is not None:
+                    source = runtime.snapshot().get("source") or {}
+                    path = source.get("path")
+                    if path and source.get("type") == "file"                             and path != app.log_path and Path(path).is_file():
+                        app.attach(path)
+            except Exception:
+                pass
+            _time.sleep(2.0)
+
+    _threading.Thread(target=loop, daemon=True).start()
+
+
+_aegis_follow_source()
+
+
 def read_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -61,6 +106,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             build = str(int(INDEX_HTML.stat().st_mtime))
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", f"/?b={build}")
+            # Without a Content-Length the 302 leaves keep-alive clients
+            # waiting for a body that never comes - browsers follow the
+            # redirect before noticing, curl and health checks hang forever.
+            self.send_header("Content-Length", "0")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return
@@ -85,6 +134,18 @@ class RequestHandler(BaseHTTPRequestHandler):
             write_json(self, HTTPStatus.OK, {"build": str(int(INDEX_HTML.stat().st_mtime))})
             return
 
+        if self.path == "/api/aegis/state":
+            app = _aegis()
+            if app is None:
+                write_json(self, HTTPStatus.OK,
+                           {"attached": False, "unavailable": _aegis_error})
+                return
+            try:
+                write_json(self, HTTPStatus.OK, app.state())
+            except Exception as exc:
+                write_json(self, HTTPStatus.OK,
+                           {"attached": False, "unavailable": str(exc)})
+            return
         if self.path == "/api/state":
             write_json(self, HTTPStatus.OK, {"state": runtime.snapshot()})
             return
@@ -178,6 +239,20 @@ class RequestHandler(BaseHTTPRequestHandler):
             write_json(self, HTTPStatus.OK, {"ok": True, "state": snapshot})
             return
 
+        if self.path.startswith("/api/aegis/explain/"):
+            app = _aegis()
+            if app is None:
+                write_json(self, HTTPStatus.OK, {"ok": False, "detail": "aegis unavailable"})
+                return
+            write_json(self, HTTPStatus.OK, app.explain(self.path.rsplit("/", 1)[-1]))
+            return
+        if self.path == "/api/aegis/mark-purpose":
+            app = _aegis()
+            if app is None:
+                write_json(self, HTTPStatus.OK, {"ok": False, "detail": "aegis unavailable"})
+                return
+            write_json(self, HTTPStatus.OK, app.mark_purpose())
+            return
         if self.path == "/api/attach":
             path = body.get("path", "")
             if not path:
