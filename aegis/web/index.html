@@ -6,250 +6,493 @@
 <title>Aegis</title>
 <style>
   :root{
-    --bg:#0d1117; --panel:#161b22; --line:#242c37; --text:#dbe3ec; --dim:#8b98a8;
-    --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; --purple:#bc8cff;
+    --bg:#0b0f14; --bg2:#0f141b; --panel:#121924; --panel2:#0e151f;
+    --line:#1e2836; --line2:#273343; --text:#e6edf5; --dim:#8496ab; --faint:#5b6b7f;
+    --green:#34d399; --red:#f87171; --amber:#fbbf24; --purple:#c084fc; --blue:#60a5fa;
+    --green-bg:#0c2b20; --red-bg:#331416; --amber-bg:#2e2408; --purple-bg:#26123a;
+    --radius:12px;
   }
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);
-    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-  .wrap{max-width:1180px;margin:0 auto;padding:20px}
-  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}
-  h1{font-size:19px;margin:0} h1 small{color:var(--dim);font-weight:400}
-  .funnel{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
-  .funnel .cell{background:var(--panel);border:1px solid var(--line);border-radius:8px;
-    padding:8px 14px;text-align:center}
-  .cell b{display:block;font-size:19px} .cell span{color:var(--dim);font-size:11px}
-  .funnel .arrow{align-self:center;color:var(--dim)}
-  h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
-    margin:24px 0 10px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  @media(max-width:860px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-  .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
-  .verdict{border-left:4px solid var(--dim)}
-  .verdict.achieved{border-left-color:var(--green)}
-  .verdict.hollow{border-left-color:var(--purple)}
-  .verdict.failed{border-left-color:var(--red)}
-  .verdict.degraded{border-left-color:var(--amber)}
-  .verdict .tag{font-weight:700;font-size:12px;letter-spacing:.06em}
-  .verdict.achieved .tag{color:var(--green)} .verdict.hollow .tag{color:var(--purple)}
-  .verdict.failed .tag{color:var(--red)} .verdict.degraded .tag{color:var(--amber)}
-  .verdict p{margin:6px 0 0;color:var(--dim);font-size:12.5px}
-  .muted{color:var(--dim)} .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
-  .inc-head{display:flex;gap:10px;align-items:center;cursor:pointer}
-  .sev{font-size:11px;font-weight:700;border-radius:5px;padding:1px 7px}
-  .sev.P2{background:#3d1d1d;color:var(--red)} .sev.P3{background:#3b2f14;color:var(--amber)}
-  .sev.P1{background:#4b1414;color:#ff7b72} .sev.P4{background:#20262e;color:var(--dim)}
-  .status{font-size:11px;color:var(--dim)}
-  .members{margin:10px 0 0;padding:0;list-style:none}
-  .members li{padding:3px 0;border-top:1px dashed var(--line);font-size:12.5px}
-  .cause{color:var(--blue)}
-  .why{margin:8px 0 0;color:var(--dim);font-size:12px}
-  button{background:#21262d;border:1px solid var(--line);color:var(--text);
-    border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12.5px}
-  button:hover{border-color:var(--blue)} button:disabled{opacity:.5;cursor:default}
-  .hyp{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
-  .hyp .conf{font-size:11px;font-weight:700}
-  .hyp .grounded{color:var(--green)} .hyp .unverified{color:var(--red)}
-  .hyp .ev{color:var(--dim);font-size:12px;margin:2px 0}
-  .prec{margin-top:8px;font-size:12px;color:var(--dim);border-top:1px dashed var(--line);padding-top:8px}
-  .steps{max-height:280px;overflow:auto}
-  .steps div{padding:2px 0;font-size:12.5px;border-top:1px dashed var(--line)}
-  .crit{color:var(--purple);font-weight:700}
-  .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-  footer{margin:26px 0 8px;color:var(--dim);font-size:12px}
-  .pill{background:#20262e;border-radius:99px;padding:2px 10px;font-size:11.5px;color:var(--dim)}
+  *{box-sizing:border-box}
+  html{scrollbar-color:#2a3546 transparent}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#2a3546;border-radius:8px}
+
+  /* ---------- top bar ---------- */
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;
+    padding:10px 22px;background:rgba(11,15,20,.86);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .brand{font-weight:700;font-size:16px;letter-spacing:.02em;display:flex;
+    align-items:center;gap:9px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 0 0 rgba(52,211,153,.5);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.45)}
+    70%{box-shadow:0 0 0 9px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+  .brand small{color:var(--dim);font-weight:500}
+  .topbar .spacer{flex:1}
+  .pill{background:var(--panel);border:1px solid var(--line);border-radius:99px;
+    padding:3px 12px;font-size:11.5px;color:var(--dim);white-space:nowrap}
+  .pill b{color:var(--text);font-weight:600}
+
+  .wrap{max-width:1280px;margin:0 auto;padding:22px}
+
+  /* ---------- hero brief ---------- */
+  .hero{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line);border-radius:16px;padding:22px 26px;margin-bottom:16px}
+  .hero .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:8px}
+  .hero h1{margin:0;font-size:24px;line-height:1.3;font-weight:650}
+  .hero h1 .v-achieved{color:var(--green)} .hero h1 .v-hollow{color:var(--purple)}
+  .hero h1 .v-failed{color:var(--red)} .hero h1 .v-degraded{color:var(--amber)}
+  .hero .sub{margin-top:10px;color:var(--dim);font-size:13.5px}
+  .hero .sub b{color:var(--text)}
+
+  /* ---------- funnel ---------- */
+  .funnel{display:flex;gap:0;align-items:stretch;margin:0 0 18px;overflow-x:auto}
+  .funnel .cell{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
+    padding:12px 8px;text-align:center;position:relative}
+  .funnel .cell:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+  .funnel .cell:last-child{border-radius:0 var(--radius) var(--radius) 0}
+  .funnel .cell+.cell{border-left:none}
+  .funnel b{display:block;font-size:21px;font-weight:650}
+  .funnel span{color:var(--faint);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  .funnel .cell:after{content:"›";position:absolute;right:-7px;top:50%;
+    transform:translateY(-50%);color:var(--faint);font-size:18px;z-index:2}
+  .funnel .cell:last-child:after{content:""}
+
+  /* ---------- run verdict strip ---------- */
+  h2{font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+    margin:22px 0 10px;font-weight:600}
+  h2 .note{letter-spacing:0;text-transform:none;color:var(--faint);font-weight:400}
+  .runs{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+  .run{background:var(--panel);border:1px solid var(--line);border-left-width:4px;
+    border-radius:10px;padding:10px 13px;transition:border-color .15s}
+  .run:hover{border-color:var(--line2)}
+  .run .tag{font-size:11px;font-weight:800;letter-spacing:.09em}
+  .run.achieved{border-left-color:var(--green)} .run.achieved .tag{color:var(--green)}
+  .run.hollow{border-left-color:var(--purple)} .run.hollow .tag{color:var(--purple)}
+  .run.failed{border-left-color:var(--red)} .run.failed .tag{color:var(--red)}
+  .run.degraded{border-left-color:var(--amber)} .run.degraded .tag{color:var(--amber)}
+  .run.unknown{border-left-color:var(--faint)} .run.unknown .tag{color:var(--dim)}
+  .run .meta{color:var(--faint);font-size:11.5px;margin-left:6px}
+  .run p{margin:5px 0 0;color:var(--dim);font-size:12px;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+  /* ---------- main grid ---------- */
+  .grid{display:grid;grid-template-columns:1.55fr 1fr;gap:18px;align-items:start}
+  @media(max-width:940px){.grid{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:14px 16px}
+  .card+.card, .inc+.inc{margin-top:12px}
+  .muted{color:var(--dim)} .faint{color:var(--faint)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+
+  /* incidents */
+  .inc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:13px 16px;transition:border-color .15s}
+  .inc:hover{border-color:var(--line2)}
+  .inc-head{display:flex;gap:10px;align-items:center;cursor:pointer;user-select:none}
+  .sev{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;letter-spacing:.05em}
+  .sev.P1,.sev.P2{background:var(--red-bg);color:var(--red)}
+  .sev.P3{background:var(--amber-bg);color:var(--amber)}
+  .sev.P4{background:#1a222d;color:var(--dim)}
+  .inc-head b{font-size:14px}
+  .st{font-size:11px;padding:1.5px 9px;border-radius:99px;border:1px solid var(--line2);
+    color:var(--dim)}
+  .st.open,.st.forming{color:var(--amber);border-color:#4d3f14}
+  .st.resolved{color:var(--green);border-color:#14402f}
+  .inc-head .when{margin-left:auto;color:var(--faint);font-size:11.5px;white-space:nowrap}
+  .chev{color:var(--faint);transition:transform .15s;font-size:11px}
+  .inc.expanded .chev{transform:rotate(90deg)}
+  .cause-line{margin-top:6px;color:var(--dim);font-size:12.5px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .inc-body{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+  .members{margin:0;padding:0;list-style:none}
+  .members li{display:flex;gap:8px;padding:4.5px 0;border-bottom:1px dashed var(--line);
+    font-size:12.5px;align-items:baseline}
+  .members li:last-child{border-bottom:none}
+  .members .det{color:var(--blue);font-weight:600;min-width:118px}
+  .members .at{color:var(--faint);font-size:11px;min-width:60px}
+  .members .txt{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .members li.cause .txt,.members li.cause .det{color:var(--text)}
+  .cause-badge{background:var(--purple-bg);color:var(--purple);font-size:10px;
+    font-weight:800;border-radius:5px;padding:1px 7px;white-space:nowrap}
+  .why{margin:10px 0 0;color:var(--faint);font-size:12px;line-height:1.5}
+  .why b{color:var(--dim);font-weight:600}
+  .prec{margin-top:10px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:9px 12px;font-size:12px;color:var(--dim)}
+  .prec b{color:var(--purple)}
+  button{background:#1a2330;border:1px solid var(--line2);color:var(--text);
+    border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12.5px;font-weight:550;
+    transition:background .12s,border-color .12s}
+  button:hover{background:#212c3c;border-color:#33455c}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:#12304a;border-color:#1d4a70}
+  button.primary:hover{background:#173b5b}
+  .hyp{margin-top:12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:11px 13px}
+  .hyp .badge{font-size:10.5px;font-weight:800;letter-spacing:.06em;border-radius:5px;
+    padding:1.5px 8px}
+  .hyp .badge.ok{background:var(--green-bg);color:var(--green)}
+  .hyp .badge.bad{background:var(--red-bg);color:var(--red)}
+  .hyp .stmt{margin:7px 0;font-size:13px;line-height:1.5}
+  .hyp .ev{color:var(--faint);font-size:11.5px;padding-left:10px;
+    border-left:2px solid var(--line2);margin:4px 0}
+  .hyp .act{color:var(--dim);font-size:12px;margin-top:6px}
+  .hyp .act b{color:var(--text);font-weight:600}
+
+  /* chat */
+  .chat-log{max-height:260px;overflow-y:auto;display:flex;flex-direction:column;
+    gap:8px;margin-bottom:10px}
+  .msg{border-radius:10px;padding:8px 12px;font-size:12.5px;line-height:1.5;
+    max-width:92%}
+  .msg.q{background:#16344f;align-self:flex-end}
+  .msg.a{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+    align-self:flex-start;white-space:pre-wrap}
+  .msg.a.err{color:var(--amber)}
+  .chat-row{display:flex;gap:8px}
+  .chat-row input{flex:1;background:var(--bg2);border:1px solid var(--line2);
+    color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;outline:none}
+  .chat-row input:focus{border-color:#33557c}
+
+  /* right rail lists */
+  .gap{border-left:3px solid var(--amber);padding:6px 0 6px 11px;margin:8px 0}
+  .gap .k{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--amber);
+    text-transform:uppercase}
+  .gap .w{font-size:12.5px;margin:3px 0}
+  .gap .m{font-size:11.5px;color:var(--faint)}
+  .steps{max-height:250px;overflow-y:auto;margin-top:6px}
+  .step{display:flex;gap:8px;padding:3.5px 0;font-size:12px;border-bottom:1px dashed var(--line);
+    align-items:baseline}
+  .step:last-child{border-bottom:none}
+  .step .p{color:var(--faint);min-width:36px;font-variant-numeric:tabular-nums}
+  .step .l{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .step .c{background:var(--purple-bg);color:var(--purple);font-size:9.5px;
+    font-weight:800;border-radius:4px;padding:1px 6px;white-space:nowrap}
+  .stream{max-height:300px;overflow-y:auto;font-family:ui-monospace,Menlo,monospace;
+    font-size:11.3px;line-height:1.65}
+  .stream div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+  .stream .lv{display:inline-block;min-width:44px;font-weight:700}
+  .stream .lv.ERROR,.stream .lv.CRITICAL{color:var(--red)}
+  .stream .lv.WARN,.stream .lv.WARNING{color:var(--amber)}
+  .stream .lv.INFO{color:var(--faint)}
+  .stream .t{color:var(--faint)}
+  .pattern{padding:5px 0;font-size:12.5px;color:var(--dim);
+    border-bottom:1px dashed var(--line)}
+  .pattern:last-child{border-bottom:none}
+  .empty{color:var(--faint);font-size:12.5px;padding:6px 0}
+  .bar{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    flex-wrap:wrap;margin-bottom:4px}
+  footer{margin:30px 0 12px;color:var(--faint);font-size:12px;text-align:center}
 </style>
 </head>
 <body>
+<div class="topbar">
+  <div class="brand"><span class="dot" id="live-dot"></span>Aegis
+    <small id="project"></small></div>
+  <div class="spacer"></div>
+  <span class="pill" id="model-pill"></span>
+  <span class="pill" id="updated-pill"></span>
+</div>
+
 <div class="wrap">
-  <header>
-    <h1>Aegis <small id="project"></small></h1>
-    <span class="pill" id="model"></span>
-    <span class="pill" id="updated"></span>
-  </header>
+  <div class="hero">
+    <div class="eyebrow">Live brief</div>
+    <h1 id="headline">Reading the logs…</h1>
+    <div class="sub" id="headsub"></div>
+  </div>
 
   <div class="funnel" id="funnel"></div>
 
-  <h2>Run verdicts — did each run achieve anything?</h2>
-  <div class="vgrid" id="verdicts"></div>
-  <div class="muted" id="verdict-note" style="margin-top:8px;font-size:12.5px"></div>
+  <h2>Run verdicts <span class="note">— did each run actually achieve anything?</span></h2>
+  <div class="runs" id="runs"></div>
+  <div class="empty" id="runs-note" style="margin-top:6px"></div>
 
-  <h2>Incidents</h2>
-  <div id="incidents"></div>
-
-  <div class="grid">
+  <div class="grid" style="margin-top:6px">
     <div>
-      <h2>Flow spec <span class="muted" style="text-transform:none">(human-editable file)</span></h2>
+      <h2>Incidents <span class="note">— one incident, not forty alerts</span></h2>
+      <div id="incidents"></div>
+    </div>
+    <div>
+      <h2>Ask about these runs</h2>
+      <div class="card">
+        <div class="chat-log" id="chat-log">
+          <div class="msg a">Ask anything about what's on this page — "why was the
+            13:40 call hollow?", "what failed today?". Each answer is one governed
+            model call, grounded in the evidence shown here.</div>
+        </div>
+        <div class="chat-row">
+          <input id="chat-input" placeholder="Ask a question…" autocomplete="off">
+          <button class="primary" id="chat-send">Ask</button>
+        </div>
+      </div>
+
+      <h2>What to log next <span class="note">— gaps the analysis hit</span></h2>
+      <div class="card" id="gaps"></div>
+
+      <h2>Flow spec <span class="note">— human-editable</span></h2>
       <div class="card">
         <div class="bar">
-          <span class="muted mono" id="spec-path" style="font-size:11px"></span>
-          <button id="mark-btn">Mark purpose steps (1 model call)</button>
+          <span class="faint mono" id="spec-path" style="font-size:10.5px"></span>
+          <button id="mark-btn">Mark purpose steps</button>
         </div>
         <div class="steps" id="steps"></div>
       </div>
-    </div>
-    <div>
+
       <h2>Recurring patterns</h2>
       <div class="card" id="patterns"></div>
-      <h2>Quiet notes <span class="muted" style="text-transform:none">(P4 — paging nobody)</span></h2>
-      <div class="card" id="notes"></div>
+
+      <h2>Live stream <span class="note">— redacted</span></h2>
+      <div class="card"><div class="stream" id="stream"></div></div>
     </div>
   </div>
 
-  <footer>Read-only on your log · data in ~/.aegis/projects/ · detection is arithmetic,
-    the model only explains, and only when you click.</footer>
+  <footer id="footer">Read-only on your log · every project isolated under
+    ~/.aegis/projects/ · detection is arithmetic — the model speaks only when
+    you ask.</footer>
 </div>
 
 <script>
 "use strict";
 
 function el(id) { return document.getElementById(id); }
-function esc(s) {
-  return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"]/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
   });
 }
 
-var open = {};        // incident id -> expanded?
-var explaining = {};  // incident id -> in-flight?
+var expanded = {};
+var explaining = {};
+var lastGood = 0;
 
-function renderFunnel(funnel) {
-  var parts = [];
-  for (var i = 0; i < funnel.length; i++) {
-    if (i) parts.push('<div class="arrow">→</div>');
-    parts.push('<div class="cell"><b>' + esc(funnel[i][1]) + '</b><span>' +
-               esc(funnel[i][0]) + '</span></div>');
+/* ---------- hero ---------- */
+function headline(state) {
+  var verdicts = state.verdicts || [];
+  var open = (state.incidents || []).filter(function (i) {
+    return i.status === "open" || i.status === "forming";
+  });
+  var counts = {};
+  verdicts.forEach(function (v) { counts[v.verdict] = (counts[v.verdict] || 0) + 1; });
+
+  var head, cls = "";
+  var latest = verdicts.length ? verdicts[verdicts.length - 1] : null;
+  if (open.length && (open[0].severity === "P1" || open[0].severity === "P2")) {
+    head = "An incident is open: " + esc(open[0].id) +
+           " — opened " + esc(open[0].opened_at) + " and not yet recovered.";
+    cls = "v-failed";
+  } else if (latest) {
+    var when = " (" + esc(latest.opened_at) + ")";
+    if (latest.verdict === "hollow") {
+      head = "The latest run" + when +
+        " finished cleanly — <span class='v-hollow'>and achieved nothing</span>.";
+    } else if (latest.verdict === "failed") {
+      head = "The latest run" + when + " <span class='v-failed'>failed</span>: " +
+        esc(latest.reason);
+    } else if (latest.verdict === "achieved") {
+      head = "The latest run" + when +
+        " <span class='v-achieved'>achieved its purpose</span> in " +
+        esc(latest.duration_s) + "s.";
+    } else if (latest.verdict === "degraded") {
+      head = "The latest run" + when +
+        " succeeded but was <span class='v-degraded'>abnormally slow</span>.";
+    } else {
+      head = "Runs are completing, but their outcome can't be judged yet — " +
+        "mark the purpose steps in the flow spec.";
+    }
+  } else {
+    head = "Watching. No completed runs yet.";
   }
-  el("funnel").innerHTML = parts.join("");
+  el("headline").innerHTML = head;
+
+  var parts = [];
+  ["achieved", "hollow", "failed", "degraded", "unknown"].forEach(function (k) {
+    if (counts[k]) parts.push("<b>" + counts[k] + "</b> " + k);
+  });
+  var sub = verdicts.length ? verdicts.length + " runs: " + parts.join(" · ") : "";
+  var st = state.stats || {};
+  if (st.incidents) sub += "&nbsp;&nbsp;—&nbsp;&nbsp;<b>" + st.incidents +
+    "</b> incidents, <b>" + (st.notes || 0) + "</b> quiet notes";
+  el("headsub").innerHTML = sub;
 }
 
-function renderVerdicts(verdicts, specInfo) {
+/* ---------- funnel + runs ---------- */
+function renderFunnel(funnel) {
+  el("funnel").innerHTML = (funnel || []).map(function (pair) {
+    return '<div class="cell"><b>' + esc(pair[1]) + "</b><span>" +
+           esc(pair[0]) + "</span></div>";
+  }).join("");
+}
+
+function renderRuns(state) {
+  var verdicts = state.verdicts || [];
   if (!verdicts.length) {
-    el("verdicts").innerHTML = '<div class="card muted">No completed traces yet.</div>';
-    el("verdict-note").textContent = "";
+    el("runs").innerHTML = "";
+    el("runs-note").textContent = "No completed runs judged yet.";
     return;
   }
-  el("verdicts").innerHTML = verdicts.map(function (v) {
-    return '<div class="card verdict ' + esc(v.verdict) + '">' +
-      '<span class="tag">' + esc(v.verdict.toUpperCase()) + '</span> ' +
-      '<span class="mono muted">' + esc(v.trace_id.slice(0, 8)) + '</span>' +
-      '<span class="muted"> @' + esc(v.opened_at) + ' · ' + esc(v.duration_s) + 's · ' +
-      esc(v.events) + ' events</span>' +
-      '<p>' + esc(v.reason) + '</p></div>';
+  el("runs").innerHTML = verdicts.map(function (v) {
+    return '<div class="run ' + esc(v.verdict) + '">' +
+      '<span class="tag">' + esc(v.verdict.toUpperCase()) + "</span>" +
+      '<span class="meta">' + esc(v.trace_id.slice(0, 8)) + " · @" +
+      esc(v.opened_at) + " · " + esc(v.duration_s) + "s</span>" +
+      "<p>" + esc(v.reason) + "</p></div>";
   }).join("");
-  el("verdict-note").textContent = specInfo.purpose_marked ? "" :
-    "Verdicts show unknown until purpose steps are marked — use the button in " +
-    "the Flow spec panel, or edit the spec file by hand.";
+  el("runs-note").textContent = state.spec && state.spec.purpose_marked ? "" :
+    "Verdicts stay unknown until purpose steps are marked — the button is in the Flow spec panel.";
 }
 
+/* ---------- incidents ---------- */
 function hypothesisHtml(h) {
   if (!h) return "";
-  var cls = h.verified ? "grounded" : "unverified";
-  var mark = h.verified ? "grounded" : "UNVERIFIED — citations were fabricated";
-  var out = '<div class="hyp"><span class="conf ' + cls + '">' +
-    esc(h.confidence) + " · " + mark + "</span><div>" + esc(h.statement) + "</div>";
+  var ok = h.verified;
+  var out = '<div class="hyp"><span class="badge ' + (ok ? "ok" : "bad") + '">' +
+    (ok ? "GROUNDED · " + esc(h.confidence)
+        : "UNVERIFIED — citations were fabricated") + "</span>" +
+    '<div class="stmt">' + esc(h.statement) + "</div>";
   (h.evidence_refs || []).slice(0, 3).forEach(function (r) {
-    out += '<div class="ev mono">evidence: ' + esc(r.slice(0, 100)) + "</div>";
+    out += '<div class="ev mono">' + esc(r.slice(0, 110)) + "</div>";
   });
-  if (h.immediate_action) out += '<div class="ev">now: ' + esc(h.immediate_action) + "</div>";
-  if (h.durable_fix) out += '<div class="ev">later: ' + esc(h.durable_fix) + "</div>";
+  if (h.immediate_action)
+    out += '<div class="act"><b>now</b> · ' + esc(h.immediate_action) + "</div>";
+  if (h.durable_fix)
+    out += '<div class="act"><b>later</b> · ' + esc(h.durable_fix) + "</div>";
   return out + "</div>";
 }
 
-function renderIncidents(incidents, model) {
+function renderIncidents(state) {
+  var incidents = state.incidents || [];
   if (!incidents.length) {
-    el("incidents").innerHTML = '<div class="card muted">No incidents.</div>';
+    el("incidents").innerHTML = '<div class="card empty">No incidents — quiet is a fine state.</div>';
     return;
   }
+  var model = state.model || {};
   el("incidents").innerHTML = incidents.map(function (inc) {
-    var causeSig = null;
+    var causeLine = "";
     (inc.signals || []).forEach(function (s) {
-      if (s.id === inc.ranked_cause) causeSig = s;
+      if (s.id === inc.ranked_cause && s.evidence && s.evidence[0])
+        causeLine = s.evidence[0];
     });
-    var head = causeSig && causeSig.evidence && causeSig.evidence[0] ?
-               causeSig.evidence[0] : "";
+    var isOpen = !!expanded[inc.id];
     var body = "";
-    if (open[inc.id]) {
-      body += '<ul class="members">' + (inc.signals || []).map(function (s) {
-        var star = s.id === inc.ranked_cause ? ' <span class="cause">◄ ranked cause</span>' : "";
-        var line = s.evidence && s.evidence[0] ? s.evidence[0] : s.metric;
-        return "<li><b>" + esc(s.detector) + "</b> <span class='muted'>@" +
-               esc(s.started_at) + "</span> " + esc(String(line).slice(0, 90)) + star + "</li>";
-      }).join("") + "</ul>";
-      body += '<div class="why">why ranked: ' +
-              (inc.cause_why || []).map(esc).join(" · ") + "</div>";
+    if (isOpen) {
+      body = '<div class="inc-body"><ul class="members">' +
+        (inc.signals || []).map(function (s) {
+          var isCause = s.id === inc.ranked_cause;
+          var line = s.evidence && s.evidence[0] ? s.evidence[0] : s.metric;
+          return '<li class="' + (isCause ? "cause" : "") + '">' +
+            '<span class="det">' + esc(s.detector) + "</span>" +
+            '<span class="at">@' + esc(s.started_at) + "</span>" +
+            '<span class="txt">' + esc(String(line).slice(0, 100)) + "</span>" +
+            (isCause ? '<span class="cause-badge">RANKED CAUSE</span>' : "") +
+            "</li>";
+        }).join("") + "</ul>";
+      body += '<div class="why"><b>why ranked:</b> ' +
+        (inc.cause_why || []).map(esc).join(" · ") + "</div>";
       if (inc.precedents && inc.precedents.length) {
-        body += '<div class="prec">memory: ';
-        body += inc.precedents.map(function (p) {
-          return esc(p.id) + " (sim " + esc(p.similarity) + ", outcome: " +
-                 esc(p.outcome) + ")";
-        }).join(" · ");
-        body += " — precedent, not conclusion</div>";
+        body += '<div class="prec"><b>memory:</b> ' +
+          inc.precedents.map(function (p) {
+            return esc(p.id) + " (sim " + esc(p.similarity) +
+                   ", outcome: " + esc(p.outcome) + ")";
+          }).join(" · ") + " — precedent, not conclusion</div>";
       }
-      var canExplain = model.available && !explaining[inc.id];
-      body += '<div style="margin-top:10px"><button data-explain="' + esc(inc.id) +
-              '"' + (canExplain ? "" : " disabled") + ">" +
-              (explaining[inc.id] ? "asking the model…" : "Explain (1 model call)") +
-              "</button></div>";
+      var busy = !!explaining[inc.id];
+      body += '<div style="margin-top:12px"><button class="primary" data-explain="' +
+        esc(inc.id) + '"' + (model.available && !busy ? "" : " disabled") + ">" +
+        (busy ? "asking the model…" : "Explain — 1 governed call") + "</button></div>";
       body += hypothesisHtml(inc.hypothesis);
+      body += "</div>";
     }
-    return '<div class="card" style="margin-bottom:10px">' +
+    return '<div class="inc' + (isOpen ? " expanded" : "") + '">' +
       '<div class="inc-head" data-toggle="' + esc(inc.id) + '">' +
+      '<span class="chev">▶</span>' +
       '<span class="sev ' + esc(inc.severity) + '">' + esc(inc.severity) + "</span>" +
       "<b>" + esc(inc.id) + "</b>" +
-      '<span class="status">' + esc(inc.status) + " · " +
-      esc((inc.signals || []).length) + " signals · opened @" + esc(inc.opened_at) +
-      "</span></div>" +
-      '<div class="muted" style="margin-top:4px;font-size:12.5px">' +
-      esc(String(head).slice(0, 110)) + "</div>" + body + "</div>";
+      '<span class="st ' + esc(inc.status) + '">' + esc(inc.status) + "</span>" +
+      '<span class="when">' + esc((inc.signals || []).length) +
+      " signals · @" + esc(inc.opened_at) + "</span></div>" +
+      '<div class="cause-line">' + esc(causeLine.slice(0, 130)) + "</div>" +
+      body + "</div>";
   }).join("");
+}
+
+/* ---------- right rail ---------- */
+function renderGaps(gaps) {
+  el("gaps").innerHTML = (gaps && gaps.length) ? gaps.map(function (g) {
+    return '<div class="gap"><div class="k">' + esc(g.kind) + "</div>" +
+      '<div class="w">' + esc(g.what_to_add) + "</div>" +
+      '<div class="m">' + esc(g.measured) + "</div></div>";
+  }).join("") :
+  '<div class="empty">No gaps — the analysis could ground everything it claimed.</div>';
 }
 
 function renderSpec(spec) {
   el("spec-path").textContent = spec.exists ? spec.path : "not enough traces yet";
   el("mark-btn").disabled = !spec.exists;
   el("steps").innerHTML = (spec.steps || []).map(function (s) {
-    var crit = s.critical ? ' <span class="crit">CRITICAL (' +
-               esc(s.critical_source) + ")</span>" : "";
-    return "<div><span class='muted mono'>" + Math.round(s.presence * 100) +
-           "%</span> " + esc(String(s.label).slice(0, 64)) + crit + "</div>";
-  }).join("") || '<div class="muted">—</div>';
+    return '<div class="step"><span class="p">' + Math.round(s.presence * 100) +
+      '%</span><span class="l">' + esc(String(s.label).slice(0, 60)) + "</span>" +
+      (s.critical ? '<span class="c">CRITICAL · ' + esc(s.critical_source) +
+       "</span>" : "") + "</div>";
+  }).join("") || '<div class="empty">—</div>';
 }
 
-function renderSide(state) {
-  el("patterns").innerHTML = (state.patterns || []).map(function (p) {
-    return "<div style='padding:3px 0'>" + esc(p.text) + "</div>";
-  }).join("") || '<div class="muted">no recurring themes yet</div>';
-  el("notes").innerHTML = (state.notes || []).slice(-6).map(function (n) {
-    var line = n.evidence && n.evidence[0] ? n.evidence[0] : n.metric;
-    return "<div style='padding:3px 0' class='muted'>" +
-           esc(String(line).slice(0, 90)) + "</div>";
-  }).join("") || '<div class="muted">none</div>';
+function renderPatterns(patterns) {
+  el("patterns").innerHTML = (patterns && patterns.length) ?
+    patterns.map(function (p) {
+      return '<div class="pattern">' + esc(p.text) + "</div>";
+    }).join("") : '<div class="empty">No recurring themes yet.</div>';
 }
 
+function renderStream(events) {
+  el("stream").innerHTML = (events || []).slice(-30).map(function (e) {
+    return '<div><span class="t">' + esc(e.ts) + '</span> <span class="lv ' +
+      esc(e.level) + '">' + esc(e.level) + "</span> " + esc(e.text) + "</div>";
+  }).join("") || '<div class="empty">—</div>';
+  var stream = el("stream");
+  stream.scrollTop = stream.scrollHeight;
+}
+
+/* ---------- top-level ---------- */
 function render(state) {
   el("project").textContent = state.project;
-  el("updated").textContent = "updated " + state.updated_at;
-  el("model").textContent = state.model.available ?
-    "model: ready · " + state.model.calls_made + "/" + state.model.budget + " calls used" :
-    "model: unavailable (everything else still works)";
+  el("updated-pill").textContent = "updated " + state.updated_at;
+  var model = state.model || {};
+  el("model-pill").innerHTML = model.available ?
+    "model ready · <b>" + model.calls_made + "/" + model.budget + "</b> calls" :
+    "model off — everything measured still works";
+  headline(state);
   renderFunnel(state.funnel);
-  renderVerdicts(state.verdicts, state.spec);
-  renderIncidents(state.incidents, state.model);
-  renderSpec(state.spec);
-  renderSide(state);
+  renderRuns(state);
+  renderIncidents(state);
+  renderGaps(state.gaps);
+  renderSpec(state.spec || {});
+  renderPatterns(state.patterns);
+  renderStream(state.events);
 }
 
 function refresh() {
   fetch("/api/state").then(function (r) { return r.json(); })
-    .then(render).catch(function () {});
+    .then(function (state) {
+      lastGood = Date.now();
+      el("live-dot").style.background = "var(--green)";
+      render(state);
+    })
+    .catch(function () {
+      if (Date.now() - lastGood > 8000)
+        el("live-dot").style.background = "var(--red)";
+    });
 }
 
+/* ---------- interactions ---------- */
 document.addEventListener("click", function (event) {
   var toggle = event.target.closest("[data-toggle]");
   if (toggle) {
     var id = toggle.getAttribute("data-toggle");
-    open[id] = !open[id];
+    expanded[id] = !expanded[id];
     refresh();
     return;
   }
@@ -265,15 +508,58 @@ document.addEventListener("click", function (event) {
   }
 });
 
+function addMsg(kind, text) {
+  var log = el("chat-log");
+  var node = document.createElement("div");
+  node.className = "msg " + kind;
+  node.textContent = text;
+  log.appendChild(node);
+  log.scrollTop = log.scrollHeight;
+  return node;
+}
+
+function sendQuestion() {
+  var input = el("chat-input");
+  var question = input.value.trim();
+  if (!question) return;
+  input.value = "";
+  addMsg("q", question);
+  var pending = addMsg("a", "thinking — one governed call…");
+  fetch("/api/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: question }),
+  }).then(function (r) { return r.json(); })
+    .then(function (reply) {
+      pending.textContent = reply.ok ? reply.answer : reply.detail;
+      if (!reply.ok) pending.className = "msg a err";
+      refresh();
+    })
+    .catch(function () {
+      pending.textContent = "request failed";
+      pending.className = "msg a err";
+    });
+}
+
+el("chat-send").addEventListener("click", sendQuestion);
+el("chat-input").addEventListener("keydown", function (event) {
+  if (event.key === "Enter") sendQuestion();
+});
+
 el("mark-btn").addEventListener("click", function () {
-  el("mark-btn").disabled = true;
-  el("mark-btn").textContent = "asking the model…";
+  var btn = el("mark-btn");
+  btn.disabled = true;
+  btn.textContent = "asking the model…";
   fetch("/api/mark-purpose", { method: "POST" })
     .then(function (r) { return r.json(); })
     .then(function () {
-      el("mark-btn").textContent = "Mark purpose steps (1 model call)";
-      el("mark-btn").disabled = false;
+      btn.textContent = "Mark purpose steps";
+      btn.disabled = false;
       refresh();
+    })
+    .catch(function () {
+      btn.textContent = "Mark purpose steps";
+      btn.disabled = false;
     });
 });
 

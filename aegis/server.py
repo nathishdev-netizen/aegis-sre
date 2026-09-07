@@ -103,6 +103,11 @@ class AegisApp:
             traces = self.pipeline.trace_index.traces()
             templates = self.pipeline.store.templates(limit=10)
             patterns = self.pipeline.memory.patterns()[:5]
+            recent = [{
+                "ts": e.ts, "level": e.level,
+                "text": e.text_redacted.splitlines()[0][:150],
+                "trace": e.trace_id[:8] if e.trace_id else "",
+            } for e in self.pipeline.hot.recent(30)]
 
         spec = self.spec()
         verdicts = []
@@ -155,6 +160,7 @@ class AegisApp:
                 "path": str(self._spec_path()),
             },
             "gaps": gaps,
+            "events": recent,
             "model": {
                 "available": self.router.available(),
                 "calls_made": self.router.budget.calls_made,
@@ -162,6 +168,41 @@ class AegisApp:
             },
             "updated_at": time.strftime("%H:%M:%S"),
         }
+
+    def ask(self, question: str) -> dict:
+        """One governed Q&A call about what the platform currently knows.
+        The context is the platform's own derived state - redacted evidence,
+        verdicts, incidents - never raw logs."""
+        question = (question or "").strip()[:500]
+        if not question:
+            return {"ok": False, "detail": "empty question"}
+        state = self.state()
+        context = {
+            "funnel": dict(state["funnel"]),
+            "verdicts": state["verdicts"],
+            "incidents": [{
+                "id": i["id"], "severity": i["severity"], "status": i["status"],
+                "opened_at": i["opened_at"],
+                "evidence": (i.get("evidence") or [])[:4],
+            } for i in state["incidents"]],
+            "recent_events": [e["text"] for e in state["events"][-15:]],
+            "gaps": state["gaps"],
+        }
+        answer = self.router.chat(
+            "answer_question",
+            [{"role": "user", "content":
+              "You are answering a question about one service's analysed logs. "
+              "Answer plainly in a few sentences. Quote evidence lines verbatim "
+              "when they support you. If the data below cannot answer the "
+              "question, say exactly that - never guess.\n\nDATA:\n"
+              + json.dumps(context, indent=1)
+              + "\n\nQUESTION: " + question}],
+            purpose=f"Q&A: {question[:60]}")
+        if answer is None:
+            return {"ok": False,
+                    "detail": "model unavailable or budget spent - the panels "
+                              "above still hold everything measured"}
+        return {"ok": True, "answer": answer.strip()[:2500]}
 
     def explain(self, incident_id: str) -> dict:
         incident = next((i.to_dict() for i in self.pipeline.incidents.incidents
@@ -210,7 +251,14 @@ def make_handler(app: AegisApp):
                 self._json({"ok": False, "detail": "not found"}, 404)
 
         def do_POST(self):
-            if self.path.startswith("/api/explain/"):
+            if self.path == "/api/ask":
+                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                except ValueError:
+                    payload = {}
+                self._json(app.ask(str(payload.get("question", ""))))
+            elif self.path.startswith("/api/explain/"):
                 self._json(app.explain(self.path.rsplit("/", 1)[-1]))
             elif self.path == "/api/mark-purpose":
                 self._json(app.mark_purpose())
