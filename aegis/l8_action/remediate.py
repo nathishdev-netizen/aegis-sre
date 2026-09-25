@@ -41,12 +41,12 @@ SOURCE EXCERPTS:
 
 Write ONE self-contained Python test script:
 - plain script style: `python3 <file>` exits non-zero on failure (use assert), prints one line on success
-- it RUNS FROM THE REPO ROOT, which is already the working directory. Import
-  the code exactly as the mapped paths spell it - services/chatbot/api.py is
-  `from services.chatbot.api import ...`. Do NOT add sys.path lines: the one
-  that looks right (`parents[0]`) is the script's own directory, not the
-  root, and it turns every run into ModuleNotFoundError - which fails before
-  AND after the patch, so the fix can never be proven.
+- it RUNS FROM {import_root}, which is already the working directory, and
+  imports are relative to THAT - not to the repo root. The mapped file
+  {import_file} is therefore `{import_stmt}`. Do NOT add sys.path lines: the
+  one that looks right (`parents[0]`) is the script's own directory, and it
+  turns every run into ModuleNotFoundError - which fails before AND after
+  the patch, so the fix can never be proven.
 - exercises the diagnosed failure directly; no mocks of the code under test
 - it must fail because of the BUG, not because of a missing import, a
   missing dependency or a wrong signature. If the diagnosed path needs
@@ -160,9 +160,11 @@ class RemediationAgent:
 
         # 1. Reproducer - a NEW file, and it must FAIL.
         raw = self.router.chat("write_reproducer", [{"role": "user", "content":
-            _REPRODUCER_PROMPT.format(diagnosis=diagnosis,
-                                      evidence="\n".join(evidence[:6]),
-                                      locations=loc_text, excerpts=excerpts)}],
+            _REPRODUCER_PROMPT.format(
+                diagnosis=diagnosis,
+                evidence="\n".join(evidence[:6]),
+                locations=loc_text, excerpts=excerpts,
+                **self._import_help(locations))}],
             purpose=f"reproducer for {incident_id}")
         if raw is None:
             return self._bundle(Proposal(incident_id, "unavailable",
@@ -174,6 +176,9 @@ class RemediationAgent:
         if not check.allowed:
             return self._bundle(Proposal(incident_id, "blocked", check.reason))
 
+        # The venv lives beside the SERVICE in a monorepo, so tell the
+        # runner which file this fix is about before it picks a python.
+        self.runner.hint = locations[0].file if locations else ""
         before = self.runner.run(self.TEST_FILENAME, reproducer)
         if not before.executed:
             return self._bundle(Proposal(
@@ -349,6 +354,29 @@ class RemediationAgent:
 
 
 
+
+    def _import_help(self, locations) -> dict:
+        """How the reproducer must spell its imports.
+
+        A monorepo service is its own import root, so the same file is
+        `services.chatbot.api` from the repo and `api` from the service.
+        Telling the model which one applies is the difference between a
+        reproducer that tests the bug and one that dies on an import.
+        """
+        from aegis.l8_action.runner import _import_root
+        rel = locations[0].file if locations else ""
+        root = _import_root(self.repo, rel)
+        try:
+            inside = str((self.repo / rel).relative_to(root))
+        except (ValueError, OSError):
+            inside = rel
+        module = inside[:-3].replace("/", ".") if inside.endswith(".py") else inside
+        shown = str(root.relative_to(self.repo)) if root != self.repo else "the repo root"
+        return {
+            "import_root": shown,
+            "import_file": inside or rel,
+            "import_stmt": f"from {module} import ..." if module else "a direct import",
+        }
 
     def _locate_via_code(self, evidence: list[str]) -> list:
         """Find the source line from the CODE ANALYSIS rather than by grepping.

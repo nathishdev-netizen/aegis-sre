@@ -87,25 +87,78 @@ def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
     return True, "applied tolerantly"
 
 
-def _interpreter_for(repo: Path) -> str:
+_VENV_NAMES = (".venv", "venv", "env", ".virtualenv")
+# Directories the last venv search walked, nearest-first.
+_SEARCH: list = []
+
+
+def _interpreter_for(repo: Path, hint: str = "") -> str:
     """The python that can actually import this project.
 
     A reproducer runs against the project's own code, so it needs the
     project's own dependencies. A bare "python3" has none of them, and the
     import error that follows looks exactly like a badly written
     reproducer - it is not, it is the wrong interpreter.
+
+    A monorepo keeps its venv beside the SERVICE, not at the root:
+    paideia's chatbot has services/chatbot/venv with fastapi in it while
+    the root has nothing. Looking only at the top level told the user to
+    create a virtualenv they already had. The hint is the file the
+    evidence mapped to, so the search starts where the code being fixed
+    actually lives and walks up from there.
     """
-    for candidate in (".venv/bin/python", "venv/bin/python",
-                      ".venv/bin/python3", "env/bin/python"):
-        path = repo / candidate
-        if path.is_file():
-            return str(path)
+    starts = []
+    if hint:
+        here = (repo / hint).parent if not hint.startswith("/") else Path(hint).parent
+        while here != here.parent and str(here).startswith(str(repo)):
+            starts.append(here)
+            here = here.parent
+    starts.append(repo)
+    _SEARCH.clear()
+    _SEARCH.extend(starts)
+    for base in starts:
+        for name in _VENV_NAMES:
+            for exe in ("python", "python3"):
+                path = base / name / "bin" / exe
+                if path.is_file():
+                    return str(path)
+    # Nothing beside the code: try any service venv in the repo, nearest
+    # first, rather than giving up on a dependency that is installed.
+    for cfg in sorted(repo.glob("*/*/*/pyvenv.cfg")) + sorted(repo.glob("*/*/pyvenv.cfg")):
+        for exe in ("python", "python3"):
+            path = cfg.parent / "bin" / exe
+            if path.is_file():
+                return str(path)
     return "python3"
 
 
+def _import_root(work: Path, hint: str) -> Path:
+    """Where this code expects to be imported from.
+
+    The nearest ancestor of the mapped file that looks like a project root
+    of its own - a pytest.ini, a pyproject.toml, or a venv beside it. For a
+    single-package repo that is the repo; for a monorepo service it is the
+    service directory, which is the whole difference between
+    "ModuleNotFoundError: agents" and a reproducer that runs.
+    """
+    if not hint:
+        return work
+    here = (work / hint).parent
+    while here != work.parent and str(here).startswith(str(work)):
+        markers = ("pytest.ini", "pyproject.toml", "setup.py", "tox.ini")
+        if any((here / m).is_file() for m in markers):
+            return here
+        if any((here / v / "bin").is_dir() for v in _VENV_NAMES):
+            return here
+        here = here.parent
+    return work
+
+
 class TestRunner:
-    def __init__(self, repo_path: str | Path) -> None:
+    def __init__(self, repo_path: str | Path, hint: str = "") -> None:
         self.repo = Path(repo_path).resolve()
+        # Where the code under test lives, so the venv search starts there.
+        self.hint = hint
 
     def _repo_size(self) -> int:
         total = 0
@@ -157,13 +210,29 @@ class TestRunner:
                         return RunResult(False, patched.returncode,
                                          patched.stdout + patched.stderr,
                                          f"patch did not apply ({detail})")
-            test_path = work / test_filename
+            # A monorepo service is usually its own import root: paideia's
+            # chatbot holds agents/ and config/ beside api.py and a
+            # pytest.ini of its own, so `from agents.orchestrator import x`
+            # only resolves with services/chatbot on the path, never from
+            # the repo root. Run the reproducer where its imports resolve.
+            root = _import_root(work, self.hint)
+            test_path = root / test_filename
             test_path.parent.mkdir(parents=True, exist_ok=True)
             test_path.write_text(test_content)
+            # The interpreter is the real project's venv - the sandbox is a
+            # copy, so that venv's sys.path still points at the ORIGINAL
+            # tree. Without PYTHONPATH the reproducer either imports the
+            # unpatched code (proving nothing) or fails to find it at all.
+            # Pointing it at the copy is what makes before/after mean
+            # anything.
             completed = subprocess.run(
-                [_interpreter_for(self.repo), test_filename], cwd=work, text=True,
+                [_interpreter_for(self.repo, self.hint), test_filename],
+                cwd=root, text=True,
                 capture_output=True, timeout=TIMEOUT_S,
-                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                     "PYTHONPATH": os.pathsep.join(
+                         dict.fromkeys([str(root), str(work)])),
+                     "PYTHONDONTWRITEBYTECODE": "1"},
             )
             return RunResult(True, completed.returncode,
                              (completed.stdout + completed.stderr)[-2000:])
