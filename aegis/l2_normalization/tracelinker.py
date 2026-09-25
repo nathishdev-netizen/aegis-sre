@@ -125,41 +125,9 @@ class TraceLinker:
             self.unattributed += 1
         return event
 
-    @staticmethod
-    def _closes(text: str, session: _Session) -> bool:
-        if _HARD_CLOSERS.search(text):
-            return True
-        if session.noun:
-            match = _NOUN_END.search(text)
-            return bool(match and match.group(1).upper() == session.noun)
-        return bool(_GENERIC_END.search(text))
 
-    @staticmethod
-    def _closes(text: str, session: _Session) -> bool:
-        if _HARD_CLOSERS.search(text):
-            return True
-        if session.noun:
-            match = _NOUN_END.search(text)
-            return bool(match and match.group(1).upper() == session.noun)
-        return bool(_GENERIC_END.search(text))
 
-    @staticmethod
-    def _closes(text: str, session: _Session) -> bool:
-        if _HARD_CLOSERS.search(text):
-            return True
-        if session.noun:
-            match = _NOUN_END.search(text)
-            return bool(match and match.group(1).upper() == session.noun)
-        return bool(_GENERIC_END.search(text))
 
-    @staticmethod
-    def _closes(text: str, session: _Session) -> bool:
-        if _HARD_CLOSERS.search(text):
-            return True
-        if session.noun:
-            match = _NOUN_END.search(text)
-            return bool(match and match.group(1).upper() == session.noun)
-        return bool(_GENERIC_END.search(text))
 
     @staticmethod
     def _closes(text: str, session: _Session) -> bool:

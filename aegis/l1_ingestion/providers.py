@@ -224,10 +224,8 @@ class McpClient:
     # the running app with a bare FileNotFoundError - the tool is installed,
     # just invisible.
     # The spec revision we implement; servers negotiate down if they must.
-    PROTOCOL_VERSION = "2024-11-05"
 
     # The spec revision we implement; servers negotiate down if they must.
-    PROTOCOL_VERSION = "2024-11-05"
 
     # The spec revision we implement; servers negotiate down if they must.
     PROTOCOL_VERSION = "2024-11-05"
@@ -325,33 +323,7 @@ class McpClient:
         except ValueError:
             return joined
 
-    def _why_it_died(self) -> str:
-        """Whatever the server said on its way out, for the error message."""
-        note = ""
-        if self._proc.stderr is not None:
-            try:
-                note = (self._proc.stderr.read() or "").strip()
-            except Exception:
-                note = ""
-        if not note:
-            code = self._proc.poll()
-            note = (f"it exited with status {code}" if code is not None
-                    else "it stopped responding and said nothing")
-        return note[-400:]
 
-    def _why_it_died(self) -> str:
-        """Whatever the server said on its way out, for the error message."""
-        note = ""
-        if self._proc.stderr is not None:
-            try:
-                note = (self._proc.stderr.read() or "").strip()
-            except Exception:
-                note = ""
-        if not note:
-            code = self._proc.poll()
-            note = (f"it exited with status {code}" if code is not None
-                    else "it stopped responding and said nothing")
-        return note[-400:]
 
     def _why_it_died(self) -> str:
         """Whatever the server said on its way out, for the error message."""

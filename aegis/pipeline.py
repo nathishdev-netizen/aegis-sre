@@ -14,7 +14,13 @@ from typing import Any
 from aegis.l1_ingestion.file_collector import FileCollector
 from aegis.l2_normalization.normalizer import Normalizer
 from aegis.l2_normalization.tracelinker import TraceLinker
-from aegis.l3_storage.store import HotRing, ProjectStore
+from aegis.l3_storage.store import HotRing, ProjectStore, TraceIndex
+from aegis.l4_understanding.conformance import ConformanceEngine
+from aegis.l4_understanding.flowspec import _seconds
+from aegis.l4_understanding.topology import Topology
+from aegis.l5_detection.detectors import DetectionEngine
+from aegis.l6_correlation.incidents import IncidentManager
+from aegis.l6_correlation.memory import IncidentMemory
 
 
 class Pipeline:
@@ -28,29 +34,31 @@ class Pipeline:
         # span both processes. Each source keeps its own collector+normalizer
         # (folding is per-stream state) but everything downstream is shared.
         self.secondaries: list[tuple[FileCollector, Normalizer]] = []
-        # Secondary sources: a dependency's log watched ALONGSIDE the primary,
-        # feeding the same linker/store/detectors, so one request's story can
-        # span both processes. Each source keeps its own collector+normalizer
-        # (folding is per-stream state) but everything downstream is shared.
-        self.secondaries: list[tuple[FileCollector, Normalizer]] = []
-        # Secondary sources: a dependency's log watched ALONGSIDE the primary,
-        # feeding the same linker/store/detectors, so one request's story can
-        # span both processes. Each source keeps its own collector+normalizer
-        # (folding is per-stream state) but everything downstream is shared.
-        self.secondaries: list[tuple[FileCollector, Normalizer]] = []
-        # Secondary sources: a dependency's log watched ALONGSIDE the primary,
-        # feeding the same linker/store/detectors, so one request's story can
-        # span both processes. Each source keeps its own collector+normalizer
-        # (folding is per-stream state) but everything downstream is shared.
-        self.secondaries: list[tuple[FileCollector, Normalizer]] = []
-        # Secondary sources: a dependency's log watched ALONGSIDE the primary,
-        # feeding the same linker/store/detectors, so one request's story can
-        # span both processes. Each source keeps its own collector+normalizer
-        # (folding is per-stream state) but everything downstream is shared.
-        self.secondaries: list[tuple[FileCollector, Normalizer]] = []
         self.linker = TraceLinker()
         self.store = ProjectStore(project, root=store_root)
         self.hot = HotRing()
+        self.trace_index = TraceIndex()
+        self.detect = DetectionEngine(service=project)
+        self.incidents = IncidentManager()
+        self.memory = IncidentMemory(self.store)
+        self.incidents.on_resolve = self.memory.remember
+        self.topology = Topology()
+        # C7 in enforce mode: a run that deviates from the spec becomes a
+        # signal like any other, so it lands in an incident and gets the
+        # same explain -> propose -> verify treatment. Shadow mode computed
+        # the same deviations and threw them away, which is why a run could
+        # be judged "hollow" on the Runs page while Incidents stayed empty.
+        self.conformance = ConformanceEngine(mode="enforce")
+        self._judged: set[str] = set()
+        # The server owns the spec (saved, human-editable, purpose-marked),
+        # so the pipeline asks for it instead of mining a second one that
+        # would disagree with what the Flow & spec page shows.
+        self.spec_provider = None
+        try:
+            self.detect.suppressed = {row["template_id"]
+                                      for row in self.store.suppressions()}
+        except Exception:
+            pass
 
     def add_secondary(self, log_path: str | Path, service: str) -> dict:
         """Watch a dependency's log together with the primary."""

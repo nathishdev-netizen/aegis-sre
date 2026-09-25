@@ -215,33 +215,6 @@ class RemediationAgent:
             test_before=before.__dict__, test_after=after.__dict__,
             locations=[l.__dict__ for l in locations]))
 
-    def _locate_via_code(self, evidence: list[str]) -> list:
-        """Find the source line from the CODE ANALYSIS rather than by grepping.
-
-        Grepping matches whatever text happens to appear; the analysis knows
-        which logging call writes a line, in which function, so the patch
-        prompt gets the right file, the enclosing function, and its callers.
-        """
-        statements = self.code.get("log_statements") or []
-        if not statements:
-            return []
-        from aegis.l4_understanding.flowspec import _overlap
-        from aegis.l8_action.mapper import Location
-
-        found: list[Location] = []
-        for line in evidence[:6]:
-            best, score = None, 0.0
-            for statement in statements:
-                overlap = _overlap(line, statement.get("text", ""))
-                if overlap > score:
-                    best, score = statement, overlap
-            if best is not None and score >= 0.6:
-                found.append(Location(
-                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
-                    source=f"{best.get('level','')} in {best.get('function')}(): "
-                           f"{best.get('text','')[:110]}",
-                    fragment=best.get("text", "")[:60]))
-        return found or self._locate_via_operation(evidence)
 
     def _blast_radius(self, locations) -> str:
         """What else depends on the code we are about to patch, per the graph."""
@@ -259,43 +232,6 @@ class RemediationAgent:
             return ""
         return answer[:1200]
 
-    def _locate_via_operation(self, evidence: list[str]) -> list:
-        """Map an evidence line to source by the OPERATION it names.
-
-        Matching log text only works when the line was written by a logger in
-        this repo. A connector-sourced line was not: a backend reports
-        "process_event completed in 72551ms", which no logging call in the
-        source ever wrote, so nothing mapped and remediation stopped even
-        though the function is right there in the analysis under that exact
-        name. Any telemetry that names its operations - OpenTelemetry spans,
-        vendor traces - benefits from this, not one vendor.
-        """
-        from aegis.l8_action.mapper import Location
-
-        named = {}
-        for entry in (self.code.get("entrypoints") or []):
-            function = str(entry.get("function") or "")
-            if function and entry.get("file"):
-                named.setdefault(function, entry)
-
-        found: list[Location] = []
-        seen: set[str] = set()
-        for line in evidence[:6]:
-            # Operation names are identifiers, so only identifier-shaped
-            # words can match one; ordinary prose cannot collide with them.
-            for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", line):
-                entry = named.get(word)
-                if entry is None or word in seen:
-                    continue
-                seen.add(word)
-                found.append(Location(
-                    file=str(entry.get("file", "")),
-                    line=int(entry.get("line", 0) or 0),
-                    source=f"{entry.get('kind','')} {entry.get('method','')} "
-                           f"{entry.get('path','')} -> {word}()".strip(),
-                    fragment=word))
-                break
-        return found or self._locate_via_operation(evidence)
 
     def _locate_via_operation(self, evidence: list[str]) -> list:
         """Map an evidence line to source by the OPERATION it names.
@@ -335,121 +271,10 @@ class RemediationAgent:
                 break
         return found
 
-    def _code_context(self, locations) -> str:
-        """What else the analysis knows about the functions involved."""
-        if not self.code:
-            return ""
-        functions = {l.source.split(" in ")[-1].split("(")[0]
-                     for l in locations if " in " in l.source}
-        lines = []
-        for entry in self.code.get("entrypoints", []):
-            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
-            if functions & reach:
-                lines.append(f"  reachable from {entry.get('method','')} "
-                             f"{entry.get('path','')} -> {entry.get('function')}()")
-        for call in self.code.get("external_calls", []):
-            if call.get("function") in functions:
-                guard = "guarded" if call.get("guarded") else "NOT guarded"
-                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
-                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
-                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
-        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
 
-    def _locate_via_code(self, evidence: list[str]) -> list:
-        """Find the source line from the CODE ANALYSIS rather than by grepping.
 
-        Grepping matches whatever text happens to appear; the analysis knows
-        which logging call writes a line, in which function, so the patch
-        prompt gets the right file, the enclosing function, and its callers.
-        """
-        statements = self.code.get("log_statements") or []
-        if not statements:
-            return []
-        from aegis.l4_understanding.flowspec import _overlap
-        from aegis.l8_action.mapper import Location
 
-        found: list[Location] = []
-        for line in evidence[:6]:
-            best, score = None, 0.0
-            for statement in statements:
-                overlap = _overlap(line, statement.get("text", ""))
-                if overlap > score:
-                    best, score = statement, overlap
-            if best is not None and score >= 0.6:
-                found.append(Location(
-                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
-                    source=f"{best.get('level','')} in {best.get('function')}(): "
-                           f"{best.get('text','')[:110]}",
-                    fragment=best.get("text", "")[:60]))
-        return found
 
-    def _code_context(self, locations) -> str:
-        """What else the analysis knows about the functions involved."""
-        if not self.code:
-            return ""
-        functions = {l.source.split(" in ")[-1].split("(")[0]
-                     for l in locations if " in " in l.source}
-        lines = []
-        for entry in self.code.get("entrypoints", []):
-            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
-            if functions & reach:
-                lines.append(f"  reachable from {entry.get('method','')} "
-                             f"{entry.get('path','')} -> {entry.get('function')}()")
-        for call in self.code.get("external_calls", []):
-            if call.get("function") in functions:
-                guard = "guarded" if call.get("guarded") else "NOT guarded"
-                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
-                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
-                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
-        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
-
-    def _locate_via_code(self, evidence: list[str]) -> list:
-        """Find the source line from the CODE ANALYSIS rather than by grepping.
-
-        Grepping matches whatever text happens to appear; the analysis knows
-        which logging call writes a line, in which function, so the patch
-        prompt gets the right file, the enclosing function, and its callers.
-        """
-        statements = self.code.get("log_statements") or []
-        if not statements:
-            return []
-        from aegis.l4_understanding.flowspec import _overlap
-        from aegis.l8_action.mapper import Location
-
-        found: list[Location] = []
-        for line in evidence[:6]:
-            best, score = None, 0.0
-            for statement in statements:
-                overlap = _overlap(line, statement.get("text", ""))
-                if overlap > score:
-                    best, score = statement, overlap
-            if best is not None and score >= 0.6:
-                found.append(Location(
-                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
-                    source=f"{best.get('level','')} in {best.get('function')}(): "
-                           f"{best.get('text','')[:110]}",
-                    fragment=best.get("text", "")[:60]))
-        return found
-
-    def _code_context(self, locations) -> str:
-        """What else the analysis knows about the functions involved."""
-        if not self.code:
-            return ""
-        functions = {l.source.split(" in ")[-1].split("(")[0]
-                     for l in locations if " in " in l.source}
-        lines = []
-        for entry in self.code.get("entrypoints", []):
-            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
-            if functions & reach:
-                lines.append(f"  reachable from {entry.get('method','')} "
-                             f"{entry.get('path','')} -> {entry.get('function')}()")
-        for call in self.code.get("external_calls", []):
-            if call.get("function") in functions:
-                guard = "guarded" if call.get("guarded") else "NOT guarded"
-                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
-                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
-                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
-        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
 
     def _locate_via_code(self, evidence: list[str]) -> list:
         """Find the source line from the CODE ANALYSIS rather than by grepping.

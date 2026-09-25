@@ -209,15 +209,6 @@ class DetectionEngine:
     COST_MIN_SAMPLES = 8      # below this a "usual cost" is an anecdote
     COST_RATIO = 2.5          # a 2.5x jump in tokens for the same work
     COST_COOLDOWN_S = 120.0
-    COST_MIN_SAMPLES = 8      # below this a "usual cost" is an anecdote
-    COST_RATIO = 2.5          # a 2.5x jump in tokens for the same work
-    COST_COOLDOWN_S = 120.0
-    COST_MIN_SAMPLES = 8      # below this a "usual cost" is an anecdote
-    COST_RATIO = 2.5          # a 2.5x jump in tokens for the same work
-    COST_COOLDOWN_S = 120.0
-    COST_MIN_SAMPLES = 8      # below this a "usual cost" is an anecdote
-    COST_RATIO = 2.5          # a 2.5x jump in tokens for the same work
-    COST_COOLDOWN_S = 120.0
     ERR_MIN_HISTORY = 100      # events before an error share means anything
     ERR_MIN_WINDOW = 8
     ERR_RATIO = 4.0
@@ -325,101 +316,8 @@ class DetectionEngine:
             return True
         return "sc5xx" in str(event.fields.get("template_pattern", ""))
 
-    def _cost_anomaly(self, event: Event, now: float) -> list[Signal]:
-        """Tokens per unit of work, against that work's own history.
 
-        Deliberately not a spend threshold: "$40 today" means nothing without
-        knowing what it bought. A prompt that silently doubles, or a retry
-        loop re-asking the model, shows up here as the same work costing more
-        - and nowhere else, because nothing errors.
-        """
-        line = event.text_redacted.splitlines()[0]
-        found = _extract_cost(line)
-        if not found:
-            return []
-        label, amount = found
-        history = self._cost.setdefault(label, deque(maxlen=200))
 
-        finding = None
-        if len(history) >= self.COST_MIN_SAMPLES:
-            ordered = sorted(history)
-            usual = ordered[len(ordered) // 2]
-            last = self._cost_last_fire.get(label)
-            if usual > 0 and amount >= usual * self.COST_RATIO \
-                    and (last is None or now - last >= self.COST_COOLDOWN_S):
-                self._cost_last_fire[label] = now
-                finding = self._signal(
-                    detector="CostAnomaly", metric=f"{label} tokens",
-                    observed=round(amount, 1), baseline=round(usual, 1),
-                    ratio=round(amount / usual, 1), severity="P3", event=event)
-        # Compare BEFORE recording, so a spike is measured against prior
-        # history rather than against a baseline it has already shifted.
-        history.append(amount)
-        return [finding] if finding else []
-
-    def _cost_anomaly(self, event: Event, now: float) -> list[Signal]:
-        """Tokens per unit of work, against that work's own history.
-
-        Deliberately not a spend threshold: "$40 today" means nothing without
-        knowing what it bought. A prompt that silently doubles, or a retry
-        loop re-asking the model, shows up here as the same work costing more
-        - and nowhere else, because nothing errors.
-        """
-        line = event.text_redacted.splitlines()[0]
-        found = _extract_cost(line)
-        if not found:
-            return []
-        label, amount = found
-        history = self._cost.setdefault(label, deque(maxlen=200))
-
-        finding = None
-        if len(history) >= self.COST_MIN_SAMPLES:
-            ordered = sorted(history)
-            usual = ordered[len(ordered) // 2]
-            last = self._cost_last_fire.get(label)
-            if usual > 0 and amount >= usual * self.COST_RATIO \
-                    and (last is None or now - last >= self.COST_COOLDOWN_S):
-                self._cost_last_fire[label] = now
-                finding = self._signal(
-                    detector="CostAnomaly", metric=f"{label} tokens",
-                    observed=round(amount, 1), baseline=round(usual, 1),
-                    ratio=round(amount / usual, 1), severity="P3", event=event)
-        # Compare BEFORE recording, so a spike is measured against prior
-        # history rather than against a baseline it has already shifted.
-        history.append(amount)
-        return [finding] if finding else []
-
-    def _cost_anomaly(self, event: Event, now: float) -> list[Signal]:
-        """Tokens per unit of work, against that work's own history.
-
-        Deliberately not a spend threshold: "$40 today" means nothing without
-        knowing what it bought. A prompt that silently doubles, or a retry
-        loop re-asking the model, shows up here as the same work costing more
-        - and nowhere else, because nothing errors.
-        """
-        line = event.text_redacted.splitlines()[0]
-        found = _extract_cost(line)
-        if not found:
-            return []
-        label, amount = found
-        history = self._cost.setdefault(label, deque(maxlen=200))
-
-        finding = None
-        if len(history) >= self.COST_MIN_SAMPLES:
-            ordered = sorted(history)
-            usual = ordered[len(ordered) // 2]
-            last = self._cost_last_fire.get(label)
-            if usual > 0 and amount >= usual * self.COST_RATIO \
-                    and (last is None or now - last >= self.COST_COOLDOWN_S):
-                self._cost_last_fire[label] = now
-                finding = self._signal(
-                    detector="CostAnomaly", metric=f"{label} tokens",
-                    observed=round(amount, 1), baseline=round(usual, 1),
-                    ratio=round(amount / usual, 1), severity="P3", event=event)
-        # Compare BEFORE recording, so a spike is measured against prior
-        # history rather than against a baseline it has already shifted.
-        history.append(amount)
-        return [finding] if finding else []
 
     def _cost_anomaly(self, event: Event, now: float) -> list[Signal]:
         """Tokens per unit of work, against that work's own history.

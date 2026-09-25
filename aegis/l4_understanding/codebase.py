@@ -282,59 +282,8 @@ class _PyVisitor(ast.NodeVisitor):
                     file=self.rel, line=node.lineno))
         self.generic_visit(node)
 
-    @staticmethod
-    def _literal_text(node: ast.expr) -> str:
-        """The FIXED words of a log call - the parts that appear verbatim in
-        every line it writes. f-string slots become a space, so
-        f"Step {n}: {node}" yields "Step :" and still matches the template."""
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value
-        if isinstance(node, ast.JoinedStr):
-            return " ".join(part.value for part in node.values
-                            if isinstance(part, ast.Constant)
-                            and isinstance(part.value, str)).strip()
-        # "a" "b" implicit concatenation, and "a" + var
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left = _PyVisitor._literal_text(node.left)
-            right = _PyVisitor._literal_text(node.right)
-            return f"{left} {right}".strip()
-        return ""
 
-    @staticmethod
-    def _literal_text(node: ast.expr) -> str:
-        """The FIXED words of a log call - the parts that appear verbatim in
-        every line it writes. f-string slots become a space, so
-        f"Step {n}: {node}" yields "Step :" and still matches the template."""
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value
-        if isinstance(node, ast.JoinedStr):
-            return " ".join(part.value for part in node.values
-                            if isinstance(part, ast.Constant)
-                            and isinstance(part.value, str)).strip()
-        # "a" "b" implicit concatenation, and "a" + var
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left = _PyVisitor._literal_text(node.left)
-            right = _PyVisitor._literal_text(node.right)
-            return f"{left} {right}".strip()
-        return ""
 
-    @staticmethod
-    def _literal_text(node: ast.expr) -> str:
-        """The FIXED words of a log call - the parts that appear verbatim in
-        every line it writes. f-string slots become a space, so
-        f"Step {n}: {node}" yields "Step :" and still matches the template."""
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value
-        if isinstance(node, ast.JoinedStr):
-            return " ".join(part.value for part in node.values
-                            if isinstance(part, ast.Constant)
-                            and isinstance(part.value, str)).strip()
-        # "a" "b" implicit concatenation, and "a" + var
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left = _PyVisitor._literal_text(node.left)
-            right = _PyVisitor._literal_text(node.right)
-            return f"{left} {right}".strip()
-        return ""
 
     @staticmethod
     def _literal_text(node: ast.expr) -> str:

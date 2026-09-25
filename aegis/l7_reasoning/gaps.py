@@ -98,56 +98,8 @@ class GapReporter:
             ))
         return gaps
 
-    def _cost_gap(self, stats: dict[str, Any], sees_cost: bool,
-                  looks_like_llm: bool) -> list[dict[str, str]]:
-        """An LLM app that never logs token usage cannot be watched for the
-        failure that only shows up on the bill."""
-        if sees_cost or not looks_like_llm:
-            return []
-        return [_gap(
-            "cost",
-            "token usage on every model call - "
-            "'LLM usage node=generate total_tokens=1510'",
-            "a prompt that silently doubles, or a retry loop re-asking the "
-            "model, costs more for the same work and errors nowhere; without "
-            "a token count it is invisible until the invoice",
-            f"model calls were observed in {stats.get('events', 0)} events, "
-            "and not one carried a token count",
-        )]
 
-    def _cost_gap(self, stats: dict[str, Any], sees_cost: bool,
-                  looks_like_llm: bool) -> list[dict[str, str]]:
-        """An LLM app that never logs token usage cannot be watched for the
-        failure that only shows up on the bill."""
-        if sees_cost or not looks_like_llm:
-            return []
-        return [_gap(
-            "cost",
-            "token usage on every model call - "
-            "'LLM usage node=generate total_tokens=1510'",
-            "a prompt that silently doubles, or a retry loop re-asking the "
-            "model, costs more for the same work and errors nowhere; without "
-            "a token count it is invisible until the invoice",
-            f"model calls were observed in {stats.get('events', 0)} events, "
-            "and not one carried a token count",
-        )]
 
-    def _cost_gap(self, stats: dict[str, Any], sees_cost: bool,
-                  looks_like_llm: bool) -> list[dict[str, str]]:
-        """An LLM app that never logs token usage cannot be watched for the
-        failure that only shows up on the bill."""
-        if sees_cost or not looks_like_llm:
-            return []
-        return [_gap(
-            "cost",
-            "token usage on every model call - "
-            "'LLM usage node=generate total_tokens=1510'",
-            "a prompt that silently doubles, or a retry loop re-asking the "
-            "model, costs more for the same work and errors nowhere; without "
-            "a token count it is invisible until the invoice",
-            f"model calls were observed in {stats.get('events', 0)} events, "
-            "and not one carried a token count",
-        )]
 
     def _cost_gap(self, stats: dict[str, Any], sees_cost: bool,
                   looks_like_llm: bool) -> list[dict[str, str]]:
