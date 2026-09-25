@@ -80,13 +80,23 @@ Rules:
   the shape to avoid: it turns a one-line fix into a multi-line block that
   (a) is far more likely to be non-unique in the file and (b) is not
   minimal.
-- the applier matches each removed "-" line against the file by its TEXT
-  alone, not by position - it does not read the @@ line numbers, so do not
-  rely on them to pick between occurrences. If a line like
-  "sources = _resolve_sources(request.sources)" could appear more than once
-  (e.g. the same call inside a sibling function), remove and replace an
-  ADJACENT line instead - or include it - that only appears near the ONE
-  occurrence you mean, so the removed text itself is unique in the file.
+- the applier ONLY looks at "-" and "+" lines - it has no idea about @@ line
+  numbers and it does not read unchanged/context lines in the hunk at all,
+  so putting a "def name(...):" line in as context does nothing; it is
+  invisible to the applier. Each "-" line is matched against the WHOLE file
+  by its own text alone, so if a line like
+  "sources = _resolve_sources(request.sources)" could appear in more than
+  one function (this exact line appears in BOTH chat() and chat_sync() in
+  api.py - check for this before writing a hunk that removes it), you
+  cannot disambiguate by what surrounds it in the diff - only by what the
+  "-" line ITSELF says. Pick a different, narrower target: remove a line
+  that already contains something unique to the one occurrence you mean
+  (a nearby variable name only used in that function, or the specific
+  argument the diagnosis names), not a generic call shared across
+  functions. If no single line in the function is unique on its own,
+  rewrite the "-" line to include enough of the surrounding unique
+  text on the SAME line (e.g. combine two adjacent statements into one
+  "-"/"+" pair) rather than relying on diff context that will not be read.
   Never write a line number into the content of a "-" or "+" line; that
   text becomes part of what the applier searches for and will not be found.
 - HARD LIMIT: {max_lines} changed lines (+ and - together) across the whole
