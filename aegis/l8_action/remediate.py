@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from aegis.l3_storage.store import AEGIS_HOME
-from aegis.l8_action.gate import AutonomyGate
+from aegis.l8_action.gate import MAX_CHANGED_LINES, AutonomyGate
 from aegis.l8_action.mapper import TraceToCodeMapper
 from aegis.l8_action.runner import TestRunner
 
@@ -64,6 +64,10 @@ Rules:
 - unified diff format (--- a/path, +++ b/path, @@ hunks), repo-relative paths
 - touch ONLY the mapped files; never tests, CI, dependencies, or config secrets
 - change the fewest lines that fix the bug; no refactoring, no cleanup
+- HARD LIMIT: {max_lines} changed lines (+ and - together) across the whole
+  patch. A patch over that is rejected unread, so a rewritten function is
+  worth nothing however correct it is. Add a guard, change a condition,
+  fix the call - do not restructure the code around it.
 
 Reply with ONLY a fenced diff code block."""
 
@@ -182,7 +186,8 @@ class RemediationAgent:
         raw = self.router.chat("write_patch", [{"role": "user", "content":
             _PATCH_PROMPT.format(diagnosis=diagnosis,
                                  locations=loc_text + self._code_context(locations),
-                                 excerpts=excerpts, reproducer=reproducer)}],
+                                 excerpts=excerpts, reproducer=reproducer,
+                                 max_lines=MAX_CHANGED_LINES)}],
             purpose=f"patch for {incident_id}")
         if raw is None:
             return self._bundle(Proposal(incident_id, "unavailable",
@@ -191,9 +196,39 @@ class RemediationAgent:
                                          test_before=before.__dict__))
         patch = _code_block(raw)
         verdict = self.gate.validate_patch(patch, [l.file for l in locations])
+        if not verdict.allowed and "not a minimal fix" in verdict.reason:
+            # Size is the one objection worth a second attempt: the model
+            # rewrote a function when a guard would have done, and it does
+            # not know the limit until it is told. Every other rejection -
+            # tests, infrastructure, out of scope - is a boundary, not a
+            # miss, and retrying it would just be asking twice.
+            retry = self.router.chat("write_patch", [{"role": "user", "content":
+                _PATCH_PROMPT.format(
+                    diagnosis=diagnosis,
+                    locations=loc_text + self._code_context(locations),
+                    excerpts=excerpts, reproducer=reproducer,
+                    max_lines=MAX_CHANGED_LINES)
+                + f"\n\nYour previous attempt changed too much: "
+                  f"{verdict.reason}. Make the SAME fix in fewer lines - "
+                  f"the smallest edit that makes the reproducer pass."}],
+                purpose=f"smaller patch for {incident_id}")
+            if retry:
+                smaller = _code_block(retry)
+                second = self.gate.validate_patch(
+                    smaller, [l.file for l in locations])
+                if second.allowed:
+                    patch, verdict = smaller, second
         if not verdict.allowed:
+            # A rejection has to leave the reader somewhere. The patch is
+            # still in the bundle, still readable, and still the model's
+            # reading of the fix - it is just not something Aegis will
+            # stand behind, and saying which is the whole difference.
             return self._bundle(Proposal(
-                incident_id, "blocked", f"gate rejected the patch: {verdict.reason}",
+                incident_id, "blocked",
+                f"gate rejected the patch: {verdict.reason}. The diff is in "
+                "the bundle below - read it as a suggestion, apply it by "
+                "hand if it is right. Aegis proposes only what it has "
+                "proven, and it could not prove this one.",
                 reproducer=reproducer, patch=patch,
                 test_before=before.__dict__,
                 locations=[l.__dict__ for l in locations]))
