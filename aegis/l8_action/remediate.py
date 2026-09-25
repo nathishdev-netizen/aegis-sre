@@ -221,9 +221,14 @@ class RemediationAgent:
         # root before giving up, since that is where a single-package
         # project's dependencies usually live anyway.
         self.runner.hint = locations[0].file if locations else ""
+        # The line the DIAGNOSIS mapped to - lets the patch applier break a
+        # tie when the same call appears in more than one function (see
+        # PROXIMITY_LINES in runner.py). Facts, not model output.
+        self.runner.hint_line = locations[0].line if locations else None
         smoke = self.runner.smoke_test()
         if _classify_failure(smoke.output) == "ambiguous" and self.runner.hint:
             self.runner.hint = ""
+            self.runner.hint_line = None
             smoke = self.runner.smoke_test()
         if smoke.executed and smoke.exit_code != 0:
             kind = _classify_failure(smoke.output) or "environment"

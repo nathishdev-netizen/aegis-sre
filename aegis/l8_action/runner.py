@@ -19,6 +19,12 @@ TIMEOUT_S = 60
 # A repo bigger than this is not copied; the run is skipped and SAID to be
 # skipped - a silent skip would let an unexecuted reproducer look verified.
 MAX_REPO_BYTES = 50 * 1024 * 1024
+# How far from the diagnosed line a candidate match may sit and still be
+# treated as "the one meant". Wide enough to survive a few lines of drift
+# between when the incident was diagnosed and when the patch is written;
+# narrow enough that two occurrences in DIFFERENT functions of a normal-
+# sized file essentially never both fall inside it.
+PROXIMITY_LINES = 15
 
 
 @dataclass
@@ -29,7 +35,9 @@ class RunResult:
     detail: str = ""
 
 
-def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
+def _tolerant_apply(work: Path, patch_text: str, *,
+                    near_line: int | None = None,
+                    near_file: str = "") -> tuple[bool, str]:
     """Apply simple line-replacement hunks by unique prefix match.
 
     Handles the shapes model patches actually take: N removed lines with N
@@ -40,11 +48,23 @@ def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
     tested because it arrived with a comment attached.
 
     The safety property is unchanged either way: every removed line must
-    still match exactly ONE line in the file (by prefix or substring).
+    still resolve to exactly ONE target line before anything is written.
     Extra added lines beyond the matched count are inserted immediately
     after the matched line, in order - never guessed at a second location.
-    Only genuinely ambiguous matches, or added-fewer-than-removed (which
-    has no sane single-line target), still fail.
+
+    near_line/near_file: the 1-indexed line the DIAGNOSIS mapped to (not
+    written by the model, so it cannot be gamed or mistyped by it). Real
+    incidents keep landing on a removed line that is genuinely ambiguous by
+    text alone - the same helper call copy-pasted into a sibling function -
+    and four rounds of stricter prompt wording did not stop the model from
+    writing the plain, ambiguous line anyway. Asking a human to disambiguate
+    every time defeats the point of proposing a fix at all, so: when a
+    removed line has multiple textual matches AND exactly one of them falls
+    within PROXIMITY_LINES of the diagnosed line in the diagnosed file,
+    THAT one is used. If two or more candidate matches are both near the
+    hint, or there is no hint, this still refuses exactly as before - the
+    hint only ever narrows a genuine tie to one, it never overrides an
+    already-unique match and never picks among several equally-close ones.
     """
     current_file: Path | None = None
     minus: list[str] = []
@@ -61,6 +81,9 @@ def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
             lines = current_file.read_text(errors="replace").splitlines(keepends=True)
         except OSError:
             return f"cannot read {current_file.name}"
+        file_matches_hint = bool(
+            near_line and near_file
+            and current_file.name == Path(near_file).name)
         # Match every removed line to its unique target FIRST, before any
         # write - so a later ambiguous line does not leave the file half
         # patched from the lines already matched.
@@ -69,6 +92,11 @@ def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
             wanted = old_line.strip()
             hits = [i for i, line in enumerate(lines)
                     if line.strip().startswith(wanted) or wanted in line]
+            if len(hits) != 1 and file_matches_hint:
+                near = [i for i in hits
+                        if abs((i + 1) - near_line) <= PROXIMITY_LINES]
+                if len(near) == 1:
+                    hits = near
             if len(hits) != 1:
                 return f"{len(hits)} matches for {wanted[:40]!r} - not unique"
             targets.append(hits[0])
@@ -198,10 +226,16 @@ def _dotted_module(repo: Path, hint: str) -> str:
 
 
 class TestRunner:
-    def __init__(self, repo_path: str | Path, hint: str = "") -> None:
+    def __init__(self, repo_path: str | Path, hint: str = "",
+                hint_line: int | None = None) -> None:
         self.repo = Path(repo_path).resolve()
         # Where the code under test lives, so the venv search starts there.
         self.hint = hint
+        # The 1-indexed line the DIAGNOSIS mapped to in that file - from
+        # facts, never from the patch the model writes. Lets the applier
+        # break a textual tie the model itself cannot reliably avoid
+        # creating (see PROXIMITY_LINES).
+        self.hint_line = hint_line
 
     def _repo_size(self) -> int:
         total = 0
@@ -248,7 +282,9 @@ class TestRunner:
             if patch_text:
                 patch_bin = shutil.which("patch")
                 if patch_bin is None:
-                    applied, detail = _tolerant_apply(work, patch_text)
+                    applied, detail = _tolerant_apply(
+                        work, patch_text,
+                        near_line=self.hint_line, near_file=self.hint)
                     if not applied:
                         return RunResult(False, -1, "",
                                          f"no patch tool and {detail}")
@@ -264,7 +300,9 @@ class TestRunner:
                     # '-' line and patch(1) rightly refused it. For simple
                     # line replacements, match tolerantly - and fail honestly
                     # when the match is not unique.
-                    applied, detail = _tolerant_apply(work, patch_text)
+                    applied, detail = _tolerant_apply(
+                        work, patch_text,
+                        near_line=self.hint_line, near_file=self.hint)
                     if not applied:
                         return RunResult(False, patched.returncode,
                                          patched.stdout + patched.stderr,
