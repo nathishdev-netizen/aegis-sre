@@ -81,6 +81,34 @@ Rules:
 Reply with ONLY a fenced diff code block."""
 
 
+# Tiered, read-only, advisory - never drops a candidate or changes a verdict
+# on its own. Ported from SWE-bench's infra_failure.py: separates "the
+# environment broke" from "the patch was wrong" so a broken sandbox is never
+# silently counted as a bad fix. AMBIGUOUS outranks ENVIRONMENT (checked
+# first) because a missing module after a patch could be the patch's own
+# doing - removing an import it still needs - not the sandbox.
+_ENV_FAILURE = (
+    "Cannot allocate memory", "OutOfMemoryError", "MemoryError",
+    "Could not resolve host", "Temporary failure in name resolution",
+    "Connection refused", "Errno 102",
+)
+_AMBIGUOUS_FAILURE = (
+    "ModuleNotFoundError", "ImportError", "No module named",
+    "collected 0 items", "no tests ran", "Ran 0 tests",
+    "SyntaxError", "IndentationError",
+)
+
+
+def _classify_failure(output: str) -> str:
+    """"environment" | "ambiguous" | "" (a real test failure)."""
+    text = output or ""
+    if any(marker in text for marker in _ENV_FAILURE):
+        return "environment"
+    if any(marker in text for marker in _AMBIGUOUS_FAILURE):
+        return "ambiguous"
+    return ""
+
+
 def _code_block(text: str) -> str:
     match = re.search(r"```(?:python|diff)?\s*\n(.*?)```", text or "", re.S)
     return match.group(1) if match else (text or "").strip()
@@ -190,9 +218,7 @@ class RemediationAgent:
         # fails identically before and after the patch, so "before failed,
         # after passed" can never be satisfied and the whole proposal is
         # blocked for a reason that has nothing to do with the bug.
-        broken = ("ModuleNotFoundError", "ImportError", "SyntaxError",
-                  "IndentationError", "No module named")
-        if any(marker in (before.output or "") for marker in broken):
+        if _classify_failure(before.output) == "ambiguous":
             first = next(line for line in (before.output or "").splitlines()[::-1]
                          if line.strip())
             missing = ""
@@ -279,10 +305,28 @@ class RemediationAgent:
 
         after = self.runner.run(self.TEST_FILENAME, reproducer, patch)
         if not after.executed or after.exit_code != 0:
+            # "The patch is wrong" and "the sandbox broke" produce the same
+            # exit code and used to produce the same message. They are not
+            # the same finding: one says the diagnosis or fix needs work,
+            # the other says nothing was proven either way.
+            kind = _classify_failure(after.output)
+            if kind == "environment":
+                detail = ("the sandbox itself failed after applying the "
+                          f"patch ({(after.output or after.detail or '')[:120]}) "
+                          "- this is not evidence the patch is wrong. Nothing "
+                          "was proven either way.")
+            elif kind == "ambiguous":
+                detail = ("the reproducer could not run after the patch "
+                          f"({(after.output or '').splitlines()[-1][:120] if after.output else after.detail}) "
+                          "- possibly the patch removed something the "
+                          "reproducer still needs. Not proposing a fix that "
+                          "cannot be shown to work, but this may be a broken "
+                          "test rather than a broken patch.")
+            else:
+                detail = ("the patch did not make the reproducer pass - not "
+                          "proposing a fix that does not demonstrably fix")
             return self._bundle(Proposal(
-                incident_id, "blocked",
-                "the patch did not make the reproducer pass - not proposing "
-                "a fix that does not demonstrably fix",
+                incident_id, "blocked", detail,
                 reproducer=reproducer, patch=patch,
                 test_before=before.__dict__, test_after=after.__dict__,
                 locations=[l.__dict__ for l in locations]))
