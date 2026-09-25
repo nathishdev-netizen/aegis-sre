@@ -179,7 +179,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 write_json(self, HTTPStatus.OK,
                            {"ok": False, "detail": "aegis unavailable"})
                 return
-            name = self.path[len("/api/aegis/"):]
+            # The UI addresses some of these as /api/aegis/explain/INC-1 and
+            # others with the id in the body. Both are real call sites, so
+            # both are accepted rather than one silently matching nothing.
+            tail = self.path[len("/api/aegis/"):]
+            name, _, rest = tail.partition("/")
+            if rest and not body.get("incident_id"):
+                body = {**body, "incident_id": rest}
             if name == "combine":
                 # v1 owns the attach; catch up before answering, or the first
                 # combine after a fresh attach is rejected as "no source".
@@ -237,7 +243,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                            app.wipe_project(str(body.get("project", ""))))
                 return
             if name == "provider":
+                if rest:
+                    write_json(self, HTTPStatus.OK, app.remove_provider(rest))
+                    return
                 write_json(self, HTTPStatus.OK, app.add_provider(body))
+                return
+            if name == "proposal":
+                write_json(self, HTTPStatus.OK,
+                           app.proposal(str(body.get("incident_id", ""))))
                 return
             write_json(self, HTTPStatus.NOT_FOUND,
                        {"ok": False, "detail": f"no such route: {self.path}"})
