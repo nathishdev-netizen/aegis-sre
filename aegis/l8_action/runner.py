@@ -87,6 +87,22 @@ def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
     return True, "applied tolerantly"
 
 
+def _interpreter_for(repo: Path) -> str:
+    """The python that can actually import this project.
+
+    A reproducer runs against the project's own code, so it needs the
+    project's own dependencies. A bare "python3" has none of them, and the
+    import error that follows looks exactly like a badly written
+    reproducer - it is not, it is the wrong interpreter.
+    """
+    for candidate in (".venv/bin/python", "venv/bin/python",
+                      ".venv/bin/python3", "env/bin/python"):
+        path = repo / candidate
+        if path.is_file():
+            return str(path)
+    return "python3"
+
+
 class TestRunner:
     def __init__(self, repo_path: str | Path) -> None:
         self.repo = Path(repo_path).resolve()
@@ -145,7 +161,7 @@ class TestRunner:
             test_path.parent.mkdir(parents=True, exist_ok=True)
             test_path.write_text(test_content)
             completed = subprocess.run(
-                ["python3", test_filename], cwd=work, text=True,
+                [_interpreter_for(self.repo), test_filename], cwd=work, text=True,
                 capture_output=True, timeout=TIMEOUT_S,
                 env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
             )

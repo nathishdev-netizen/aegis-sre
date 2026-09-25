@@ -41,8 +41,17 @@ SOURCE EXCERPTS:
 
 Write ONE self-contained Python test script:
 - plain script style: `python3 <file>` exits non-zero on failure (use assert), prints one line on success
-- imports the code under test relative to the repo root shown in the paths
+- it RUNS FROM THE REPO ROOT, which is already the working directory. Import
+  the code exactly as the mapped paths spell it - services/chatbot/api.py is
+  `from services.chatbot.api import ...`. Do NOT add sys.path lines: the one
+  that looks right (`parents[0]`) is the script's own directory, not the
+  root, and it turns every run into ModuleNotFoundError - which fails before
+  AND after the patch, so the fix can never be proven.
 - exercises the diagnosed failure directly; no mocks of the code under test
+- it must fail because of the BUG, not because of a missing import, a
+  missing dependency or a wrong signature. If the diagnosed path needs
+  arguments you cannot know, construct the smallest real object the excerpts
+  show, and assert on the behaviour the diagnosis names.
 - 30 lines maximum
 
 Reply with ONLY a fenced python code block."""
@@ -171,6 +180,36 @@ class RemediationAgent:
                 incident_id, "blocked",
                 f"sandbox could not run the reproducer: {before.detail}",
                 reproducer=reproducer,
+                locations=[l.__dict__ for l in locations]))
+        # A reproducer that dies on an import never tested anything: it
+        # fails identically before and after the patch, so "before failed,
+        # after passed" can never be satisfied and the whole proposal is
+        # blocked for a reason that has nothing to do with the bug.
+        broken = ("ModuleNotFoundError", "ImportError", "SyntaxError",
+                  "IndentationError", "No module named")
+        if any(marker in (before.output or "") for marker in broken):
+            first = next(line for line in (before.output or "").splitlines()[::-1]
+                         if line.strip())
+            missing = ""
+            match = re.search(r"No module named ['\"]([\w.]+)", before.output or "")
+            if match:
+                name = match.group(1).split(".")[0]
+                own = (self.repo / name).exists() or (
+                    self.repo / f"{name}.py").exists()
+                missing = (
+                    f" '{name}' is one of this project's own packages, so the "
+                    "reproducer imported it by the wrong name."
+                    if own else
+                    f" '{name}' is a dependency this project needs and this "
+                    "machine does not have - create the project's virtualenv "
+                    "(.venv) and install into it, and the sandbox will use it.")
+            return self._bundle(Proposal(
+                incident_id, "blocked",
+                "the reproducer could not import this project, so it never "
+                f"reached the bug: {first.strip()[:160]}.{missing} Nothing was "
+                "proven either way - the reproducer is in the bundle if you "
+                "want to run it yourself.",
+                reproducer=reproducer, test_before=before.__dict__,
                 locations=[l.__dict__ for l in locations]))
         if before.exit_code == 0:
             # The one rule that separates useful from dangerous.
