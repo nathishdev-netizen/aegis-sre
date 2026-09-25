@@ -84,34 +84,6 @@ class Store:
         self._writer_stop = threading.Event()
         self._writer = threading.Thread(target=self._writer_loop, daemon=True)
         self._writer.start()
-        # One writer thread owns every duration INSERT, so ingestion never
-        # waits on the disk or on another connection's lock.
-        import queue as _queue
-        self._queue: _queue.Queue = _queue.Queue(maxsize=10000)
-        self._writer_stop = threading.Event()
-        self._writer = threading.Thread(target=self._writer_loop, daemon=True)
-        self._writer.start()
-        # One writer thread owns every duration INSERT, so ingestion never
-        # waits on the disk or on another connection's lock.
-        import queue as _queue
-        self._queue: _queue.Queue = _queue.Queue(maxsize=10000)
-        self._writer_stop = threading.Event()
-        self._writer = threading.Thread(target=self._writer_loop, daemon=True)
-        self._writer.start()
-        # One writer thread owns every duration INSERT, so ingestion never
-        # waits on the disk or on another connection's lock.
-        import queue as _queue
-        self._queue: _queue.Queue = _queue.Queue(maxsize=10000)
-        self._writer_stop = threading.Event()
-        self._writer = threading.Thread(target=self._writer_loop, daemon=True)
-        self._writer.start()
-        # One writer thread owns every duration INSERT, so ingestion never
-        # waits on the disk or on another connection's lock.
-        import queue as _queue
-        self._queue: _queue.Queue = _queue.Queue(maxsize=10000)
-        self._writer_stop = threading.Event()
-        self._writer = threading.Thread(target=self._writer_loop, daemon=True)
-        self._writer.start()
 
     def _connect(self) -> sqlite3.Connection:
         # An in-memory database exists only as long as its connection, so it cannot be
@@ -308,6 +280,7 @@ class Store:
     def close(self) -> None:
         self.flush_durations()
         self._writer_stop.set()
+        self._writer.join(timeout=2.0)
         conn = getattr(self._local, "conn", None)
         if conn is not None:
             conn.close()
