@@ -1,0 +1,11 @@
+Started GET "/orders" for 127.0.0.1 at 2026-09-05 10:00:01 +0000
+Processing by OrdersController#index as HTML
+  Order Load (1.2ms)  SELECT "orders".* FROM "orders"
+Completed 200 OK in 25ms (Views: 18.4ms | ActiveRecord: 1.2ms)
+Started POST "/orders" for 127.0.0.1 at 2026-09-05 10:00:06 +0000
+Processing by OrdersController#create as HTML
+  Order Create (2.1ms)  INSERT INTO "orders" ...
+Completed 201 Created in 240ms (Views: 3.1ms | ActiveRecord: 2.1ms)
+Started GET "/orders" for 127.0.0.1 at 2026-09-05 10:00:11 +0000
+Processing by OrdersController#index as HTML
+Completed 200 OK in 27ms (Views: 19.0ms | ActiveRecord: 1.4ms)

@@ -1,0 +1,7 @@
+Sep  5 10:00:01 web-01 sshd[1023]: Accepted publickey for deploy from 10.0.0.5 port 51022
+Sep  5 10:00:05 web-01 systemd[1]: Started Daily apt upgrade and clean activities.
+Sep  5 10:00:09 web-01 kernel: [12345.678] TCP: request_sock_TCP: Possible SYN flooding on port 8080.
+Sep  5 10:00:14 web-01 sshd[1055]: Failed password for invalid user admin from 203.0.113.9 port 40122
+Sep  5 10:00:15 web-01 sshd[1056]: Failed password for invalid user admin from 203.0.113.9 port 40123
+Sep  5 10:00:16 web-01 sshd[1057]: Failed password for invalid user admin from 203.0.113.9 port 40124
+Sep  5 10:00:20 web-01 cron[1102]: (root) CMD (/usr/local/bin/backup.sh)

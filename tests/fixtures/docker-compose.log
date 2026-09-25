@@ -1,0 +1,7 @@
+web_1    | 2026-09-05 10:00:01 INFO  booting gunicorn 21.2.0
+web_1    | 2026-09-05 10:00:04 INFO  GET /api/items 200 in 33ms
+worker_1 | 2026-09-05 10:00:06 INFO  task fetch_prices done in 480ms
+web_1    | 2026-09-05 10:00:09 INFO  GET /api/items 200 in 35ms
+db_1     | 2026-09-05 10:00:11 LOG   checkpoint complete: wrote 320 buffers
+worker_1 | 2026-09-05 10:00:14 ERROR task sync_stock failed: upstream 503 for supplier feed
+web_1    | 2026-09-05 10:00:17 INFO  GET /api/items 200 in 31ms

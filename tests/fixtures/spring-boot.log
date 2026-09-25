@@ -1,0 +1,15 @@
+2026-09-05 10:00:00.101  INFO 4242 --- [           main] c.e.orders.OrdersApplication             : Started OrdersApplication in 4.221 seconds
+2026-09-05 10:00:05.320  INFO 4242 --- [io-8080-exec-1] c.e.orders.web.OrderController           : GET /orders completed in 45ms
+2026-09-05 10:00:09.450  INFO 4242 --- [io-8080-exec-2] c.e.orders.web.OrderController           : GET /orders completed in 52ms
+2026-09-05 10:00:14.782  INFO 4242 --- [io-8080-exec-3] c.e.orders.web.OrderController           : POST /orders completed in 210ms
+2026-09-05 10:00:18.001 ERROR 4242 --- [io-8080-exec-4] c.e.orders.service.PaymentService        : Payment authorisation failed for card 4111 1111 1111 1111
+java.net.SocketTimeoutException: Read timed out
+	at java.base/java.net.SocketInputStream.socketRead0(Native Method)
+	at java.base/java.net.SocketInputStream.read(SocketInputStream.java:168)
+	at com.example.orders.service.PaymentService.authorize(PaymentService.java:88)
+	at com.example.orders.web.OrderController.create(OrderController.java:52)
+Caused by: java.io.IOException: connection reset by provider
+	at com.example.orders.client.ProviderClient.call(ProviderClient.java:41)
+	... 12 common frames omitted
+2026-09-05 10:00:21.220  INFO 4242 --- [io-8080-exec-5] c.e.orders.web.OrderController           : GET /orders completed in 44ms
+2026-09-05 10:00:26.914  INFO 4242 --- [io-8080-exec-6] c.e.orders.web.OrderController           : GET /orders completed in 48ms

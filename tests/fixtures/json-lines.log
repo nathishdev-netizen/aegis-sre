@@ -1,0 +1,8 @@
+{"level":"info","time":"2026-09-05T10:00:00Z","msg":"server listening on port 3000","service":"orders-api"}
+{"level":"info","time":"2026-09-05T10:00:04Z","msg":"request completed","reqId":"req-9f1c2d3e","method":"GET","path":"/orders","status":200,"durationMs":45}
+{"level":"info","time":"2026-09-05T10:00:07Z","msg":"request completed","reqId":"req-8a7b6c5d","method":"GET","path":"/orders","status":200,"durationMs":51}
+{"level":"info","time":"2026-09-05T10:00:11Z","msg":"request completed","reqId":"req-1a2b3c4d","method":"POST","path":"/orders","status":201,"durationMs":230}
+{"level":"warn","time":"2026-09-05T10:00:15Z","msg":"slow query on orders table","reqId":"req-1a2b3c4d","durationMs":1890}
+{"level":"error","time":"2026-09-05T10:00:16Z","msg":"payment webhook failed for customer jane.doe@example.com","reqId":"req-1a2b3c4d","status":502}
+{"level":"info","time":"2026-09-05T10:00:20Z","msg":"request completed","reqId":"req-5e6f7a8b","method":"GET","path":"/orders","status":200,"durationMs":38}
+{"level":"info","time":"2026-09-05T10:00:24Z","msg":"request completed","reqId":"req-2c3d4e5f","method":"GET","path":"/orders","status":200,"durationMs":47}

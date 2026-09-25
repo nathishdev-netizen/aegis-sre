@@ -1,0 +1,556 @@
+"""C13 - the remediation agent: reproduce first, patch minimally, draft only.
+
+The flow is the doc's, and the order is the safety mechanism:
+
+  incident -> map to code -> FAILING test -> patch -> test passes -> bundle
+
+If the reproducer passes before the patch, the diagnosis is wrong and the
+agent STOPS - models are extremely good at producing confident, plausible
+patches for problems they have diagnosed incorrectly, and the failing test is
+the only defence.
+
+Output is a proposal bundle under ~/.aegis/projects/<p>/proposals/, never a
+write to the target repo: applying a fix is a human act. There is no merge
+path in this codebase at any tier.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from aegis.l3_storage.store import AEGIS_HOME
+from aegis.l8_action.gate import AutonomyGate
+from aegis.l8_action.mapper import TraceToCodeMapper
+from aegis.l8_action.runner import TestRunner
+
+_REPRODUCER_PROMPT = """You are writing a REPRODUCER for a diagnosed incident. It must FAIL now, for the right reason, and pass once the underlying bug is fixed.
+
+DIAGNOSIS: {diagnosis}
+
+EVIDENCE (redacted log lines):
+{evidence}
+
+MAPPED SOURCE (file:line and the line content):
+{locations}
+
+SOURCE EXCERPTS:
+{excerpts}
+
+Write ONE self-contained Python test script:
+- plain script style: `python3 <file>` exits non-zero on failure (use assert), prints one line on success
+- imports the code under test relative to the repo root shown in the paths
+- exercises the diagnosed failure directly; no mocks of the code under test
+- 30 lines maximum
+
+Reply with ONLY a fenced python code block."""
+
+_PATCH_PROMPT = """You are writing the MINIMAL fix for a diagnosed incident. A failing reproducer already exists; your patch must make it pass.
+
+DIAGNOSIS: {diagnosis}
+
+MAPPED SOURCE (the only files you may touch):
+{locations}
+
+SOURCE EXCERPTS:
+{excerpts}
+
+REPRODUCER (already failing, do not modify it):
+{reproducer}
+
+Rules:
+- unified diff format (--- a/path, +++ b/path, @@ hunks), repo-relative paths
+- touch ONLY the mapped files; never tests, CI, dependencies, or config secrets
+- change the fewest lines that fix the bug; no refactoring, no cleanup
+
+Reply with ONLY a fenced diff code block."""
+
+
+def _code_block(text: str) -> str:
+    match = re.search(r"```(?:python|diff)?\s*\n(.*?)```", text or "", re.S)
+    return match.group(1) if match else (text or "").strip()
+
+
+@dataclass
+class Proposal:
+    incident_id: str
+    status: str                 # draft | advise | stopped | blocked | unavailable
+    detail: str
+    reproducer: str = ""
+    patch: str = ""
+    test_before: dict[str, Any] = field(default_factory=dict)
+    test_after: dict[str, Any] = field(default_factory=dict)
+    locations: list[dict[str, Any]] = field(default_factory=list)
+    bundle_path: str = ""
+
+
+class RemediationAgent:
+    TEST_FILENAME = "aegis_reproducer.py"
+
+    def __init__(self, router: Any, repo_path: str | Path,
+                 tier: str = "T1", project: str = "default",
+                 code: dict[str, Any] | None = None) -> None:
+        self.router = router
+        self.repo = Path(repo_path).resolve()
+        # C6's analysis, when the project has been analyzed. It turns "grep
+        # for this log line" into "this line is written at file:line, in a
+        # function reachable from these entrypoints, which also calls these
+        # externals" - context a reproducer cannot be written well without.
+        self.code = code or {}
+        self.gate = AutonomyGate(tier)
+        self.mapper = TraceToCodeMapper(self.repo)
+        self.runner = TestRunner(self.repo)
+        self.project = project
+
+    # -- the flow ------------------------------------------------------------
+
+    def propose(self, incident: dict[str, Any],
+                hypothesis: dict[str, Any] | None) -> Proposal:
+        incident_id = str(incident.get("id", "?"))
+        diagnosis = (hypothesis or {}).get("statement") or incident.get(
+            "cause_why", ["no diagnosis available"])[0]
+        # The brief tells the reproducer what kind of thing it is testing -
+        # the weak reproducer this agent once wrote for a background task
+        # came from a prompt that had no idea it WAS a background task.
+        project_brief = str(incident.get("project_brief") or "")[:900]
+        if project_brief:
+            diagnosis = f"[project context: {project_brief}]\\n{diagnosis}"
+        # The brief tells the reproducer what kind of thing it is testing -
+        # the weak reproducer this agent once wrote for a background task
+        # came from a prompt that had no idea it WAS a background task.
+        project_brief = str(incident.get("project_brief") or "")[:900]
+        if project_brief:
+            diagnosis = f"[project context: {project_brief}]\\n{diagnosis}"
+
+        permit = self.gate.permits_draft()
+        if not permit.allowed:
+            return self._bundle(Proposal(
+                incident_id, "advise",
+                f"{permit.reason}. Recommendation: {diagnosis}"))
+
+        evidence = list(incident.get("evidence") or [])
+        locations = self._locate_via_code(evidence) or self.mapper.locate(evidence)
+        # How far a change here reaches. A patch to a leaf helper and a patch
+        # to something nine callers depend on are different risks, and the
+        # bundle should say which one the reviewer is holding.
+        self.blast_radius = self._blast_radius(locations)
+        if not locations:
+            return self._bundle(Proposal(
+                incident_id, "advise",
+                "no evidence line maps to source in this repo - fix by hand, "
+                "or add logging so the next incident maps (the gap report)"))
+
+        excerpts = self._excerpts(locations)
+        loc_text = "\n".join(f"  {l.file}:{l.line}  {l.source}" for l in locations)
+
+        # 1. Reproducer - a NEW file, and it must FAIL.
+        raw = self.router.chat("write_reproducer", [{"role": "user", "content":
+            _REPRODUCER_PROMPT.format(diagnosis=diagnosis,
+                                      evidence="\n".join(evidence[:6]),
+                                      locations=loc_text, excerpts=excerpts)}],
+            purpose=f"reproducer for {incident_id}")
+        if raw is None:
+            return self._bundle(Proposal(incident_id, "unavailable",
+                                         "model unavailable or budget spent"))
+        reproducer = _code_block(raw)
+        existing = {str(p.relative_to(self.repo)) for p in self.repo.rglob("*")
+                    if p.is_file()}
+        check = self.gate.validate_reproducer(self.TEST_FILENAME, existing)
+        if not check.allowed:
+            return self._bundle(Proposal(incident_id, "blocked", check.reason))
+
+        before = self.runner.run(self.TEST_FILENAME, reproducer)
+        if not before.executed:
+            return self._bundle(Proposal(
+                incident_id, "blocked",
+                f"sandbox could not run the reproducer: {before.detail}",
+                reproducer=reproducer,
+                locations=[l.__dict__ for l in locations]))
+        if before.exit_code == 0:
+            # The one rule that separates useful from dangerous.
+            return self._bundle(Proposal(
+                incident_id, "stopped",
+                "the reproducer PASSED before any fix - the diagnosis is "
+                "wrong, and a patch built on it would be a confident guess. "
+                "Stopping, as the protocol requires.",
+                reproducer=reproducer, test_before=before.__dict__,
+                locations=[l.__dict__ for l in locations]))
+
+        # 2. Patch - minimal, gated, and it must make the reproducer pass.
+        raw = self.router.chat("write_patch", [{"role": "user", "content":
+            _PATCH_PROMPT.format(diagnosis=diagnosis,
+                                 locations=loc_text + self._code_context(locations),
+                                 excerpts=excerpts, reproducer=reproducer)}],
+            purpose=f"patch for {incident_id}")
+        if raw is None:
+            return self._bundle(Proposal(incident_id, "unavailable",
+                                         "model unavailable for the patch step",
+                                         reproducer=reproducer,
+                                         test_before=before.__dict__))
+        patch = _code_block(raw)
+        verdict = self.gate.validate_patch(patch, [l.file for l in locations])
+        if not verdict.allowed:
+            return self._bundle(Proposal(
+                incident_id, "blocked", f"gate rejected the patch: {verdict.reason}",
+                reproducer=reproducer, patch=patch,
+                test_before=before.__dict__,
+                locations=[l.__dict__ for l in locations]))
+
+        after = self.runner.run(self.TEST_FILENAME, reproducer, patch)
+        if not after.executed or after.exit_code != 0:
+            return self._bundle(Proposal(
+                incident_id, "blocked",
+                "the patch did not make the reproducer pass - not proposing "
+                "a fix that does not demonstrably fix",
+                reproducer=reproducer, patch=patch,
+                test_before=before.__dict__, test_after=after.__dict__,
+                locations=[l.__dict__ for l in locations]))
+
+        return self._bundle(Proposal(
+            incident_id, "draft",
+            "reproducer failed before the patch and passes after it",
+            reproducer=reproducer, patch=patch,
+            test_before=before.__dict__, test_after=after.__dict__,
+            locations=[l.__dict__ for l in locations]))
+
+    def _locate_via_code(self, evidence: list[str]) -> list:
+        """Find the source line from the CODE ANALYSIS rather than by grepping.
+
+        Grepping matches whatever text happens to appear; the analysis knows
+        which logging call writes a line, in which function, so the patch
+        prompt gets the right file, the enclosing function, and its callers.
+        """
+        statements = self.code.get("log_statements") or []
+        if not statements:
+            return []
+        from aegis.l4_understanding.flowspec import _overlap
+        from aegis.l8_action.mapper import Location
+
+        found: list[Location] = []
+        for line in evidence[:6]:
+            best, score = None, 0.0
+            for statement in statements:
+                overlap = _overlap(line, statement.get("text", ""))
+                if overlap > score:
+                    best, score = statement, overlap
+            if best is not None and score >= 0.6:
+                found.append(Location(
+                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
+                    source=f"{best.get('level','')} in {best.get('function')}(): "
+                           f"{best.get('text','')[:110]}",
+                    fragment=best.get("text", "")[:60]))
+        return found or self._locate_via_operation(evidence)
+
+    def _blast_radius(self, locations) -> str:
+        """What else depends on the code we are about to patch, per the graph."""
+        if not locations:
+            return ""
+        from aegis.l4_understanding.codegraph import CodeGraph, index_present
+        repo = str(self.repo_path)
+        if not index_present(repo):
+            return ""
+        target = locations[0].fragment or locations[0].source
+        answer = CodeGraph(repo).explore(
+            f"What calls {target}, directly and indirectly? "
+            f"Summarise the blast radius of changing it.")
+        if answer.startswith(("no code graph", "code graph unavailable")):
+            return ""
+        return answer[:1200]
+
+    def _locate_via_operation(self, evidence: list[str]) -> list:
+        """Map an evidence line to source by the OPERATION it names.
+
+        Matching log text only works when the line was written by a logger in
+        this repo. A connector-sourced line was not: a backend reports
+        "process_event completed in 72551ms", which no logging call in the
+        source ever wrote, so nothing mapped and remediation stopped even
+        though the function is right there in the analysis under that exact
+        name. Any telemetry that names its operations - OpenTelemetry spans,
+        vendor traces - benefits from this, not one vendor.
+        """
+        from aegis.l8_action.mapper import Location
+
+        named = {}
+        for entry in (self.code.get("entrypoints") or []):
+            function = str(entry.get("function") or "")
+            if function and entry.get("file"):
+                named.setdefault(function, entry)
+
+        found: list[Location] = []
+        seen: set[str] = set()
+        for line in evidence[:6]:
+            # Operation names are identifiers, so only identifier-shaped
+            # words can match one; ordinary prose cannot collide with them.
+            for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", line):
+                entry = named.get(word)
+                if entry is None or word in seen:
+                    continue
+                seen.add(word)
+                found.append(Location(
+                    file=str(entry.get("file", "")),
+                    line=int(entry.get("line", 0) or 0),
+                    source=f"{entry.get('kind','')} {entry.get('method','')} "
+                           f"{entry.get('path','')} -> {word}()".strip(),
+                    fragment=word))
+                break
+        return found or self._locate_via_operation(evidence)
+
+    def _locate_via_operation(self, evidence: list[str]) -> list:
+        """Map an evidence line to source by the OPERATION it names.
+
+        Matching log text only works when the line was written by a logger in
+        this repo. A connector-sourced line was not: a backend reports
+        "process_event completed in 72551ms", which no logging call in the
+        source ever wrote, so nothing mapped and remediation stopped even
+        though the function is right there in the analysis under that exact
+        name. Any telemetry that names its operations - OpenTelemetry spans,
+        vendor traces - benefits from this, not one vendor.
+        """
+        from aegis.l8_action.mapper import Location
+
+        named = {}
+        for entry in (self.code.get("entrypoints") or []):
+            function = str(entry.get("function") or "")
+            if function and entry.get("file"):
+                named.setdefault(function, entry)
+
+        found: list[Location] = []
+        seen: set[str] = set()
+        for line in evidence[:6]:
+            # Operation names are identifiers, so only identifier-shaped
+            # words can match one; ordinary prose cannot collide with them.
+            for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", line):
+                entry = named.get(word)
+                if entry is None or word in seen:
+                    continue
+                seen.add(word)
+                found.append(Location(
+                    file=str(entry.get("file", "")),
+                    line=int(entry.get("line", 0) or 0),
+                    source=f"{entry.get('kind','')} {entry.get('method','')} "
+                           f"{entry.get('path','')} -> {word}()".strip(),
+                    fragment=word))
+                break
+        return found
+
+    def _code_context(self, locations) -> str:
+        """What else the analysis knows about the functions involved."""
+        if not self.code:
+            return ""
+        functions = {l.source.split(" in ")[-1].split("(")[0]
+                     for l in locations if " in " in l.source}
+        lines = []
+        for entry in self.code.get("entrypoints", []):
+            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
+            if functions & reach:
+                lines.append(f"  reachable from {entry.get('method','')} "
+                             f"{entry.get('path','')} -> {entry.get('function')}()")
+        for call in self.code.get("external_calls", []):
+            if call.get("function") in functions:
+                guard = "guarded" if call.get("guarded") else "NOT guarded"
+                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
+                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
+                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
+        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
+
+    def _locate_via_code(self, evidence: list[str]) -> list:
+        """Find the source line from the CODE ANALYSIS rather than by grepping.
+
+        Grepping matches whatever text happens to appear; the analysis knows
+        which logging call writes a line, in which function, so the patch
+        prompt gets the right file, the enclosing function, and its callers.
+        """
+        statements = self.code.get("log_statements") or []
+        if not statements:
+            return []
+        from aegis.l4_understanding.flowspec import _overlap
+        from aegis.l8_action.mapper import Location
+
+        found: list[Location] = []
+        for line in evidence[:6]:
+            best, score = None, 0.0
+            for statement in statements:
+                overlap = _overlap(line, statement.get("text", ""))
+                if overlap > score:
+                    best, score = statement, overlap
+            if best is not None and score >= 0.6:
+                found.append(Location(
+                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
+                    source=f"{best.get('level','')} in {best.get('function')}(): "
+                           f"{best.get('text','')[:110]}",
+                    fragment=best.get("text", "")[:60]))
+        return found
+
+    def _code_context(self, locations) -> str:
+        """What else the analysis knows about the functions involved."""
+        if not self.code:
+            return ""
+        functions = {l.source.split(" in ")[-1].split("(")[0]
+                     for l in locations if " in " in l.source}
+        lines = []
+        for entry in self.code.get("entrypoints", []):
+            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
+            if functions & reach:
+                lines.append(f"  reachable from {entry.get('method','')} "
+                             f"{entry.get('path','')} -> {entry.get('function')}()")
+        for call in self.code.get("external_calls", []):
+            if call.get("function") in functions:
+                guard = "guarded" if call.get("guarded") else "NOT guarded"
+                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
+                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
+                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
+        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
+
+    def _locate_via_code(self, evidence: list[str]) -> list:
+        """Find the source line from the CODE ANALYSIS rather than by grepping.
+
+        Grepping matches whatever text happens to appear; the analysis knows
+        which logging call writes a line, in which function, so the patch
+        prompt gets the right file, the enclosing function, and its callers.
+        """
+        statements = self.code.get("log_statements") or []
+        if not statements:
+            return []
+        from aegis.l4_understanding.flowspec import _overlap
+        from aegis.l8_action.mapper import Location
+
+        found: list[Location] = []
+        for line in evidence[:6]:
+            best, score = None, 0.0
+            for statement in statements:
+                overlap = _overlap(line, statement.get("text", ""))
+                if overlap > score:
+                    best, score = statement, overlap
+            if best is not None and score >= 0.6:
+                found.append(Location(
+                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
+                    source=f"{best.get('level','')} in {best.get('function')}(): "
+                           f"{best.get('text','')[:110]}",
+                    fragment=best.get("text", "")[:60]))
+        return found
+
+    def _code_context(self, locations) -> str:
+        """What else the analysis knows about the functions involved."""
+        if not self.code:
+            return ""
+        functions = {l.source.split(" in ")[-1].split("(")[0]
+                     for l in locations if " in " in l.source}
+        lines = []
+        for entry in self.code.get("entrypoints", []):
+            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
+            if functions & reach:
+                lines.append(f"  reachable from {entry.get('method','')} "
+                             f"{entry.get('path','')} -> {entry.get('function')}()")
+        for call in self.code.get("external_calls", []):
+            if call.get("function") in functions:
+                guard = "guarded" if call.get("guarded") else "NOT guarded"
+                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
+                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
+                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
+        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
+
+    def _locate_via_code(self, evidence: list[str]) -> list:
+        """Find the source line from the CODE ANALYSIS rather than by grepping.
+
+        Grepping matches whatever text happens to appear; the analysis knows
+        which logging call writes a line, in which function, so the patch
+        prompt gets the right file, the enclosing function, and its callers.
+        """
+        statements = self.code.get("log_statements") or []
+        if not statements:
+            return []
+        from aegis.l4_understanding.flowspec import _overlap
+        from aegis.l8_action.mapper import Location
+
+        found: list[Location] = []
+        for line in evidence[:6]:
+            best, score = None, 0.0
+            for statement in statements:
+                overlap = _overlap(line, statement.get("text", ""))
+                if overlap > score:
+                    best, score = statement, overlap
+            if best is not None and score >= 0.6:
+                found.append(Location(
+                    file=best.get("file", ""), line=int(best.get("line", 0) or 0),
+                    source=f"{best.get('level','')} in {best.get('function')}(): "
+                           f"{best.get('text','')[:110]}",
+                    fragment=best.get("text", "")[:60]))
+        return found
+
+    def _code_context(self, locations) -> str:
+        """What else the analysis knows about the functions involved."""
+        if not self.code:
+            return ""
+        functions = {l.source.split(" in ")[-1].split("(")[0]
+                     for l in locations if " in " in l.source}
+        lines = []
+        for entry in self.code.get("entrypoints", []):
+            reach = set(self.code.get("calls", {}).get(entry.get("function", ""), []))
+            if functions & reach:
+                lines.append(f"  reachable from {entry.get('method','')} "
+                             f"{entry.get('path','')} -> {entry.get('function')}()")
+        for call in self.code.get("external_calls", []):
+            if call.get("function") in functions:
+                guard = "guarded" if call.get("guarded") else "NOT guarded"
+                timeout = "timeout" if call.get("has_timeout") else "NO timeout"
+                lines.append(f"  {call.get('function')}() calls {call.get('target')} "
+                             f"({guard}, {timeout}) at {call.get('file')}:{call.get('line')}")
+        return ("\\n\\nWHAT THE CODE ANALYSIS KNOWS:\\n" + "\\n".join(lines[:8])) if lines else ""
+
+    # -- the bundle ----------------------------------------------------------
+
+    def _excerpts(self, locations, context: int = 6) -> str:
+        chunks = []
+        for location in locations[:4]:
+            path = self.repo / location.file
+            try:
+                lines = path.read_text(errors="replace").splitlines()
+            except OSError:
+                continue
+            start = max(0, location.line - 1 - context)
+            end = min(len(lines), location.line + context)
+            body = "\n".join(f"{n + 1:4} {lines[n]}" for n in range(start, end))
+            chunks.append(f"# {location.file}\n{body}")
+        return "\n\n".join(chunks)
+
+    def _bundle(self, proposal: Proposal) -> Proposal:
+        directory = (AEGIS_HOME / "projects" / self.project / "proposals"
+                     / proposal.incident_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        if proposal.reproducer:
+            (directory / self.TEST_FILENAME).write_text(proposal.reproducer)
+        if proposal.patch:
+            (directory / "fix.patch").write_text(proposal.patch)
+        lines = [
+            f"# [aegis] proposal for {proposal.incident_id}",
+            "",
+            "STATUS: " + ("DRAFT - requires human review and application"
+                          if proposal.status == "draft"
+                          else proposal.status.upper()),
+            "",
+            f"DETAIL: {proposal.detail}",
+        ]
+        if proposal.locations:
+            lines += ["", "MAPPED CODE:"] + [
+                f"  {l['file']}:{l['line']}  {l['source']}"
+                for l in proposal.locations[:6]]
+        if proposal.test_before:
+            lines += ["", f"REPRODUCER before patch: exit "
+                          f"{proposal.test_before.get('exit_code')} (must be non-zero)"]
+        if proposal.test_after:
+            lines += [f"REPRODUCER after patch:  exit "
+                      f"{proposal.test_after.get('exit_code')} (must be zero)"]
+        radius = getattr(self, "blast_radius", "")
+        if radius:
+            lines += ["", "BLAST RADIUS (from the code graph - what else "
+                          "depends on this):", radius]
+        if proposal.patch:
+            lines += ["", "DIFF:", "```diff", proposal.patch.rstrip(), "```"]
+        lines += ["", "To apply (your decision, your keystrokes):",
+                  f"  cd <repo> && patch -p1 < {directory / 'fix.patch'}",
+                  "", "Aegis never merges and never writes to your repository."]
+        (directory / "PROPOSAL.md").write_text("\n".join(lines) + "\n")
+        proposal.bundle_path = str(directory / "PROPOSAL.md")
+        return proposal

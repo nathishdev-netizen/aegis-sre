@@ -1,0 +1,7 @@
+time="2026-09-05T10:00:01Z" level=info msg="starting worker pool" workers=8
+time="2026-09-05T10:00:04Z" level=info msg="job processed" requestID=a1b2c3d4e5f6 duration=120ms queue=emails
+time="2026-09-05T10:00:08Z" level=info msg="job processed" requestID=b2c3d4e5f6a1 duration=98ms queue=emails
+time="2026-09-05T10:00:12Z" level=info msg="job processed" requestID=c3d4e5f6a1b2 duration=110ms queue=emails
+time="2026-09-05T10:00:16Z" level=error msg="job failed" requestID=d4e5f6a1b2c3 error="smtp dial tcp 10.0.0.9:25: i/o timeout" queue=emails
+time="2026-09-05T10:00:19Z" level=info msg="job processed" requestID=e5f6a1b2c3d4 duration=105ms queue=emails
+time="2026-09-05T10:00:23Z" level=info msg="job processed" requestID=f6a1b2c3d4e5 duration=101ms queue=emails
