@@ -230,8 +230,14 @@ class TestRunner:
                 cwd=root, text=True,
                 capture_output=True, timeout=TIMEOUT_S,
                 env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                     "PYTHONPATH": os.pathsep.join(
-                         dict.fromkeys([str(root), str(work)])),
+                     # ONLY the import root. Adding the repo root as well
+                     # looks harmless and is not: paideia has a top-level
+                     # agents/ that shadows services/chatbot/agents/, so
+                     # the reproducer resolved the wrong package and died
+                     # on ModuleNotFoundError - with the right files sitting
+                     # in the copy. Python already puts the script's own
+                     # directory first; one path is the whole requirement.
+                     "PYTHONPATH": str(root),
                      "PYTHONDONTWRITEBYTECODE": "1"},
             )
             return RunResult(True, completed.returncode,
