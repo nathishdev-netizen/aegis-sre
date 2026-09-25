@@ -493,6 +493,22 @@
       padding: 7px 9px; margin-bottom: 5px; overflow-wrap: anywhere; }
     .ev-line:last-child { margin-bottom: 0; }
 
+    .run[data-verdict] { cursor: pointer; }
+    .vd-more { font-size: 11px; color: var(--text-3); margin-top: 7px; }
+    .run.open .vd-more { color: var(--accent); }
+    .vd-body { margin-top: 10px; border-top: 1px solid var(--line);
+      padding-top: 9px; }
+    .vd-sec { font-size: 10px; font-weight: 800; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--text-3); margin: 9px 0 5px; }
+    .vd-sec:first-child { margin-top: 0; }
+    .vd-exp { font-size: 12px; line-height: 1.55; padding: 2px 0; }
+    .vd-exp.ran { color: var(--ok); }
+    .vd-exp.missed { color: var(--bad); font-weight: 600; }
+    .vd-step { font-size: 11px; line-height: 1.5; color: var(--text-2);
+      font-family: var(--mono, ui-monospace, monospace); padding: 3px 0;
+      overflow-wrap: anywhere; }
+    .vd-ts { color: var(--text-3); margin-right: 8px; }
+
     .sim-choice { font-size: 12px; padding: 5px 11px; }
     .sim-choice .v-degraded { font-size: 10.5px; }
     .pf-band-empty { font-size: 12px; line-height: 1.55; color: var(--text-3);
@@ -1733,14 +1749,60 @@
   var aegisProposal = {};
   var aegisRepoDraft = {};
 
+  // Which verdict cards the reader has opened. Kept outside the render so a
+  // three-second refresh does not close what they were reading.
+  var aegisVerdictOpen = {};
+
+  document.addEventListener("click", function (event) {
+    var card = event.target.closest("[data-verdict]");
+    if (!card) return;
+    var id = card.getAttribute("data-verdict");
+    aegisVerdictOpen[id] = !aegisVerdictOpen[id];
+    aegisRefresh();
+  });
+
   function renderVerdicts(state) {
     var verdicts = state.verdicts || [];
     aegisEl("aegisVerdicts").innerHTML = verdicts.map(function (v) {
       var v_ = aegisEsc(v.verdict);
-      return '<div class="run ' + v_ + '"><div class="head">' +
+      var id = aegisEsc(v.trace_id || v.opened_at);
+      var open = !!aegisVerdictOpen[id];
+      // A card that says "hollow" and stops leaves the reader holding the
+      // question it just raised: which run, and where did it stop? Both are
+      // one click away rather than nowhere.
+      var body = "";
+      if (open) {
+        var expected = v.expected || [];
+        if (expected.length) {
+          body += '<div class="vd-sec">What a run of this kind must do</div>';
+          body += expected.map(function (e) {
+            return '<div class="vd-exp ' + (e.ran ? "ran" : "missed") + '">' +
+              (e.ran ? "\u2713 " : "\u2717 ") + aegisEsc(e.label) +
+              (e.ran ? "" : ' <span class="faint">- never ran</span>') + "</div>";
+          }).join("");
+        }
+        var steps = v.steps || [];
+        if (steps.length) {
+          body += '<div class="vd-sec">What this run actually did \u00b7 ' +
+            steps.length + " step(s)</div>";
+          body += steps.map(function (st) {
+            return '<div class="vd-step"><span class="vd-ts">' +
+              aegisEsc(st.ts || "") + "</span>" + aegisEsc(st.text) + "</div>";
+          }).join("");
+        }
+        if (!expected.length && !steps.length) {
+          body += '<div class="hint">No detail recorded for this run.</div>';
+        }
+      }
+      return '<div class="run ' + v_ + (open ? " open" : "") +
+        '" data-verdict="' + id + '"><div class="head">' +
         '<span class="tag v-' + v_ + '">' + v_.toUpperCase() + "</span>" +
-        '<span class="meta">@' + aegisEsc(v.opened_at) + " · " +
-        aegisEsc(v.duration_s) + "s</span></div><p>" + aegisEsc(v.reason) + "</p></div>";
+        '<span class="meta">@' + aegisEsc(v.opened_at) + " \u00b7 " +
+        aegisEsc(v.duration_s) + "s \u00b7 " + aegisEsc(v.events || 0) +
+        " events</span></div><p>" + aegisEsc(v.reason) + "</p>" +
+        '<div class="vd-more">' + (open ? "hide the run \u25b4"
+                                        : "show what it did \u25be") + "</div>" +
+        (body ? '<div class="vd-body">' + body + "</div>" : "") + "</div>";
     }).join("");
     var marked = state.spec && state.spec.purpose_marked;
     aegisEl("aegisVerdictNote").textContent = verdicts.length && !marked ?

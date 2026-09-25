@@ -522,10 +522,29 @@ class AegisApp:
                 if len(events) < 4 and trace_id not in judged:
                     continue
                 report, _ = engine.check(trace_id, events, spec)
+                # What the run actually did, and what the spec expected of
+                # it. A verdict card that says "hollow" and stops leaves the
+                # reader with the one question it raised: which run, and
+                # where did it stop? Both are already computed here.
+                present = {e.template_id for e in events if e.template_id}
                 verdicts.append({
                     "trace_id": trace_id, "verdict": report.verdict,
                     "reason": report.reason, "duration_s": report.duration_s,
                     "opened_at": events[0].ts, "events": len(events),
+                    "deviations": report.deviations,
+                    "evidence": report.evidence,
+                    "steps": [{
+                        "ts": e.ts,
+                        "text": e.text_redacted.splitlines()[0][:150],
+                        "service": e.service,
+                    } for e in events[:25]],
+                    # The purpose steps, and whether this run reached them:
+                    # "expected X, never got there" is the whole finding.
+                    "expected": [{
+                        "label": step.label[:70],
+                        "ran": step.template_id in present,
+                        "critical": bool(step.critical),
+                    } for step in spec.steps if step.critical][:6],
                 })
         verdicts.sort(key=lambda v: v["opened_at"])
 
