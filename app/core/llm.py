@@ -176,9 +176,21 @@ Also report what the numbers in the run mean. Durations, counts and repeated
 patterns are where the useful detail is - a step that took 6.9s, a turn that was
 skipped, a retry that succeeded. Only state what the lines actually show.
 
+The logs usually hold SEVERAL runs. After the outcome of the latest one, say how
+it compares with the ones before it - the same, slower, newly failing, or doing
+something none of the others did. "It behaved the same as the earlier request,
+which also completed in 7 steps" tells a developer more than the latest run's
+numbers alone.
+
+Then name what is worth looking at next, when the logs support one. A run with no
+errors can still be worth a second look: work that was offered and never
+completed, a step that always skips, a value that never arrives. End on that when
+it exists - "check why lead capture is offered but never captured" - and end on
+the outcome when it does not. Never invent a concern the lines do not show.
+
 Return JSON only:
 {
-  "summary": "2-3 sentences, plain spoken English. Outcome first. No log jargon.",
+  "summary": "3-5 sentences, plain spoken English: the latest run's outcome first, then how it compares with earlier runs, then what is worth checking next. No log jargon.",
   "status": "running" | "failed" | "success" | "idle",
   "reason": "why it failed, or empty string if it has not failed",
   "causes": ["likely causes, most probable first; empty if not failed or if unknowable"],
