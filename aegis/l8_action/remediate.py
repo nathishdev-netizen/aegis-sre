@@ -16,6 +16,7 @@ path in this codebase at any tier.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,7 +25,7 @@ from typing import Any
 from aegis.l3_storage.store import AEGIS_HOME
 from aegis.l8_action.gate import MAX_CHANGED_LINES, AutonomyGate
 from aegis.l8_action.mapper import TraceToCodeMapper
-from aegis.l8_action.runner import TestRunner
+from aegis.l8_action.runner import PROXIMITY_LINES, TestRunner
 
 _REPRODUCER_PROMPT = """You are writing a REPRODUCER for a diagnosed incident. It must FAIL now, for the right reason, and pass once the underlying bug is fixed.
 
@@ -140,6 +141,73 @@ def _code_block(text: str) -> str:
     return match.group(1) if match else (text or "").strip()
 
 
+# How many propose() calls in a row are allowed to end in "blocked" before
+# the agent stops trying on its own and hands the incident back to a human
+# with everything it tried. Tonight's real case: five attempts at the same
+# incident, each failing a different way, the last one quietly rewriting an
+# error MESSAGE instead of the actual bug once it ran out of ideas - the
+# shape of an agent papering over a symptom rather than admitting it is
+# stuck. Two is deliberately tight: one retry to self-correct, then stop.
+MAX_ATTEMPTS = 2
+
+
+def _attempts_path(project: str, incident_id: str) -> Path:
+    return (AEGIS_HOME / "projects" / project / "proposals"
+            / incident_id / "attempts.json")
+
+
+def _load_attempts(project: str, incident_id: str) -> dict[str, Any]:
+    path = _attempts_path(project, incident_id)
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {"count": 0, "stopped": False, "stop_reason": "",
+                "history": []}
+
+
+def _record_attempt(project: str, incident_id: str, status: str,
+                    detail: str) -> None:
+    """Append one attempt's outcome. Never called for "draft" - a proposal
+    that actually worked resets nothing to hide, but a run that succeeded
+    is not a failure to count against the limit."""
+    state = _load_attempts(project, incident_id)
+    state["count"] = int(state.get("count", 0)) + 1
+    state.setdefault("history", []).append(
+        {"status": status, "detail": str(detail)[:300]})
+    state["history"] = state["history"][-10:]
+    path = _attempts_path(project, incident_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=1))
+
+
+def stop_auto_fix(project: str, incident_id: str, reason: str) -> None:
+    """Mark an incident as needing a human, not more AI patch attempts.
+
+    Separate from the attempt-count ceiling: this is for a case a human
+    has already looked at and judged - like INC-2, whose real cause is a
+    missing database table four layers downstream of every line the agent
+    kept patching - where letting the count merely run out would mean
+    several more wasted, wrong attempts before the same conclusion.
+    """
+    state = _load_attempts(project, incident_id)
+    state["stopped"] = True
+    state["stop_reason"] = reason
+    path = _attempts_path(project, incident_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=1))
+
+
+def resume_auto_fix(project: str, incident_id: str) -> None:
+    """Undo stop_auto_fix - the human decided it is worth trying again."""
+    state = _load_attempts(project, incident_id)
+    state["stopped"] = False
+    state["stop_reason"] = ""
+    state["count"] = 0
+    path = _attempts_path(project, incident_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=1))
+
+
 @dataclass
 class Proposal:
     incident_id: str
@@ -151,6 +219,10 @@ class Proposal:
     test_after: dict[str, Any] = field(default_factory=dict)
     locations: list[dict[str, Any]] = field(default_factory=list)
     bundle_path: str = ""
+    # Shown, never acted on: things worth a human's attention that did not
+    # rise to blocking the proposal outright. A diagnosis/traceback mismatch
+    # is the first of these - see _diagnosis_mismatch.
+    warnings: list[str] = field(default_factory=list)
 
 
 class RemediationAgent:
@@ -184,12 +256,32 @@ class RemediationAgent:
         project_brief = str(incident.get("project_brief") or "")[:900]
         if project_brief:
             diagnosis = f"[project context: {project_brief}]\\n{diagnosis}"
-        # The brief tells the reproducer what kind of thing it is testing -
-        # the weak reproducer this agent once wrote for a background task
-        # came from a prompt that had no idea it WAS a background task.
-        project_brief = str(incident.get("project_brief") or "")[:900]
-        if project_brief:
-            diagnosis = f"[project context: {project_brief}]\\n{diagnosis}"
+
+        # A human already told Aegis this incident needs them, not more
+        # attempts - or the agent hit the same wall MAX_ATTEMPTS times in a
+        # row already. Checked before ANY work: no smoke test, no model
+        # call. Tonight's real case for the human-stop: five attempts on
+        # the same incident, the last one silently rewriting the error
+        # MESSAGE the user sees instead of the real bug once it ran out of
+        # honest ideas - the shape of an agent hiding that it is stuck.
+        attempts = _load_attempts(self.project, incident_id)
+        if attempts.get("stopped"):
+            return self._bundle(Proposal(
+                incident_id, "advise",
+                "a human marked this incident as needing manual attention: "
+                f"{attempts.get('stop_reason') or 'no reason recorded'}. "
+                "No further automatic attempts will run."))
+        if attempts.get("count", 0) >= MAX_ATTEMPTS:
+            history = attempts.get("history", [])
+            tried = "; ".join(
+                f"{h.get('status')}: {h.get('detail', '')[:120]}"
+                for h in history[-MAX_ATTEMPTS:])
+            return self._bundle(Proposal(
+                incident_id, "advise",
+                f"{attempts['count']} automatic attempts on this incident "
+                f"all failed - stopping rather than keep guessing. What was "
+                f"tried: {tried or 'no detail recorded'}. This needs a "
+                "person to look at it."))
 
         permit = self.gate.permits_draft()
         if not permit.allowed:
@@ -310,6 +402,13 @@ class RemediationAgent:
                 reproducer=reproducer, test_before=before.__dict__,
                 locations=[l.__dict__ for l in locations]))
 
+        # Flag, never block: does the reproducer's OWN traceback agree with
+        # where the diagnosis pointed? A mismatch does not stop the patch
+        # attempt - the diagnosis can be close enough even when not exact -
+        # but it is worth showing a human before they trust the mapped file.
+        mismatch = self._diagnosis_mismatch(before.output, locations)
+        warnings = [mismatch] if mismatch else []
+
         # 2. Patch - minimal, gated, and it must make the reproducer pass.
         raw = self.router.chat("write_patch", [{"role": "user", "content":
             _PATCH_PROMPT.format(diagnosis=diagnosis,
@@ -359,7 +458,8 @@ class RemediationAgent:
                 "proven, and it could not prove this one.",
                 reproducer=reproducer, patch=patch,
                 test_before=before.__dict__,
-                locations=[l.__dict__ for l in locations]))
+                locations=[l.__dict__ for l in locations],
+                warnings=warnings))
 
         after = self.runner.run(self.TEST_FILENAME, reproducer, patch)
         if not after.executed or after.exit_code != 0:
@@ -387,14 +487,16 @@ class RemediationAgent:
                 incident_id, "blocked", detail,
                 reproducer=reproducer, patch=patch,
                 test_before=before.__dict__, test_after=after.__dict__,
-                locations=[l.__dict__ for l in locations]))
+                locations=[l.__dict__ for l in locations],
+                warnings=warnings))
 
         return self._bundle(Proposal(
             incident_id, "draft",
             "reproducer failed before the patch and passes after it",
             reproducer=reproducer, patch=patch,
             test_before=before.__dict__, test_after=after.__dict__,
-            locations=[l.__dict__ for l in locations]))
+            locations=[l.__dict__ for l in locations],
+            warnings=warnings))
 
 
     def _blast_radius(self, locations) -> str:
@@ -544,10 +646,63 @@ class RemediationAgent:
             chunks.append(f"# {location.file}\n{body}")
         return "\n\n".join(chunks)
 
+    def _diagnosis_mismatch(self, output: str, locations) -> str:
+        """Where the diagnosis pointed vs. where the reproducer actually
+        crashed, in the project's own code. Returns a one-line warning to
+        SHOW alongside a proposal - never used to block it.
+
+        The diagnosis is the starting point for the whole flow, and until
+        tonight nothing checked whether the reproducer's own failure
+        actually agreed with it. Real case: the diagnosis for INC-2 named
+        api.py:348 (a logger.exception call); the reproducer's real
+        traceback bottoms out, in this project's own code, one line away
+        at api.py:349 - close enough to look right - while the ACTUAL
+        raise is several frames deeper in a third-party library
+        (surrealdb), for a missing database table no patch to api.py can
+        fix. A human reading both numbers side by side would have caught
+        that in seconds; the pipeline did five patch attempts first.
+        """
+        if not locations or not output:
+            return ""
+        frames = re.findall(r'File "([^"]+)", line (\d+)', output)
+        own = [(f, int(n)) for f, n in frames
+               if "/venv/" not in f and "/site-packages/" not in f
+               and not f.endswith(self.TEST_FILENAME)]
+        if not own:
+            return ""
+        crash_file, crash_line = own[-1]
+        crash_name = Path(crash_file).name
+        target = locations[0]
+        target_name = Path(target.file).name
+        if crash_name != target_name:
+            return (f"the diagnosis points at {target.file}, but the "
+                    f"reproducer's own traceback bottoms out (in this "
+                    f"project's code) in a DIFFERENT file: {crash_name}:"
+                    f"{crash_line} - worth checking the diagnosis before "
+                    "trusting a patch to the mapped file.")
+        gap = abs(crash_line - target.line)
+        if gap > PROXIMITY_LINES:
+            return (f"the diagnosis points at {target.file}:{target.line}, "
+                    f"but the reproducer's own traceback bottoms out (in "
+                    f"this project's code) at line {crash_line} - {gap} "
+                    "lines away. May be the same function seen from a "
+                    "different angle, or the diagnosis may be pointing at "
+                    "where the failure was LOGGED rather than where it was "
+                    "actually RAISED.")
+        return ""
+
     def _bundle(self, proposal: Proposal) -> Proposal:
         directory = (AEGIS_HOME / "projects" / self.project / "proposals"
                      / proposal.incident_id)
         directory.mkdir(parents=True, exist_ok=True)
+        # Only a genuine attempt that BLOCKED counts against the limit -
+        # not "draft" (it worked), and not "advise" (which is what the
+        # limit-reached message itself returns; counting that would make
+        # the warning increment its own counter and never let a human's
+        # fix - or stop_auto_fix - actually clear it).
+        if proposal.status == "blocked":
+            _record_attempt(self.project, proposal.incident_id,
+                            proposal.status, proposal.detail)
         if proposal.reproducer:
             (directory / self.TEST_FILENAME).write_text(proposal.reproducer)
         if proposal.patch:
@@ -561,6 +716,8 @@ class RemediationAgent:
             "",
             f"DETAIL: {proposal.detail}",
         ]
+        if proposal.warnings:
+            lines += ["", "WARNINGS:"] + [f"  - {w}" for w in proposal.warnings]
         if proposal.locations:
             lines += ["", "MAPPED CODE:"] + [
                 f"  {l['file']}:{l['line']}  {l['source']}"

@@ -1050,6 +1050,7 @@ class AegisApp:
             "detail": proposal.detail,
             "bundle": proposal.bundle_path,
             "patch": (proposal.patch or "")[:800],
+            "warnings": proposal.warnings,
         }
 
     def apply_fix(self, incident_id: str, repo_path: str,
