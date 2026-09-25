@@ -409,6 +409,35 @@ def probe_pids(pids: list[int]) -> tuple[dict[int, str], dict[int, str]]:
     best: dict[int, str] = {}
     for one, files in logs.items():
         # Same preference as v1: a file under .logs/ or logs/ is the app's own.
-        own = [f for f in files if "/.logs/" in f or "/logs/" in f]
-        best[one] = (own or files)[0]
+        own = [f for f in files if "/.logs/" in f or "/logs/" in f] or files
+        # Then prefer the one that carries STACK TRACES. A service commonly
+        # writes two: chatbot.log gets the tidy one-line messages and
+        # chatbot.app.log gets the tracebacks. Watching the tidy one means
+        # every incident says "an error happened" and never which error -
+        # so a fix agent guesses at the code instead of reading the frames
+        # that name it. The noisy file is the useful one.
+        best[one] = _richest(own)
     return cwds, best
+
+
+def _richest(files: list[str]) -> str:
+    """Of one service's logs, the one most likely to hold tracebacks."""
+    if len(files) == 1:
+        return files[0]
+    scored = []
+    for path in files:
+        score = 0
+        try:
+            with open(path, errors="replace") as handle:
+                head = handle.read(200_000)
+        except OSError:
+            head = ""
+        if "Traceback (most recent call last)" in head:
+            score += 100
+        score += min(head.count("Error"), 20)
+        # ".app.log" beside ".log" is the usual shape of this split.
+        if path.endswith(".app.log"):
+            score += 5
+        scored.append((score, -len(path), path))
+    scored.sort(reverse=True)
+    return scored[0][2]
