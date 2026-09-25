@@ -186,6 +186,33 @@ class RemediationAgent:
         excerpts = self._excerpts(locations)
         loc_text = "\n".join(f"  {l.file}:{l.line}  {l.source}" for l in locations)
 
+        # 0. Smoke-test the environment BEFORE spending a model call on a
+        # reproducer written against it. A stale venv guess or wrong import
+        # root produces the exact ModuleNotFoundError a bad reproducer
+        # would - discovering that only after writing one wastes a call and
+        # looks like the model's fault. Self-healing, not just detecting:
+        # if the discovered venv/root is wrong, retry from the bare repo
+        # root before giving up, since that is where a single-package
+        # project's dependencies usually live anyway.
+        self.runner.hint = locations[0].file if locations else ""
+        smoke = self.runner.smoke_test()
+        if _classify_failure(smoke.output) == "ambiguous" and self.runner.hint:
+            self.runner.hint = ""
+            smoke = self.runner.smoke_test()
+        if smoke.executed and smoke.exit_code != 0:
+            kind = _classify_failure(smoke.output) or "environment"
+            last_line = next((line for line in
+                              (smoke.output or "").splitlines()[::-1]
+                              if line.strip()), smoke.detail or "")
+            return self._bundle(Proposal(
+                incident_id, "blocked",
+                f"the sandbox cannot even import this project's code yet "
+                f"({kind}): {last_line.strip()[:160]}. No model call was "
+                "spent - fix the environment (install the project's "
+                "dependencies, or point Aegis at the right service "
+                "directory) and try again.",
+                locations=[l.__dict__ for l in locations]))
+
         # 1. Reproducer - a NEW file, and it must FAIL.
         raw = self.router.chat("write_reproducer", [{"role": "user", "content":
             _REPRODUCER_PROMPT.format(
@@ -204,9 +231,9 @@ class RemediationAgent:
         if not check.allowed:
             return self._bundle(Proposal(incident_id, "blocked", check.reason))
 
-        # The venv lives beside the SERVICE in a monorepo, so tell the
-        # runner which file this fix is about before it picks a python.
-        self.runner.hint = locations[0].file if locations else ""
+        # self.runner.hint was already set (and self-healed if the first
+        # guess could not even import) by the smoke test above - resetting
+        # it here would silently throw that fallback away.
         before = self.runner.run(self.TEST_FILENAME, reproducer)
         if not before.executed:
             return self._bundle(Proposal(

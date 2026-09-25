@@ -154,6 +154,25 @@ def _import_root(work: Path, hint: str) -> Path:
     return work
 
 
+def _dotted_module(repo: Path, hint: str) -> str:
+    """The import statement the mapped file actually needs.
+
+    A monorepo service is its own import root, so the same file is
+    `services.chatbot.api` from the repo and `api` from the service. One
+    formula, used both to tell the model how to spell its imports and to
+    smoke-test that the import resolves before spending a call writing a
+    reproducer against it.
+    """
+    if not hint:
+        return ""
+    root = _import_root(repo, hint)
+    try:
+        inside = str((repo / hint).relative_to(root))
+    except (ValueError, OSError):
+        inside = hint
+    return inside[:-3].replace("/", ".") if inside.endswith(".py") else ""
+
+
 class TestRunner:
     def __init__(self, repo_path: str | Path, hint: str = "") -> None:
         self.repo = Path(repo_path).resolve()
@@ -168,6 +187,22 @@ class TestRunner:
                 if total > MAX_REPO_BYTES:
                     return total
         return total
+
+    def smoke_test(self) -> RunResult:
+        """Can the discovered interpreter even import the target code?
+
+        SWE-smith and Repo2Run both run this before spending a model call on
+        a reproducer: a stale venv, a missing dependency, or a wrong import
+        root produces the exact same ModuleNotFoundError as a badly written
+        reproducer, and paying for an LLM call to discover that is a waste
+        found too late. This finds it in under a second, in the same
+        sandbox copy the real run will use, so a broken environment is
+        caught here rather than blamed on the model afterwards.
+        """
+        module = _dotted_module(self.repo, self.hint)
+        probe = (f"import {module}\nprint('ok')\n" if module
+                 else "print('ok')\n")
+        return self.run("aegis_smoke.py", probe)
 
     def run(self, test_filename: str, test_content: str,
             patch_text: str = "") -> RunResult:
