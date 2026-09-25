@@ -27,7 +27,10 @@ def test_bridge_initialises_lazily_and_attaches():
 
 def test_page_carries_the_run_quality_section():
     page = (Path("app/web/index.html")).read_text()
-    assert "aegisPanel" in page
+    # The redesign replaced the single bolted-on "aegisPanel" with the
+    # tabbed shell, so the panel id is gone by intent. What must still
+    # be true is that every v2 capability has a home on the page.
+    assert 'data-view="now"' in page and 'data-sub="flow"' in page
     assert "Run quality" in page
     assert "/api/aegis/state" in page
     # every v2 capability has a home on this page

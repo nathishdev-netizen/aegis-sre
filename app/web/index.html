@@ -1,0 +1,3006 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Log Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <style>
+    /* ============================================================
+       Design tokens. Both themes are defined here and nowhere else,
+       so a colour can never be hard-coded into a component and
+       break the other theme.
+       ============================================================ */
+    :root, [data-theme="dark"] {
+      color-scheme: dark;
+      --bg:        #0b0e14;
+      --bg-raised: #111621;
+      --surface:   #151b28;
+      --surface-2: #1a2130;
+      --line:      #232c3d;
+      --line-soft: #1b2231;
+      --text:      #e8edf5;
+      --text-2:    #9aabc2;
+      --text-3:    #6b7d96;
+      --accent:    #4c8dff;
+      --accent-bg: rgba(76,141,255,.13);
+      --ok:        #2fd48f;
+      --ok-bg:     rgba(47,212,143,.13);
+      --warn:      #f5b544;
+      --warn-bg:   rgba(245,181,68,.13);
+      --bad:       #ff6b6b;
+      --bad-bg:    rgba(255,107,107,.13);
+      --hollow:    #b98cff;
+      --hollow-bg: rgba(185,140,255,.14);
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+      --radius:    10px;
+    }
+    [data-theme="light"] {
+      color-scheme: light;
+      --bg:        #f6f8fb;
+      --bg-raised: #ffffff;
+      --surface:   #ffffff;
+      --surface-2: #f2f5fa;
+      --line:      #e2e8f2;
+      --line-soft: #edf1f7;
+      --text:      #0f1826;
+      --text-2:    #56657c;
+      --text-3:    #8494ab;
+      --accent:    #2563eb;
+      --accent-bg: rgba(37,99,235,.09);
+      --ok:        #0f9d63;
+      --ok-bg:     rgba(15,157,99,.10);
+      --warn:      #b7791f;
+      --warn-bg:   rgba(183,121,31,.11);
+      --bad:       #dc2626;
+      --bad-bg:    rgba(220,38,38,.09);
+      --hollow:    #7c3aed;
+      --hollow-bg: rgba(124,58,237,.10);
+      --shadow:    0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px;
+      border: 3px solid transparent; background-clip: content-box; }
+    a { color: var(--accent); text-decoration: none; }
+
+    /* ---------- app frame ---------- */
+    .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+    .rail { background: var(--bg-raised); border-right: 1px solid var(--line);
+      display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
+    .rail-head { padding: 18px 16px 14px; }
+    .wordmark { display: flex; align-items: center; gap: 9px; font-weight: 700;
+      font-size: 15px; letter-spacing: -.01em; }
+    .spark { width: 22px; height: 22px; border-radius: 7px; flex: none;
+      background: linear-gradient(135deg, var(--accent), var(--hollow));
+      display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 800; }
+    .rail-sub { color: var(--text-3); font-size: 11.5px; margin-top: 7px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .nav { padding: 6px 10px; display: flex; flex-direction: column; gap: 1px;
+      overflow-y: auto; }
+    .nav-group { color: var(--text-3); font-size: 10px; font-weight: 700;
+      letter-spacing: .11em; text-transform: uppercase; padding: 14px 8px 5px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+      border-radius: 8px; color: var(--text-2); font-size: 13.5px; font-weight: 500;
+      cursor: pointer; }
+    .nav-item:hover { background: var(--surface-2); color: var(--text); }
+    .nav-item.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+    .nav-item .ic { width: 15px; text-align: center; opacity: .85; font-size: 13px; }
+    .nav-badge { margin-left: auto; min-width: 19px; text-align: center;
+      background: var(--surface-2); color: var(--text-2); border-radius: 99px;
+      padding: 1px 7px; font-size: 10.5px; font-weight: 700; }
+    .nav-badge.bad { background: var(--bad-bg); color: var(--bad); }
+    .nav-badge.warn { background: var(--warn-bg); color: var(--warn); }
+    .rail-foot { margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--line);
+      display: flex; align-items: center; gap: 8px; }
+    .icon-btn { background: none; border: 1px solid var(--line); color: var(--text-2);
+      border-radius: 7px; padding: 4px 9px; cursor: pointer; font-size: 12px; }
+    .icon-btn:hover { color: var(--text); border-color: var(--text-3); }
+
+    /* ---------- main ---------- */
+    .main { min-width: 0; display: flex; flex-direction: column; }
+    .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+      gap: 12px; padding: 11px 22px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+    .crumb { font-weight: 650; font-size: 15px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line);
+      background: var(--surface); border-radius: 99px; padding: 4px 11px;
+      font-size: 12px; color: var(--text-2); cursor: pointer; }
+    .chip:hover { border-color: var(--text-3); }
+    .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+    .chip.live .dot { background: var(--ok); box-shadow: 0 0 0 0 var(--ok-bg);
+      animation: beat 2.4s infinite; }
+    .chip.live { color: var(--text); }
+    @keyframes beat { 70% { box-shadow: 0 0 0 7px transparent; } }
+    .grow { flex: 1; }
+    .content { padding: 22px; max-width: 1420px; width: 100%; }
+
+    /* ---------- primitives ---------- */
+    .card { background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px 18px; }
+    .card + .card { margin-top: 12px; }
+    .section-title { font-size: 11px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--text-3); margin: 26px 0 10px; }
+    .section-title:first-child { margin-top: 0; }
+    .lede { color: var(--text-2); font-size: 13px; margin: -2px 0 14px; }
+    .muted, .hint { color: var(--text-2); font-size: 12.5px; }
+    .faint { color: var(--text-3); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+    /* ---- the project flow: three bands, evidence under every node ---- */
+    .pf { display: grid; gap: 14px; }
+    .pf-band { display: flex; flex-direction: column; gap: 7px; }
+    .pf-band-name {
+      font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+      letter-spacing: .14em; text-transform: uppercase; color: var(--text-3);
+    }
+    .pf-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .pf-node {
+      border: 1px solid var(--line); background: var(--surface-2);
+      border-radius: 9px; padding: 8px 11px; cursor: pointer;
+      font-size: 13px; color: var(--text); text-align: left;
+      transition: border-color .12s ease, background .12s ease;
+      max-width: 270px;
+    }
+    .pf-node:hover { border-color: var(--accent); background: var(--surface); }
+    .pf-node.sel { border-color: var(--accent); background: var(--surface); }
+    /* Declared-but-never-seen is a claim about ABSENCE, so it must look
+       different from something measured - dashed, and quieter. */
+    .pf-node.declared { border-style: dashed; color: var(--text-2); }
+    .pf-node .nm { font-weight: 600; }
+    .pf-node .meta {
+      display: block; margin-top: 3px; font-size: 11px; color: var(--text-3);
+      font-family: ui-monospace, Menlo, monospace;
+    }
+    .pf-node .meta .hot { color: var(--bad); }
+    .pf-node .meta .warn { color: var(--warn); }
+    .pf-arrow { color: var(--text-3); align-self: center; font-size: 15px; }
+    .pf-legend {
+      display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;
+      font-size: 12px; color: var(--text-3);
+    }
+    .pf-detail {
+      margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px;
+    }
+    .pf-detail h4 { margin: 0 0 8px; font-size: 14px; }
+    .pf-ev {
+      font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+      background: var(--bg-raised); border-radius: 7px; padding: 8px 10px;
+      margin: 6px 0; overflow-x: auto; white-space: pre; color: var(--text-2);
+    }
+
+    /* ============================================================
+       NOW - the answer surface. Everything here is sized for a
+       glance from across a desk: one sentence you can read without
+       leaning in, and nothing competing with it.
+       ============================================================ */
+    [data-view-panel="now"] { max-width: 1000px; }
+    .verdict {
+      position: relative; overflow: hidden;
+      background: linear-gradient(160deg,
+        color-mix(in srgb, var(--accent) 7%, var(--surface)) 0%,
+        var(--surface) 46%);
+      border: 1px solid var(--line);
+      border-radius: 18px; padding: 30px 32px 26px;
+    }
+    /* A hairline of severity down the edge - state you read before words. */
+    .verdict::before {
+      content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+      background: var(--accent);
+    }
+    .verdict.is-bad::before  { background: var(--bad); }
+    .verdict.is-warn::before { background: var(--warn); }
+    .verdict.is-ok::before   { background: var(--good); }
+    .verdict.is-bad  { background: linear-gradient(160deg,
+        color-mix(in srgb, var(--bad) 9%, var(--surface)) 0%, var(--surface) 46%); }
+    .verdict.is-warn { background: linear-gradient(160deg,
+        color-mix(in srgb, var(--warn) 9%, var(--surface)) 0%, var(--surface) 46%); }
+
+    .v-state {
+      font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+      letter-spacing: .16em; text-transform: uppercase; color: var(--text-3);
+      margin-bottom: 14px;
+    }
+    .verdict.is-bad  .v-state { color: var(--bad); }
+    .verdict.is-warn .v-state { color: var(--warn); }
+    .verdict.is-ok   .v-state { color: var(--good); }
+    .v-line {
+      font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+      font-size: clamp(23px, 3vw, 31px); font-weight: 600; line-height: 1.22;
+      letter-spacing: -.02em; margin: 0 0 12px; color: var(--text);
+      text-wrap: balance; max-width: 30ch;
+    }
+    .v-sub {
+      font-size: 15px; line-height: 1.6; color: var(--text-2);
+      margin: 0; max-width: 62ch;
+    }
+    .v-sub b { color: var(--text); font-weight: 600; }
+    .v-acts { display: flex; gap: 9px; margin-top: 20px; flex-wrap: wrap; }
+
+    .now-metrics {
+      display: grid; gap: 10px; margin-top: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+    }
+    .nm {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 12px; padding: 13px 15px;
+    }
+    .nm .k {
+      font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--text-3);
+    }
+    .nm .v {
+      font-family: "Space Grotesk", ui-sans-serif, sans-serif;
+      font-size: 22px; font-weight: 600; margin-top: 5px;
+      font-variant-numeric: tabular-nums; color: var(--text);
+    }
+    .nm .v.bad { color: var(--bad); } .nm .v.warn { color: var(--warn); }
+    .nm .v.good { color: var(--good); }
+
+    .now-head {
+      font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+      letter-spacing: .14em; text-transform: uppercase; color: var(--text-3);
+      margin: 26px 0 11px;
+    }
+    .now-feed { display: flex; flex-direction: column; gap: 11px; }
+    .nf {
+      background: var(--surface); border: 1px solid var(--line);
+      border-left: 3px solid var(--line-soft);
+      border-radius: 12px; padding: 16px 18px;
+      transition: border-color .14s ease, transform .14s ease;
+    }
+    .nf:hover { border-color: var(--line-strong, var(--line)); }
+    .nf.sev-P1 { border-left-color: var(--bad); }
+    .nf.sev-P2 { border-left-color: var(--warn); }
+    .nf.sev-P3 { border-left-color: var(--text-3); }
+    .nf-top {
+      display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 7px;
+    }
+    .nf-what {
+      font-family: "Space Grotesk", ui-sans-serif, sans-serif;
+      font-size: 16.5px; font-weight: 600; color: var(--text);
+      letter-spacing: -.01em;
+    }
+    .nf-when {
+      font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+      color: var(--text-3); margin-left: auto;
+    }
+    .nf-why { font-size: 14.5px; line-height: 1.58; color: var(--text-2); margin: 0; }
+    .nf-why b { color: var(--text); font-weight: 600; }
+    .nf-ev {
+      font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+      color: var(--text-3); background: var(--bg-raised);
+      border-radius: 7px; padding: 8px 11px; margin-top: 10px;
+      overflow-x: auto; white-space: pre;
+    }
+    .nf-acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .now-quiet {
+      text-align: center; padding: 34px 20px; color: var(--text-3);
+      font-size: 14.5px; border: 1px dashed var(--line);
+      border-radius: 14px; margin-top: 14px;
+    }
+    @media (prefers-reduced-motion: reduce) { .nf { transition: none; } }
+    .btn { background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+      border-radius: 9px; padding: 7px 14px; font-size: 13px; font-weight: 560;
+      cursor: pointer; transition: transform .12s, border-color .12s, filter .12s,
+      box-shadow .12s; }
+    .btn:hover { border-color: var(--text-3); transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,.14); }
+    .btn:active { transform: translateY(0); }
+    .aegis-bundle { max-height: 320px; overflow: auto; font-size: 12px;
+      background: var(--surface-2, var(--surface)); border: 1px solid var(--line);
+      border-radius: 8px; padding: 10px 12px; white-space: pre-wrap;
+      margin: 8px 0 0; }
+    .tag.st-empty { color: var(--warn); background:
+      color-mix(in srgb, var(--warn) 12%, transparent); }
+    .btn.danger { color: var(--bad); border-color:
+      color-mix(in srgb, var(--bad) 40%, transparent); }
+    .btn.danger:hover { background:
+      color-mix(in srgb, var(--bad) 10%, transparent); }
+    .btn.primary { background: linear-gradient(180deg,
+      color-mix(in srgb, var(--accent) 92%, #fff) 0%, var(--accent) 100%);
+      border-color: transparent; color: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.18); }
+    .btn.primary:hover { filter: brightness(1.06); }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .45; cursor: default; }
+    .input { background: var(--bg); border: 1px solid var(--line); color: var(--text);
+      border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none; width: 100%; }
+    .input:focus { border-color: var(--accent); }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
+    @media (max-width: 1050px) { .grid2 { grid-template-columns: 1fr; } }
+    @media (max-width: 820px) {
+      .app { grid-template-columns: 1fr; }
+      .rail { position: static; height: auto; flex-direction: row; align-items: center;
+        overflow-x: auto; }
+      .rail-head, .rail-foot { border: none; }
+      .nav { flex-direction: row; }
+      .nav-group, .rail-sub { display: none; }
+    }
+  </style>
+</head>
+  <style>
+    /* ---------- sub-tabs ---------- */
+    .subtabs { display: flex; gap: 3px; padding: 0 22px; background: var(--bg);
+      border-bottom: 1px solid var(--line); position: sticky; top: 51px; z-index: 19; }
+    .subtab { padding: 10px 13px; font-size: 13px; color: var(--text-2); font-weight: 520;
+      border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex;
+      align-items: center; gap: 7px; }
+    .subtab:hover { color: var(--text); }
+    .subtab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 620; }
+    .sub-badge { background: var(--warn-bg); color: var(--warn); border-radius: 99px;
+      padding: 0 6px; font-size: 10px; font-weight: 700; }
+
+    /* ---------- depth: cards lift, surfaces read as layers ---------- */
+    .card, .hero, .run, .inc, .stat, .funnel .step {
+      transition: border-color .16s, transform .16s, box-shadow .16s; }
+    .card, .stat { box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    .run:hover, .inc:hover, .stat:hover {
+      transform: translateY(-1px); box-shadow: var(--shadow); border-color: var(--line); }
+    .hero { position: relative; overflow: hidden; box-shadow: var(--shadow); }
+    .hero::after { content: ""; position: absolute; inset: 0 0 auto auto; width: 320px;
+      height: 320px; border-radius: 50%; pointer-events: none; opacity: .10;
+      background: radial-gradient(circle, var(--accent), transparent 62%);
+      transform: translate(38%, -46%); }
+
+    /* ---------- chat as a conversation, not a form ----------
+       The engine appends .msg.you / .msg.bot with its own innerHTML, so the
+       avatar is drawn with ::before rather than by changing that code. */
+    .msg { position: relative; border-radius: 13px; padding: 10px 14px;
+      font-size: 13px; line-height: 1.55; max-width: 86%; margin-left: 34px; }
+    .msg::before { content: "AI"; position: absolute; left: -34px; top: 0;
+      width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center;
+      font-size: 10px; font-weight: 800; color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--hollow)); }
+    .msg.bot { background: var(--surface-2); color: var(--text); }
+    .msg.you { background: var(--accent); color: #fff; margin-left: auto; margin-right: 34px;
+      align-self: flex-end; }
+    .msg.you::before { content: "You"; left: auto; right: -34px; font-size: 9px;
+      background: var(--surface-2); color: var(--text-2); }
+    .msg .ev { margin-top: 8px; padding-left: 10px; border-left: 2px solid var(--line);
+      color: var(--text-3); font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+      white-space: pre-wrap; }
+    .msg.you .ev { border-left-color: rgba(255,255,255,.4); color: rgba(255,255,255,.8); }
+    .muted-msg { color: var(--text-2); background: var(--surface-2); }
+    .verdict-pill { display: inline-block; border-radius: 6px; padding: 1px 8px;
+      font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+      margin-right: 8px; background: var(--surface); color: var(--text-2); }
+    .verdict-pill.yes, .verdict-pill.achieved { background: var(--ok-bg); color: var(--ok); }
+    .verdict-pill.no, .verdict-pill.failed { background: var(--bad-bg); color: var(--bad); }
+    .verdict-pill.unknown { background: var(--surface); color: var(--text-3); }
+    .typing span { display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+      background: var(--text-3); margin-right: 3px; animation: blink 1.3s infinite; }
+    .typing span:nth-child(2) { animation-delay: .18s; }
+    .typing span:nth-child(3) { animation-delay: .36s; }
+    @keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+    #sugg .pill, #sugg button, .pill-suggest {
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px;
+      padding: 5px 12px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+    #sugg .pill:hover, #sugg button:hover, .pill-suggest:hover {
+      border-color: var(--accent); color: var(--text); }
+    /* stat pills in the topline row */
+    .pill { display: inline-block; background: var(--surface-2); border: 1px solid var(--line);
+      border-radius: 99px; padding: 3px 11px; font-size: 11.5px; color: var(--text-2); }
+
+    /* ---------- verdict + severity language (shared everywhere) ---------- */
+    .v-achieved { color: var(--ok); }      .bg-achieved { background: var(--ok-bg); }
+    .v-hollow   { color: var(--hollow); }  .bg-hollow   { background: var(--hollow-bg); }
+    .v-failed   { color: var(--bad); }     .bg-failed   { background: var(--bad-bg); }
+    .v-degraded { color: var(--warn); }    .bg-degraded { background: var(--warn-bg); }
+    .v-unknown  { color: var(--text-3); }  .bg-unknown  { background: var(--surface-2); }
+    .tag { display: inline-block; border-radius: 6px; padding: 2px 8px;
+      font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+      background: var(--surface-2); color: var(--text-2); }
+    .tag.v-achieved { background: var(--ok-bg); color: var(--ok); }
+    .tag.v-hollow   { background: var(--hollow-bg); color: var(--hollow); }
+    .tag.v-failed   { background: var(--bad-bg); color: var(--bad); }
+    .tag.v-degraded { background: var(--warn-bg); color: var(--warn); }
+    .tag.v-unknown  { background: var(--surface-2); color: var(--text-3); }
+    .tag.sev-tag.P1, .tag.sev-tag.P2 { background: var(--bad-bg); color: var(--bad); }
+    .tag.sev-tag.P3 { background: var(--warn-bg); color: var(--warn); }
+    .tag.sev-tag.P4 { background: var(--surface-2); color: var(--text-3); }
+    .tag.st-ok      { background: var(--ok-bg); color: var(--ok); }
+    .tag.st-error   { background: var(--bad-bg); color: var(--bad); }
+    .tag.st-live    { background: var(--accent-bg); color: var(--accent); }
+    .tag.st-unchecked { background: var(--surface-2); color: var(--text-3); }
+    .tag.ok  { background: var(--ok-bg); color: var(--ok); }
+    .tag.bad { background: var(--bad-bg); color: var(--bad); }
+
+    /* ---------- hero brief ---------- */
+    .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg-raised) 100%);
+      border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+    .hero .eyebrow { font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase;
+      color: var(--text-3); margin-bottom: 9px; display: flex; gap: 9px; align-items: center; }
+    .hero h1 { margin: 0; font-size: 23px; line-height: 1.32; font-weight: 650;
+      letter-spacing: -.015em; }
+    .hero .why { color: var(--text-2); margin-top: 9px; font-size: 13.5px; }
+    .hero .meter { height: 3px; border-radius: 3px; background: var(--surface-2);
+      margin-top: 16px; overflow: hidden; }
+    .hero .meter > span { display: block; height: 100%; background: var(--accent);
+      transition: width .4s; }
+
+    /* ---------- funnel ---------- */
+    .funnel { display: flex; gap: 0; margin: 14px 0 0; overflow-x: auto; }
+    .funnel .step { flex: 1; min-width: 104px; background: var(--surface);
+      border: 1px solid var(--line); padding: 11px 10px; text-align: center; position: relative; }
+    .funnel .step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .funnel .step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+    .funnel .step + .step { border-left: none; }
+    .funnel .step::after { content: ""; position: absolute; right: -6px; top: 50%;
+      width: 10px; height: 10px; transform: translateY(-50%) rotate(45deg);
+      border-top: 1px solid var(--line); border-right: 1px solid var(--line);
+      background: var(--surface); z-index: 2; }
+    .funnel .step:last-child::after { display: none; }
+    .funnel .step:last-child { background: var(--accent-bg); }
+    .funnel .step:last-child b { color: var(--accent); }
+    .funnel b { display: block; font-size: 19px; font-weight: 650; letter-spacing: -.02em; }
+    .funnel span { color: var(--text-3); font-size: 10px; text-transform: uppercase;
+      letter-spacing: .07em; }
+
+    /* ---------- stat strip ---------- */
+    .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 128px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 12px 14px; }
+    .stat .n { font-size: 22px; font-weight: 680; letter-spacing: -.02em; }
+    .stat .k { color: var(--text-3); font-size: 11px; text-transform: uppercase;
+      letter-spacing: .07em; margin-top: 2px; }
+
+    /* ---------- run cards ---------- */
+    .runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 10px; }
+    .run { background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 0; overflow: hidden; }
+    .run .head { padding: 11px 14px 9px; border-bottom: 1px solid var(--line-soft); }
+    .run p { padding: 0 14px 13px; }
+    .run.achieved .head { background: var(--ok-bg); }
+    .run.hollow   .head { background: var(--hollow-bg); }
+    .run.failed   .head { background: var(--bad-bg); }
+    .run.degraded .head { background: var(--warn-bg); }
+    .run.unknown  .head { background: var(--surface-2); }
+    .run .head { display: flex; align-items: center; gap: 8px; }
+    .run .meta { margin-left: auto; }
+    .run .meta { color: var(--text-3); font-size: 11.5px; margin-left: auto; }
+    .run p { margin: 7px 0 0; color: var(--text-2); font-size: 12.5px;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* ---------- incidents ---------- */
+    .inc { background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 13px 16px 13px 19px; position: relative;
+      overflow: hidden; }
+    .inc::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--text-3); }
+    .inc.sev-P1::before, .inc.sev-P2::before { background: var(--bad); }
+    .inc.sev-P3::before { background: var(--warn); }
+    .inc.sev-P4::before { background: var(--text-3); }
+    .inc + .inc { margin-top: 10px; }
+    .inc .head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+    .inc .head .chev { color: var(--text-3); font-size: 10px; transition: transform .15s; }
+    .inc.open .head .chev { transform: rotate(90deg); }
+    .inc .id { font-weight: 650; }
+    .inc .when { margin-left: auto; color: var(--text-3); font-size: 11.5px; white-space: nowrap; }
+    .inc .cause { color: var(--text-2); font-size: 12.5px; margin-top: 6px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .inc .body { border-top: 1px solid var(--line-soft); margin-top: 12px; padding-top: 12px; }
+    .mem { display: flex; gap: 9px; align-items: baseline; padding: 5px 0;
+      border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+    .mem:last-child { border-bottom: none; }
+    .mem .det { color: var(--accent); font-weight: 600; min-width: 116px; }
+    .mem .at { color: var(--text-3); font-size: 11px; min-width: 58px; }
+    .mem .txt { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mem.is-cause .txt { color: var(--text); }
+    .note-line { color: var(--text-3); font-size: 12px; margin-top: 10px; }
+    .note-line b { color: var(--text-2); }
+    .prec { background: var(--surface-2); border-radius: 9px; padding: 9px 12px;
+      font-size: 12px; color: var(--text-2); margin-top: 10px; }
+    .hyp { background: var(--surface-2); border: 1px solid var(--line);
+      border-radius: 9px; padding: 12px 14px; margin-top: 11px; }
+    .hyp .stmt { margin: 8px 0; font-size: 13.5px; line-height: 1.5; }
+    .hyp .ev { color: var(--text-3); font-size: 11.5px; border-left: 2px solid var(--line);
+      padding-left: 10px; margin: 4px 0; font-family: ui-monospace, Menlo, monospace; }
+    .hyp .act { color: var(--text-2); font-size: 12.5px; margin-top: 6px; }
+    .hyp .act b { color: var(--text); }
+
+    /* ---------- tables ---------- */
+    .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .tbl th { text-align: left; color: var(--text-3); font-weight: 600; font-size: 10.5px;
+      text-transform: uppercase; letter-spacing: .07em; padding: 7px 9px;
+      border-bottom: 1px solid var(--line); }
+    .tbl td { padding: 7px 9px; border-bottom: 1px solid var(--line-soft); color: var(--text-2); }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+    .tbl td.code { color: var(--text); font-family: ui-monospace, Menlo, monospace;
+      font-size: 11.5px; max-width: 520px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; }
+
+    /* ---------- chat ---------- */
+    .chat { display: flex; flex-direction: column; gap: 12px; max-height: 330px;
+      overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
+    .bubble { border-radius: 11px; padding: 9px 13px; font-size: 13px; max-width: 90%; }
+    .bubble.me { background: var(--accent-bg); color: var(--text); align-self: flex-end; }
+    .bubble.it { background: var(--surface-2); color: var(--text-2); align-self: flex-start;
+      white-space: pre-wrap; }
+
+    /* ---------- misc components ---------- */
+    .chainflow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .node { background: var(--accent-bg); color: var(--text); border-radius: 8px;
+      padding: 6px 12px; font-weight: 600; font-size: 13px; }
+    .node .n { color: var(--text-3); font-weight: 400; font-size: 11.5px; }
+    .gap { border-left: 2px solid var(--warn); padding: 5px 0 5px 12px; margin: 10px 0; }
+    .gap .k { font-size: 10px; font-weight: 800; letter-spacing: .09em; color: var(--warn);
+      text-transform: uppercase; }
+    .gap .w { font-size: 13px; margin: 3px 0; }
+    .gap .m { font-size: 11.5px; color: var(--text-3); }
+    .conn { display: flex; align-items: center; gap: 11px; padding: 11px 2px;
+      border-bottom: 1px solid var(--line-soft); }
+    .conn:last-child { border-bottom: none; }
+    .conn .nm { font-weight: 620; }
+    .conn .tg { color: var(--text-3); font-size: 11.5px; flex: 1; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .stream { max-height: 420px; overflow-y: auto; font-family: ui-monospace, Menlo, monospace;
+      font-size: 11.5px; line-height: 1.7; }
+    .stream div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+    .stream .lv { display: inline-block; min-width: 46px; font-weight: 700; }
+    .stream .lv.ERROR, .stream .lv.CRITICAL { color: var(--bad); }
+    .stream .lv.WARN, .stream .lv.WARNING { color: var(--warn); }
+    .stream .lv.INFO { color: var(--text-3); }
+    .empty { padding: 30px; text-align: center; color: var(--text-2);
+      border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface); }
+    .empty a { font-weight: 600; }
+    .view[hidden] { display: none; }
+    .steps { max-height: 300px; overflow-y: auto; }
+    .step-row { display: flex; gap: 10px; align-items: baseline; padding: 5px 0;
+      border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+    .step-row:last-child { border-bottom: none; }
+    .step-row .p { color: var(--text-3); min-width: 38px; font-variant-numeric: tabular-nums; }
+    .step-row .l { color: var(--text-2); flex: 1; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; }
+  </style>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="wordmark"><span class="spark">◆</span> Log Intelligence</div>
+      <div class="rail-sub" id="sourcePath">no source</div>
+    </div>
+    <nav class="nav">
+      <a class="nav-item" data-view="now" href="#/now"><span class="ic">✦</span>Now
+        <span class="nav-badge bad" id="navNowBadge" hidden></span></a>
+      <a class="nav-item" data-view="overview"  href="#/overview"><span class="ic">◎</span>Detail</a>
+      <a class="nav-item" data-view="runs"      href="#/runs"><span class="ic">▤</span>Runs
+        <span class="nav-badge" id="navRunsBadge" hidden></span></a>
+      <a class="nav-item" data-view="incidents" href="#/incidents"><span class="ic">◆</span>Incidents
+        <span class="nav-badge bad" id="navIncBadge" hidden></span></a>
+      <a class="nav-item" data-view="settings"  href="#/settings"><span class="ic">⚙</span>Settings
+        <span class="nav-badge" id="navConnBadge" hidden></span></a>
+    </nav>
+    <div class="rail-foot">
+      <button class="icon-btn" id="themeBtn" title="Switch theme">◐ Theme</button>
+      <span class="faint" style="font-size:11px" id="topline"></span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <span class="crumb" id="viewTitle">Overview</span>
+      <span class="chip" id="headSource" onclick="location.hash='#/settings'"><span class="dot"></span>
+        <span id="headSourceText">no source</span></span>
+      <span class="grow"></span>
+      <span class="chip" id="backendBadge">pattern matches only</span>
+      <span class="chip" id="profilePill" hidden></span>
+      <span class="chip" id="liveStatus">Waiting</span>
+      <button class="btn ghost" id="resetBtn">Clear run</button>
+      <button class="btn ghost" id="demoBtn">Demo</button>
+    </header>
+
+    <div class="subtabs" id="subOverview" hidden>
+      <a class="subtab" data-sub="overview" href="#/overview">Brief</a>
+      <a class="subtab" data-sub="activity" href="#/activity">Activity</a>
+      <a class="subtab" data-sub="flow" href="#/flow">Flow &amp; spec</a>
+      <a class="subtab" data-sub="data" href="#/data">Learned data</a>
+      <a class="subtab" data-sub="improve" href="#/improve">Improve
+        <span class="sub-badge" id="navImpBadge" hidden></span></a>
+    </div>
+    <div class="subtabs" id="subSettings" hidden>
+      <a class="subtab" data-sub="settings" href="#/settings">Sources</a>
+      <a class="subtab" data-sub="connectors" href="#/connectors">Connectors</a>
+    </div>
+
+    <div class="content">
+      <!-- ============ NOW - the answer, before the evidence ============ -->
+      <div class="view" data-view-panel="now" hidden>
+        <div class="verdict" id="nowVerdict">
+          <div class="v-state" id="nowState">Waiting for a source</div>
+          <h1 class="v-line" id="nowLine">Nothing is being watched yet.</h1>
+          <p class="v-sub" id="nowSub">Attach a log file or stream a connector and
+            this page will tell you what is happening, in one sentence.</p>
+          <div class="v-acts" id="nowActs"></div>
+        </div>
+        <div class="now-metrics" id="nowMetrics" hidden></div>
+        <div class="now-head" id="nowFeedHead" hidden>What needs you</div>
+        <div class="now-feed" id="nowFeed"></div>
+        <div class="now-quiet" id="nowQuiet" hidden></div>
+      </div>
+
+      <!-- ============ OVERVIEW ============ -->
+      <div class="view" data-view-panel="overview">
+        <section class="card empty" id="onboardCard" hidden style="text-align:left">
+          <h2 style="margin:0 0 6px;font-size:19px">Watch a project</h2>
+          <p class="muted" style="margin:0 0 16px">Point this at any running app's log file.
+            It is opened read-only, sensitive values are removed before anything is stored,
+            and every project keeps its own isolated history.</p>
+          <div class="row">
+            <input class="input" id="onboardPath" placeholder="/path/to/your/app.log" autocomplete="off">
+            <button class="btn primary" id="onboardAttach">Watch</button>
+            <button class="btn ghost" id="onboardSources">Browse</button>
+          </div>
+          <div class="muted" id="onboardErr" style="min-height:18px;margin-top:8px"></div>
+        </section>
+
+        <div id="briefBlock">
+          <section class="hero">
+            <div class="eyebrow">Live brief <span id="toolbarHint"></span></div>
+            <h1 id="headline">Reading the logs…</h1>
+            <div class="why" id="summary"></div>
+            <div class="why" id="reason"></div>
+            <div class="row" id="focusChips" style="margin-top:12px;flex-wrap:wrap"></div>
+            <div class="meter"><span id="confidenceBar" style="width:0%"></span></div>
+          </section>
+
+          <div class="funnel" id="aegisFunnel"></div>
+          <div class="stats" id="statsPills" style="margin-top:12px"></div>
+          <div class="card" id="overviewQuality" hidden style="margin-top:12px"></div>
+    <div class="card" id="depBanner" hidden style="margin-top:12px"></div>
+
+          <div class="grid2" style="margin-top:22px">
+            <div>
+              <div class="section-title">Why it happened</div>
+              <div class="card">
+                <div class="muted" style="margin-bottom:6px">Likely causes</div>
+                <ul id="causes" style="margin:0;padding-left:18px"></ul>
+                <div class="hint" id="causesNote"></div>
+                <div class="muted" style="margin:14px 0 6px">What to try</div>
+                <ul id="fixes" style="margin:0;padding-left:18px"></ul>
+              </div>
+              <div class="card" id="insightsBox" hidden>
+                <div class="muted" style="margin-bottom:6px">Notable</div>
+                <ul id="insights" style="margin:0;padding-left:18px"></ul>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">Ask about this run</div>
+              <div class="card">
+                <div class="chat" id="msgs">
+                  <div class="msg bot muted-msg">Ask anything about this run — why a call
+                    was hollow, what failed, whether a component ran. Answers quote the
+                    evidence they rest on.</div>
+                </div>
+                <div class="row" id="sugg" style="flex-wrap:wrap;margin-bottom:9px"></div>
+                <div class="row">
+                  <input class="input" id="askInput" placeholder="Ask a question…" autocomplete="off">
+                  <button class="btn primary" id="askBtn">Ask</button>
+                </div>
+              </div>
+              <div class="section-title">Source</div>
+              <div class="card"><div id="sourceLabel" class="muted"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ RUNS ============ -->
+      <div class="view" data-view-panel="runs" hidden>
+        <div class="section-title">Run verdicts</div>
+        <div class="lede">Every completed run, judged against what a run of this kind is
+          supposed to do. <b class="v-hollow">Hollow</b> means it finished cleanly and
+          achieved nothing — the failure no error can show you.</div>
+        <div id="aegisRunsPanel" hidden>
+          <div class="runs" id="aegisVerdicts"></div>
+          <div class="hint" id="aegisVerdictNote" style="margin-top:10px"></div>
+        </div>
+        <div class="empty" data-aegis-empty hidden>No source attached.
+          <a href="#/settings">Choose one</a> and completed runs are judged here.</div>
+      </div>
+
+      <!-- ============ INCIDENTS ============ -->
+      <div class="view" data-view-panel="incidents" hidden>
+        <div class="section-title">Incidents</div>
+        <div class="lede">One incident per story, cause ranked first. Expand for members,
+          precedents from past incidents, a grounded explanation, and a draft fix.</div>
+        <div id="aegisIncidentsPanel" hidden><div id="aegisIncidents"></div></div>
+        <div class="empty" data-aegis-empty hidden>No source attached.
+          <a href="#/settings">Choose one</a> — grouped incidents appear here, not forty alerts.</div>
+      </div>
+
+      <!-- ============ ACTIVITY ============ -->
+      <div class="view" data-view-panel="activity" hidden>
+        <div class="grid2">
+          <div>
+            <div class="section-title">Timeline</div>
+            <div class="card"><div class="stream" id="timeline"></div></div>
+          </div>
+          <div>
+            <div class="section-title">Recent lines <span class="faint">· redacted</span></div>
+            <div class="card">
+              <div class="stream" id="logs"></div>
+              <div class="row" style="margin-top:10px">
+                <input class="input" id="logInput" placeholder='Paste a log line to test…'>
+                <button class="btn" id="sendBtn">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ FLOW & SPEC ============ -->
+      <div class="view" data-view-panel="flow" hidden>
+        <div class="section-title">Components</div>
+        <div class="lede" id="graphNote"></div>
+        <div class="card">
+          <div class="row" id="learnBar" style="justify-content:space-between">
+            <span id="learnText" class="muted">Waiting for a source.</span>
+            <span id="learnMeta" class="faint"></span>
+          </div>
+          <div class="row" id="compRail" style="flex-wrap:wrap;margin-top:12px"></div>
+          <div id="compCards" style="margin-top:12px"></div>
+          <div id="flow" style="margin-top:12px"></div>
+        </div>
+        <div class="section-title">How this project works</div>
+        <div class="lede">Assembled from your code and your logs - no model.
+          <b>Solid</b> nodes were seen running; <b>dashed</b> ones are declared in
+          code but never observed. Click any node for its log lines, timings,
+          incidents and source.</div>
+        <div class="card" id="pfCard" hidden>
+          <div class="pf-legend" id="pfCounts"></div>
+          <div class="pf" id="pfBands"></div>
+          <div class="pf-detail" id="pfDetail" hidden></div>
+        </div>
+        <div class="card" id="pfEmpty">
+          <div class="hint">Run <b>Analyze</b> below and this becomes a diagram of
+            your service: the ways in, the work it does, and what it leans on.</div>
+        </div>
+
+        <div class="section-title">Project analysis</div>
+        <div class="lede">Read the codebase (read-only) and learn what it is
+          <b>supposed</b> to do: routes, external calls, what is guarded and what is not.
+          Everything is derived by parsing - no model reads your code.</div>
+        <div class="card">
+          <div class="row">
+            <input class="input" id="anaRepo" placeholder="/path/to/this/service's repo">
+            <button class="btn primary" id="anaBtn">Analyze</button>
+          </div>
+          <div class="hint" id="anaMsg" style="margin-top:8px"></div>
+          <div id="anaOut" style="margin-top:8px"></div>
+          <div class="row" id="cgRow" style="margin-top:12px;gap:9px" hidden>
+            <span class="tag" id="cgTag"></span>
+            <span class="hint" id="cgMsg" style="flex:1"></span>
+            <button class="btn" id="cgBuild" hidden>Build code graph</button>
+          </div>
+        </div>
+
+        <div class="section-title">Project brief <span class="faint">· one governed model call</span></div>
+        <div class="lede">What this project <b>is</b>, written by the model from the analysis
+          and the measured telemetry - never from raw source or raw logs. Every name it
+          uses is checked against the facts; fabrications are dropped, and it says what
+          it cannot know. Explain, Investigate and Propose fix all read this.</div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <span class="muted" id="undMeta">not generated yet</span>
+            <button class="btn primary" id="undBtn">Generate brief</button>
+          </div>
+          <div id="undOut" style="margin-top:10px; line-height:1.6" hidden></div>
+        </div>
+
+        <div class="section-title">What if… <span class="faint">· static prediction</span></div>
+        <div class="lede">Simulate a component or dependency going down. The prediction is
+          built from the mined flow, the dependency map and code guards - it says where to
+          look, never what will certainly happen.</div>
+        <div class="card">
+          <div class="row">
+            <input class="input" id="simTarget" placeholder="component or dependency, e.g. tts or localhost:6004" style="max-width:380px">
+            <button class="btn" id="simBtn">Simulate failure</button>
+          </div>
+          <div id="simOut" style="margin-top:10px"></div>
+        </div>
+
+        <div id="aegisSpecPanel" hidden>
+          <div class="section-title">Flow spec</div>
+          <div class="lede">What a run is supposed to do, learned from this project's own runs.
+            Human-editable: <span class="mono faint" id="aegisSpecPath"></span></div>
+          <div class="card">
+            <div class="steps" id="aegisSpec"></div>
+            <div style="margin-top:12px">
+              <button class="btn" id="aegisMarkBtn" hidden>Mark purpose steps · 1 model call</button>
+            </div>
+          </div>
+        </div>
+
+        <div hidden>
+          <div class="section-title">Never ran <span class="faint">·
+            <span id="deadCount">0</span> code paths</span></div>
+          <div class="lede">Lines your code can print that no observed run has produced.
+            Untested branches, or dead code - invisible to anything that reads logs alone.
+            Run <b>Analyze</b> above to populate this.</div>
+          <div class="card"><div class="steps" id="deadPaths"></div></div>
+        </div>
+      </div>
+
+      <!-- ============ LEARNED DATA ============ -->
+      <div class="view" data-view-panel="data" hidden>
+        <div id="dataPanel" hidden>
+          <div class="section-title">Flow graph</div>
+          <div class="lede">The order components run in, mined from this project's own traces.</div>
+          <div class="card"><div class="chainflow" id="dataFlow"></div></div>
+
+          <div class="section-title">Line shapes</div>
+          <div class="lede">Thousands of lines collapse into these — what every threshold
+            actually counts. Mute one that is known-noisy; it stays muted across restarts.</div>
+          <div class="card"><table class="tbl">
+            <thead><tr><th style="width:70px">count</th><th>template</th><th style="width:80px"></th></tr></thead>
+            <tbody id="dataTemplates"></tbody></table></div>
+
+          <div class="section-title">Learned timings</div>
+          <div class="lede">What "normal" means for each operation — the baseline every
+            latency alarm is measured against.</div>
+          <div class="card"><table class="tbl">
+            <thead><tr><th>component</th><th>operation</th><th class="num">median</th>
+              <th class="num">p95</th><th class="num">samples</th></tr></thead>
+            <tbody id="dataBaselines"></tbody></table></div>
+        </div>
+        <div class="empty" data-aegis-empty hidden>No source attached.
+          <a href="#/settings">Choose one</a> — learned shapes and timings appear here.</div>
+      </div>
+
+      <!-- ============ IMPROVE ============ -->
+      <div class="view" data-view-panel="improve" hidden>
+        <div id="aegisImprovePanel" hidden>
+          <div class="section-title">What to log next</div>
+          <div class="lede">Gaps the analysis actually hit, each with the measurement that
+            proves it. These pair with the instrumentation skill.</div>
+          <div class="card" id="aegisGaps"></div>
+
+          <div class="section-title">Recurring patterns</div>
+          <div class="lede">A theme across incidents is a candidate for a fix at the source.</div>
+          <div class="card" id="aegisPatterns"></div>
+
+          <div class="section-title">Quiet notes <span class="faint">· paging nobody</span></div>
+          <div class="card"><div id="aegisNotes" class="muted"></div></div>
+        </div>
+        <div class="empty" data-aegis-empty hidden>No source attached.
+          <a href="#/settings">Choose one</a> — the analysis will say what logging it misses.</div>
+      </div>
+
+      <!-- ============ SOURCES ============ -->
+      <div class="view" data-view-panel="settings" hidden>
+        <div class="section-title">Live sources</div>
+        <div class="lede">Services listening on this machine, and their log files.
+          Everything is opened read-only.</div>
+        <div class="card" id="suggestCard" hidden style="margin-bottom:12px">
+          <div class="muted" style="margin-bottom:8px">Related to what you are
+            watching — a dependency it calls, or a service in the same project.
+            Everything else on this machine is under All detected ports.</div>
+          <div id="suggestList"></div>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between;margin-bottom:10px">
+            <span class="muted">All detected ports</span>
+            <button class="btn ghost" id="refreshPortsBtn">Refresh</button>
+          </div>
+          <div id="ports"></div>
+        </div>
+        <div class="section-title" style="margin-top:18px">Stored data</div>
+        <div class="lede">Everything Aegis learned, per project — kept under
+          ~/.aegis/projects/, never inside your repos. Deleting removes baselines,
+          incidents and memory for that project only; your log files are never touched.</div>
+        <div class="card" id="storedProjects"><div class="muted">nothing stored yet</div></div>
+      </div>
+
+      <!-- ============ CONNECTORS ============ -->
+      <div class="view" data-view-panel="connectors" hidden>
+        <div class="section-title">Connectors</div>
+        <div class="lede">Local ports show you <b>now, in detail</b>. Connectors add
+          <b>history and breadth</b> — weeks of baselines, LLM spans, the services you do not
+          run locally. Credentials live at ~/.aegis/providers.json (0600) and are sent only
+          to the provider they belong to.</div>
+        <div class="card" id="connList"></div>
+
+        <div class="section-title">Add a connector</div>
+        <div class="card">
+          <div class="row" style="flex-wrap:wrap">
+            <select class="input" id="connKind" style="max-width:230px">
+              <option value="signoz">SigNoz — HTTP API</option>
+              <option value="signoz-mcp">SigNoz — MCP server</option>
+              <option value="opik-mcp">Opik / Comet — MCP server</option>
+              <option value="mcp">Other MCP server</option>
+            </select>
+            <input class="input" id="connName" placeholder="name, e.g. prod-signoz" style="max-width:210px">
+            <input class="input" id="connTarget" placeholder="https://signoz.example.com" style="max-width:300px">
+            <input class="input" id="connKey" placeholder="API key" type="password" style="max-width:200px">
+            <input class="input" id="connProject" placeholder="Opik project (e.g. my-chatbot)" style="max-width:230px" hidden>
+            <input class="input" id="connTool" placeholder="logs/traces tool, e.g. query_logs" style="max-width:230px" hidden>
+            <input class="input" id="connEnv" placeholder="env, e.g. API_KEY=abc HOST=https://x" style="max-width:300px" hidden>
+          </div>
+          <div class="hint" id="connHint" style="margin-top:9px"></div>
+          <div class="row" style="margin-top:11px">
+            <button class="btn primary" id="connAdd">Add connector</button>
+            <span class="hint" id="connMsg"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+      // Field names must match what the server sends. They were camelCase here while
+      // the API is snake_case, so these placeholders were never replaced by real data
+      // and the page showed "Waiting for logs" with a run already in progress.
+      const state = {
+      current_stage: 'idle',
+      current_label: '',
+      status: 'idle',
+      running: false,
+      confidence: 0,
+      summary: '',
+      reason: '',
+      possible_causes: [],
+      suggested_fixes: [],
+      timeline: [],
+      logLines: [],
+      stages: [],
+      ports: [],
+      graph: { lanes: [], edges: [], transition_counts: {}, current_branch: 'main', current_branch_label: 'Main path', branch_counter: 0, last_component: null, next_likely: null },
+      showAllBranches: false,
+      metrics: { total_events: 0, failures: 0, retries: 0, skipped: 0 },
+      source: { type: 'idle', label: 'Scanning for a live local source', path: null },
+      ask: { answer: 'No question asked yet.', verdict: 'unknown', confidence: 0, evidence: [] },
+      updatedAt: ''
+    };
+
+    function render() {
+      renderTopline();
+      renderPorts();
+      renderStats();
+      renderPipeline();
+      renderSummary();
+      renderSuggestions();
+      renderLists();
+      renderTimeline();
+      renderLogs();
+    }
+    function renderTopline() {
+      const el = document.getElementById('topline');
+      el.innerHTML = [
+        badge('Status: ' + state.status.toUpperCase()),
+        badge('Current: ' + (state.current_label || (state.metrics && state.metrics.total_events ? 'running' : 'no source attached'))),
+        badge('Confidence: ' + state.confidence + '%'),
+        badge('Events: ' + state.metrics.total_events),
+        badge('Retries: ' + state.metrics.retries)
+      ].join('');
+    }
+    function badge(text) { return '<span class="pill">' + escapeHtml(text) + '</span>'; }
+    function renderStats() {
+      const statPills = [
+        'Running: ' + (state.running ? 'Yes' : 'No'),
+        'Retries: ' + state.metrics.retries,
+        'Skipped: ' + (state.metrics.skipped || 0),
+        'Confidence: ' + state.confidence + '%'
+      ];
+      document.getElementById('statsPills').innerHTML = statPills.map(badge).join('');
+    }
+    function renderPorts() {
+      const container = document.getElementById('ports');
+      const ports = state.ports || [];
+      if (!ports.length) {
+        container.innerHTML = '<div class="muted">No listening ports detected yet. Click refresh ports to scan your machine.</div>';
+        return;
+      }
+      container.innerHTML = ports.map((port) => `
+        <button class="port-chip" data-port="${escapeHtml(String(port.port))}">
+          ${escapeHtml(String(port.process || 'process'))}
+          <span>• ${escapeHtml(String(port.port))}</span>
+        </button>
+      `).join('');
+      container.querySelectorAll('button[data-port]').forEach((button) => {
+        button.addEventListener('click', () => tracePort(button.getAttribute('data-port')));
+      });
+    }
+    function renderDiscovery() {
+      const p = state.profile || {};
+      const text = document.getElementById('learnText');
+      const meta = document.getElementById('learnMeta');
+      const rail = document.getElementById('compRail');
+      if (!text || !rail) return;
+
+      const seen = p.lines_seen || 0;
+      const comps = p.components || [];
+
+      // Say exactly how far along learning is - never imply a pipeline we have not found.
+      if (!seen) {
+        text.innerHTML = 'Waiting for a source.';
+      } else if (seen < 8) {
+        text.innerHTML = 'Reading source\u2026 ' + seen + ' lines';
+      } else if (!comps.length) {
+        text.innerHTML = seen < 25
+          ? 'Detected <b>' + (p.line_format || '?') + '</b> format\u2026 ' + seen + ' lines'
+          : 'Detected <b>' + (p.line_format || '?') + '</b> format \u2014 no component tags found';
+      } else {
+        const shown = comps.slice(0, 5).join(', ');
+        const more = comps.length > 5 ? ' +' + (comps.length - 5) : '';
+        text.innerHTML = 'Found <b>' + comps.length + '</b> components: ' + shown + more;
+      }
+      meta.innerHTML = seen
+        ? '<span class="tag">' + (p.line_format || '?') + '</span>'
+          + '<span class="tag">' + (p.method || 'none') + '</span>'
+        : '';
+
+      // Component rail, built from the discovered vocabulary rather than fixed stages.
+      const lanes = ((state.graph && state.graph.lanes) || [])
+        .filter((l) => l.component !== 'runtime');
+      if (!comps.length || !lanes.length) {
+        rail.innerHTML = '';
+        return;
+      }
+      const statusOf = {};
+      lanes.forEach((l) => { statusOf[l.component] = l.status; });
+      const ordered = lanes.map((l) => l.component);
+      rail.innerHTML = ordered.map((name, i) =>
+        (i ? '<span class="clink">\u2192</span>' : '')
+        + '<span class="cnode ' + (statusOf[name] || '') + '">' + escapeHtml(name) + '</span>'
+      ).join('');
+
+      renderComponentCards(lanes);
+    }
+
+    // One card per component: its state, how much it did, and - when it failed - the
+    // line that says why. The rail shows the shape of the run; the cards show the
+    // detail you would otherwise go hunting for in the log panel.
+    function renderComponentCards(lanes) {
+      const box = document.getElementById('compCards');
+      if (!box) return;
+      if (!lanes || !lanes.length) { box.innerHTML = ''; return; }
+
+      const order = { failed: 0, retrying: 1, running: 2, skipped: 3, completed: 4 };
+      const cards = lanes.map((lane) => {
+        const nodes = (lane.branch_groups || []).flatMap((g) => g.nodes || []);
+        const errors = nodes.filter((n) => n.status === 'failed');
+        const times = nodes.map((n) => n.timestamp).filter(Boolean).sort();
+        // Show the failing line when there is one - that is the reason you opened this.
+        const notable = errors.length ? errors[errors.length - 1] : nodes[nodes.length - 1];
+        const state = lane.status || 'observed';
+        const label = state === 'completed' ? 'done'
+          : state === 'failed' ? 'failed'
+          : state === 'running' ? 'active'
+          : state === 'skipped' ? 'skipped'
+          : state === 'retrying' ? 'retried' : 'seen';
+
+        return {
+          sort: order[state] === undefined ? 5 : order[state],
+          html:
+            '<div class="ccard ' + escapeHtml(state) + '">'
+            + '<div class="ccard-head">'
+            + '<span class="ccard-name">' + escapeHtml(lane.component) + '</span>'
+            + '<span class="ccard-state">' + escapeHtml(label) + '</span>'
+            + '</div>'
+            + '<div class="ccard-stats">'
+            + '<span><b>' + nodes.length + '</b> events</span>'
+            + (errors.length ? '<span><b>' + errors.length + '</b> errors</span>' : '')
+            + (times.length ? '<span>' + escapeHtml(times[times.length - 1]) + '</span>' : '')
+            + '</div>'
+            + (notable ? '<div class="ccard-last">' + escapeHtml(notable.message || '') + '</div>' : '')
+            + '</div>'
+        };
+      });
+
+      // Failures first: what needs attention should not be below the fold.
+      cards.sort((a, b) => a.sort - b.sort);
+      box.innerHTML = cards.map((c) => c.html).join('');
+    }
+
+    function renderPipeline() {
+      renderDiscovery();
+      const lanes = (state.graph && state.graph.lanes) || [];
+      const note = document.getElementById('graphNote');
+      if (!lanes.length) {
+        document.getElementById('flow').innerHTML = '<div class="muted">No graph nodes inferred yet. The graph will build itself from the first logs.</div>';
+        if (note) note.textContent = '';
+        return;
+      }
+
+      const allNodes = [];
+      lanes.forEach((lane) => {
+        (lane.branch_groups || []).forEach((group) => {
+          (group.nodes || []).forEach((node, index) => {
+            allNodes.push({
+              ...node,
+              lane: lane.component,
+              groupId: group.id,
+              groupLabel: group.label || node.branch_label || 'Main path',
+              order: allNodes.length + index,
+            });
+          });
+        });
+      });
+
+      const activeBranch = state.graph?.current_branch || 'main';
+      if (note) note.textContent = state.showAllBranches ? 'Showing all observed paths.' : 'Focused on the active path: ' + (state.graph?.current_branch_label || 'Main path');
+
+      const displayNodes = state.showAllBranches
+        ? allNodes
+        : allNodes.filter((node) => node.groupId === 'main' || node.groupId === activeBranch);
+
+      if (!displayNodes.length) {
+        document.getElementById('flow').innerHTML = '<div class="muted">No graph nodes inferred yet. The graph will build itself from the first logs.</div>';
+        return;
+      }
+
+      const sorted = displayNodes.slice().sort((a, b) => {
+        const timeDiff = String(a.timestamp || '').localeCompare(String(b.timestamp || ''));
+        return timeDiff !== 0 ? timeDiff : (a.order || 0) - (b.order || 0);
+      });
+
+      // Group consecutive events from the same component. Rendering one card per log
+      // line duplicated the Recent Logs panel and buried the two lines that mattered
+      // under fifty that did not.
+      const groups = [];
+      sorted.forEach((node) => {
+        const last = groups[groups.length - 1];
+        if (last && last.component === node.component && last.branch === node.branch) {
+          last.nodes.push(node);
+        } else {
+          groups.push({ component: node.component, branch: node.branch,
+                        branchLabel: node.groupLabel, nodes: [node] });
+        }
+      });
+
+      const rank = { failed: 3, retrying: 2, skipped: 1 };
+      const flow = [];
+      let lastBranch = null;
+
+      groups.forEach((group) => {
+        if (state.showAllBranches && lastBranch !== null && lastBranch !== group.branch) {
+          flow.push('<div class="story-branch">Branch: ' + escapeHtml(String(group.branchLabel || group.branch)) + '</div>');
+        }
+        lastBranch = group.branch;
+
+        // The group takes the status of its most serious event - a component that
+        // failed once among ten successes has still failed.
+        const worst = group.nodes.reduce((acc, n) => {
+          const st = n.skipped ? 'skipped' : (n.status || 'observed');
+          return (rank[st] || 0) > (rank[acc] || 0) ? st : acc;
+        }, 'observed');
+
+        const pill = worst === 'skipped' ? 'Skipped' : worst === 'running' ? 'Live'
+          : worst === 'failed' ? 'Failed' : worst === 'retrying' ? 'Retry'
+          : worst === 'completed' ? 'Done' : 'Seen';
+
+        // Show the event that explains the group, not merely the newest one.
+        const headline = group.nodes.find((n) => (n.status === 'failed') || n.skipped)
+          || group.nodes[group.nodes.length - 1];
+        const extra = group.nodes.length - 1;
+        const time = headline.timestamp || '';
+
+        // "runtime" is our own bucket for lines outside the project's vocabulary -
+        // name it for what it is rather than leaking an internal label. Declared here
+        // because `details` below uses it; a later `const` threw a TDZ error that
+        // aborted render() and left the whole dashboard blank.
+        const title = group.component === 'runtime' ? 'other output' : (group.component || 'Event');
+
+        const details = extra > 0
+          ? '<details class="story-more"><summary>' + extra + ' more from '
+            + escapeHtml(title) + '</summary>'
+            + group.nodes.filter((n) => n !== headline).map((n) =>
+                '<div class="story-line"><span>' + escapeHtml(n.timestamp || '') + '</span>'
+                + escapeHtml(n.message || n.label || '') + '</div>').join('')
+            + '</details>'
+          : '';
+
+        flow.push(
+          '<div class="story-event ' + escapeHtml(worst) + '">'
+          + '<div class="story-row"><div>'
+          + '<div class="story-time">' + escapeHtml(time) + '</div>'
+          + '<div class="story-title">' + escapeHtml(title)
+          + (group.nodes.length > 1 ? ' <span class="story-count">×' + group.nodes.length + '</span>' : '')
+          + '</div></div>'
+          + '<span class="story-chip ' + (worst === 'failed' ? 'bad' : '') + '">' + escapeHtml(pill) + '</span>'
+          + '</div>'
+          + '<div class="story-message">' + escapeHtml(headline.message || headline.label || '') + '</div>'
+          + details
+          + '</div>'
+        );
+      });
+      document.getElementById('flow').innerHTML = '<div class="story-rail">' + flow.join('') + '</div>';
+    }
+    // One plain sentence, first thing on the page: what is happening and whether it
+    // needs attention. Everything technical belongs below this, not instead of it.
+    function renderHeadline() {
+      const el = document.getElementById('headline');
+      if (!el) return;
+
+      const lanes = (state.graph && state.graph.lanes) || [];
+      const failed = lanes.filter((l) => l.status === 'failed' && l.component !== 'runtime')
+                          .map((l) => l.component);
+      const metrics = state.metrics || {};
+      const events = metrics.total_events || 0;
+
+      let cls = 'idle';
+      let icon = '○';
+      let text = 'Waiting for a source';
+      let sub = 'Pick a port or attach a log file to start watching a run.';
+
+      if (!events) {
+        // keep the idle defaults
+      } else if (failed.length) {
+        cls = 'bad'; icon = '●';
+        text = failed.length === 1
+          ? failed[0] + ' failed'
+          : failed.slice(0, 2).join(' and ') + ' failed';
+        // Prefer the model's account of THIS run over the generic pattern label:
+        // "A dependency call failed" says far less than the summary it replaced.
+        sub = (state.interpretation === 'llm' && state.summary)
+          ? state.summary
+          : (state.reason && state.reason !== 'Execution completed successfully.'
+              ? state.reason
+              : (state.summary || ''));
+      } else if (state.status === 'failed') {
+        cls = 'bad'; icon = '●';
+        text = 'This run failed';
+        sub = state.reason || state.summary || '';
+      } else if (state.running && state.status !== 'failed') {
+        cls = 'busy'; icon = '◐';
+        // A summary that describes a finished call should not sit under "in progress".
+        const finished = state.interpretation === 'llm' && state.summary
+          && /\b(ended|completed|finished|hung up|closed)\b/i.test(state.summary);
+        text = finished ? 'Last run finished' : 'Run in progress';
+        sub = state.summary || '';
+      } else {
+        cls = 'ok'; icon = '●';
+        text = 'Everything looks healthy';
+        // A healthy run deserves the same briefing as a failing one. This
+        // branch alone threw the model's account away and printed counters
+        // instead, so a run that WAS explained in four sentences - including
+        // the two 230s spikes it had found - showed as "25 events". Counters
+        // are the fallback for when nothing reasoned about the run, never a
+        // replacement for the account itself.
+        const parts = [events + ' events'];
+        if (metrics.skipped) parts.push(metrics.skipped + ' step(s) skipped');
+        if (metrics.retries) parts.push(metrics.retries + ' retry/retries');
+        sub = (state.interpretation === 'llm' && state.summary)
+          ? state.summary
+          : parts.join(' · ');
+      }
+
+      el.className = 'headline ' + cls;
+      el.innerHTML = '<span class="hl-icon">' + icon + '</span>' + escapeHtml(text)
+        + (sub ? '<span class="hl-sub">' + escapeHtml(sub) + '</span>' : '');
+    }
+
+    function renderSummary() {
+      renderHeadline();
+      // The headline already shows the model's summary. Repeating it here printed the
+      // same paragraph twice, and repeating `reason` under it added a third line that
+      // often contradicted both.
+      // Once the headline carries the model's summary, nothing below should repeat it
+      // or add a filler line beneath it. Placeholder reasons ("Run in progress.",
+      // "Execution completed successfully.") say nothing the headline has not said.
+      const usedInHeadline = state.interpretation === 'llm' && state.summary;
+      const FILLER = ['Run in progress.', 'Execution completed successfully.',
+                      'Awaiting execution events.', ''];
+      // Hide rather than merely empty: an emptied element keeps its margins, which
+      // is the blank band that appeared under the brief.
+      const summaryEl = document.getElementById('summary');
+      const reasonEl = document.getElementById('reason');
+      const summaryText = usedInHeadline ? '' : (state.summary || '');
+      const reasonText = (usedInHeadline || FILLER.includes(state.reason)) ? '' : (state.reason || '');
+      summaryEl.textContent = summaryText;
+      summaryEl.hidden = !summaryText;
+      reasonEl.textContent = reasonText;
+      reasonEl.hidden = !reasonText;
+
+      // Only show a confidence bar when a model actually reasoned about the run.
+      // A regex hit on "timeout" is an observation, not a diagnosis, so it gets no bar.
+      const bar = document.getElementById('confidenceBar');
+      const scored = state.interpretation === 'llm' && state.confidence > 0;
+      bar.style.width = scored ? Math.min(100, state.confidence) + '%' : '0%';
+      bar.parentElement.style.display = scored ? '' : 'none';
+
+      // Named backendBadge, not `badge`: a local `badge` shadows the badge() helper
+      // for this whole function, and `pills.map(badge)` below then called a DOM
+      // element - throwing, which aborted render() and froze the entire dashboard.
+      const backendBadge = document.getElementById('backendBadge');
+      if (backendBadge) {
+        const llmOn = state.backend?.available;
+        backendBadge.textContent = llmOn ? 'AI reasoning' : 'Pattern matches only';
+        backendBadge.className = 'backend-badge ' + (llmOn ? 'on' : 'off');
+        backendBadge.title = state.backend?.detail || '';
+      }
+      document.getElementById('liveStatus').textContent =
+        state.status === 'failed' ? 'Failed' :
+        state.running ? 'Live' :
+        state.status === 'success' ? 'Completed' :
+        'Waiting';
+      document.getElementById('sourceLabel').textContent = state.source?.label || 'No live source connected';
+      document.getElementById('sourcePath').textContent = state.source?.path || 'Pick a port and I’ll follow the live stream automatically.';
+      // Only say what is actually known. "Branch: Main path / Likely next:
+      // unknown" was three chips of placeholder sitting directly under the
+      // brief, which pushed the account down and told the reader nothing -
+      // a graph that has not been mined has no branch and no next step.
+      const chips = [];
+      if (state.graph?.current_branch_label) {
+        chips.push('Branch: ' + state.graph.current_branch_label);
+      }
+      if (state.graph?.next_likely) {
+        chips.push('Likely next: ' + state.graph.next_likely);
+      }
+      if (chips.length) {
+        chips.push('Mode: ' + (state.showAllBranches ? 'all paths' : 'focus'));
+      }
+      const focusEl = document.getElementById('focusChips');
+      focusEl.innerHTML = chips.map((text, i) => '<span class="focus-chip ' + (i === 0 ? 'alt' : 'soft') + '">' + escapeHtml(text) + '</span>').join('');
+      focusEl.hidden = !chips.length;
+
+      const pills = [];
+      if (state.status === 'failed') pills.push('Failed');
+      else if (state.status === 'success') pills.push('Completed');
+      else if (state.running) pills.push('Live');
+      else pills.push('Idle');
+      pills.push('Confidence ' + state.confidence + '%');
+      pills.push('Events ' + state.metrics.total_events);
+      document.getElementById('statsPills').innerHTML = pills.map(badge).join('');
+      document.getElementById('sourcePath').textContent = state.source?.path || 'Pick a port and I’ll follow the live stream automatically.';
+    }
+    function bubble(cls, html) {
+      const msgs = document.getElementById('msgs');
+      if (!msgs) return null;
+      const placeholder = msgs.querySelector('.muted-msg');
+      if (placeholder) placeholder.remove();
+      const node = document.createElement('div');
+      node.className = 'msg ' + cls;
+      node.innerHTML = html;
+      msgs.appendChild(node);
+      msgs.scrollTop = msgs.scrollHeight;
+      return node;
+    }
+
+    function renderAsk() {
+      // Answers are appended as chat turns, so the thread of what was already asked
+      // stays visible - one replaced answer loses the reasoning that led to it.
+      const ask = state.ask || {};
+      if (!ask.answer || ask._rendered) return;
+      ask._rendered = true;
+
+      const verdict = ask.verdict || 'unknown';
+      const evidence = Array.isArray(ask.evidence) ? ask.evidence : [];
+      const html =
+        '<span class="verdict-pill ' + escapeHtml(verdict) + '">' + escapeHtml(verdict) + '</span>'
+        + escapeHtml(ask.answer)
+        + (evidence.length
+            ? '<div class="ev">' + evidence.map(escapeHtml).join('\n') + '</div>'
+            : '');
+
+      if (state._pendingBubble) {
+        state._pendingBubble.innerHTML = html;
+        state._pendingBubble = null;
+      } else {
+        bubble('bot', html);
+      }
+    }
+
+    // Suggestions come from the components actually discovered in THIS run, so they
+    // are always answerable - a generic list would ask about things that never ran.
+    function renderSuggestions() {
+      const box = document.getElementById('sugg');
+      if (!box) return;
+      const comps = (state.profile && state.profile.components) || [];
+      const failed = ((state.graph && state.graph.lanes) || [])
+        .filter((l) => l.status === 'failed').map((l) => l.component);
+
+      const questions = [];
+      if (failed.length) questions.push('Why did ' + failed[0] + ' fail?');
+      if (state.status === 'failed') questions.push('What failed in this run?');
+      comps.filter((c) => c !== 'runtime').slice(0, 2).forEach((c) => {
+        questions.push('Did ' + c + ' run?');
+      });
+      if (state.metrics && state.metrics.skipped) questions.push('What was skipped and why?');
+      if (!questions.length) questions.push('What happened in this run?', 'Did anything fail?');
+
+      box.innerHTML = questions.slice(0, 4)
+        .map((q) => '<button type="button" data-q="' + escapeHtml(q) + '">' + escapeHtml(q) + '</button>')
+        .join('');
+      box.querySelectorAll('button[data-q]').forEach((b) => {
+        b.addEventListener('click', () => {
+          document.getElementById('askInput').value = b.getAttribute('data-q');
+          askRun();
+        });
+      });
+    }
+    function renderLists() {
+      document.getElementById('causes').innerHTML = (state.possible_causes || []).length ? (state.possible_causes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>No failure detected in this run.</li>';
+      document.getElementById('fixes').innerHTML = (state.suggested_fixes || []).length ? (state.suggested_fixes || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') : '<li>Nothing to fix - no failure detected.</li>';
+
+      // Say where the diagnosis came from. A bare list gives no way to judge whether
+      // it is a model reading the run or a regex that matched a keyword.
+      // Detail the developer would otherwise dig for: slow steps, skipped work,
+      // retries. Hidden entirely when the run has nothing notable to report.
+      const insightsBox = document.getElementById('insightsBox');
+      const insights = state.insights || [];
+      if (insightsBox) {
+        insightsBox.hidden = !insights.length;
+        if (insights.length) {
+          document.getElementById('insights').innerHTML =
+            insights.map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
+        }
+      }
+
+      const note = document.getElementById('causesNote');
+      if (note) {
+        note.textContent = !(state.possible_causes || []).length ? ''
+          : state.interpretation === 'llm'
+            ? 'Read from this run by ' + (state.backend?.detail || 'the model').replace(/^Interpreting with /, '').replace(/\.$/, '') + '.'
+            : 'Matched from log patterns, not reasoned - add OPENAI_API_KEY for a real diagnosis.';
+      }
+    }
+    function renderTimeline() {
+      const timeline = document.getElementById('timeline');
+      timeline.innerHTML = state.timeline.length ? state.timeline.slice().reverse().map((item) => '<div class="tl-item"><div class="time">' + escapeHtml(item.time) + '</div><div><div><strong>' + escapeHtml(item.label) + '</strong></div><div class="muted" style="margin-top: 4px;">' + escapeHtml(item.message) + '</div></div></div>').join('') : '<div class="muted">Timeline will appear here as logs stream in.</div>';
+    }
+    function renderLogs() {
+      const logs = document.getElementById('logs');
+      logs.innerHTML = (state.log_lines || []).length ? (state.log_lines || []).slice().reverse().map((item) => '<div class="logline"><div class="time">' + escapeHtml(item.timestamp) + '</div><div class="level ' + escapeHtml(item.level) + '">' + escapeHtml(item.level) + '</div><div class="text">' + escapeHtml(item.message) + '</div></div>').join('') : '<div class="muted">No logs yet. Paste a line or run the demo stream.</div>';
+    }
+    function escapeHtml(value) {
+      return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    }
+    function statusIcon(status, active) {
+      if (status === 'completed') return '✓';
+      if (status === 'failed') return '!';
+      if (status === 'retrying') return '↻';
+      if (status === 'running' || active) return '●';
+      return '○';
+    }
+    async function sendLog() {
+      const input = document.getElementById('logInput');
+      const line = input.value.trim();
+      if (!line) return;
+      input.value = '';
+      await fetch('/api/log', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line }) });
+    }
+    async function call(path) { await fetch(path, { method: 'POST' }); }
+    async function askRun() {
+      const input = document.getElementById('askInput');
+      const query = input.value.trim();
+      if (!query) return;
+      input.value = '';
+
+      bubble('you', escapeHtml(query));
+      // The model can take a few seconds; say so rather than leaving a dead panel.
+      state._pendingBubble = bubble('bot', '<span class="thinking">Reading the run…</span>');
+
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const payload = await response.json();
+        if (payload.ok && payload.result) {
+          state.ask = payload.result;
+          renderAsk();
+        } else if (state._pendingBubble) {
+          state._pendingBubble.innerHTML = 'That question could not be answered just now.';
+          state._pendingBubble = null;
+        }
+      } catch (err) {
+        if (state._pendingBubble) {
+          state._pendingBubble.innerHTML = 'Could not reach the agent. Is it still running?';
+          state._pendingBubble = null;
+        }
+      }
+    }
+    async function refreshPorts() {
+      await fetch('/api/ports/refresh', { method: 'POST' });
+      // The Aegis suggestions are cached for polling; an explicit Refresh
+      // must look again rather than re-show what the cache already had.
+      try {
+        const reply = await fetch('/api/aegis/sources?force=1');
+        if (window.aegisApplySources) window.aegisApplySources(await reply.json());
+      } catch (err) { /* bridge off; the v1 list still refreshed */ }
+    }
+    async function tracePort(port) {
+      await fetch('/api/trace-port', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ port: Number(port) })
+      });
+    }
+    // Reload when the dashboard's own code changes on disk. Without this the user
+    // has to know to hard-refresh, and silently sees a stale page instead of fixes.
+    (async () => {
+      let build = null;
+      const check = async () => {
+        try {
+          const r = await fetch('/api/build', { cache: 'no-store' });
+          const { build: current } = await r.json();
+          if (build && current !== build) location.reload();
+          build = current;
+        } catch (e) { /* agent restarting; try again next tick */ }
+      };
+      await check();
+      setInterval(check, 2000);
+    })();
+
+    const source = new EventSource('/events');
+    // Belt and braces: reload if the heartbeat reports a build newer than ours.
+    source.addEventListener('ping', (event) => {
+      try {
+        const { build } = JSON.parse(event.data);
+        if (build && window.__build && build !== window.__build) location.reload();
+        if (build) window.__build = window.__build || build;
+      } catch (e) { /* malformed heartbeat is not fatal */ }
+    });
+    source.addEventListener('state', (event) => {
+      const payload = JSON.parse(event.data);
+      Object.assign(state, payload.state);
+      render();
+    });
+    document.getElementById('askBtn').addEventListener('click', askRun);
+    document.getElementById('sendBtn').addEventListener('click', sendLog);
+    document.getElementById('demoBtn').addEventListener('click', () => call('/api/demo/start'));
+    document.getElementById('resetBtn').addEventListener('click', () => call('/api/reset'));
+    document.getElementById('refreshPortsBtn').addEventListener('click', refreshPorts);
+    document.getElementById('logInput').addEventListener('keydown', (event) => { if (event.key === 'Enter') sendLog(); });
+    document.getElementById('askInput').addEventListener('keydown', (event) => { if (event.key === 'Enter') askRun(); });
+    refreshPorts();
+    render();
+  </script>
+<script>
+/* --- Aegis: run-quality intelligence, self-contained. If the bridge is
+   unavailable the panel simply stays hidden and v1 behaves as always. --- */
+(function () {
+  "use strict";
+
+  function aegisEl(id) { return document.getElementById(id); }
+  function aegisEsc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  var aegisOpen = {};
+  var aegisBusy = {};
+  var aegisFixBusy = {};
+  var aegisInvBusy = {};
+  var aegisFixOut = {};
+  var aegisProposal = {};
+  var aegisRepoDraft = {};
+
+  function renderVerdicts(state) {
+    var verdicts = state.verdicts || [];
+    aegisEl("aegisVerdicts").innerHTML = verdicts.map(function (v) {
+      var v_ = aegisEsc(v.verdict);
+      return '<div class="run ' + v_ + '"><div class="head">' +
+        '<span class="tag v-' + v_ + '">' + v_.toUpperCase() + "</span>" +
+        '<span class="meta">@' + aegisEsc(v.opened_at) + " · " +
+        aegisEsc(v.duration_s) + "s</span></div><p>" + aegisEsc(v.reason) + "</p></div>";
+    }).join("");
+    var marked = state.spec && state.spec.purpose_marked;
+    aegisEl("aegisVerdictNote").textContent = verdicts.length && !marked ?
+      "Verdicts stay unknown until purpose steps are marked - use the button on the right." : "";
+    aegisEl("aegisMarkBtn").hidden = !(state.spec && state.spec.exists && !marked);
+  }
+
+  function hypBlock(h) {
+    if (!h) return "";
+    var out = '<div class="hyp"><span class="tag ' +
+      (h.verified ? "ok" : "bad") + '">' +
+      (h.verified ? "GROUNDED · " + aegisEsc(h.confidence)
+                  : "UNVERIFIED - citations were fabricated") + "</span>" +
+      "<div style='margin-top:6px'>" + aegisEsc(h.statement) + "</div>";
+    (h.evidence_refs || []).slice(0, 3).forEach(function (r) {
+      out += '<div class="ev">' + aegisEsc(r.slice(0, 105)) + "</div>";
+    });
+    if (h.trace && h.trace.length) {
+      out += '<div class="note-line"><b>investigated in ' +
+        aegisEsc(h.steps_taken) + " step(s)</b> · " +
+        aegisEsc(h.stopped_because || "") + "</div>";
+      h.trace.forEach(function (t) {
+        out += '<div class="hint" style="padding-left:10px">' +
+          aegisEsc(t.step) + ". " + aegisEsc(t.tool) + " — " +
+          aegisEsc((t.why || "").slice(0, 70)) + "</div>";
+      });
+    }
+    (h.ruled_out || []).forEach(function (r) {
+      out += '<div class="hint" style="padding-left:10px">ruled out: ' +
+        aegisEsc(r.slice(0, 90)) + "</div>";
+    });
+    if (h.immediate_action) out += '<div class="note-line"><b>now</b> · ' +
+      aegisEsc(h.immediate_action) + "</div>";
+    if (h.durable_fix) out += '<div class="note-line"><b>later</b> · ' +
+      aegisEsc(h.durable_fix) + "</div>";
+    return out + "</div>";
+  }
+
+  function renderIncidents(state) {
+    var incidents = state.incidents || [];
+    if (!incidents.length) {
+      aegisEl("aegisIncidents").innerHTML =
+        '<div class="hint" style="padding:6px 0;">No incidents.</div>';
+      return;
+    }
+    var model = state.model || {};
+    aegisEl("aegisIncidents").innerHTML = incidents.map(function (inc) {
+      var causeLine = "";
+      (inc.signals || []).forEach(function (sg) {
+        if (sg.id === inc.ranked_cause && sg.evidence && sg.evidence[0])
+          causeLine = sg.evidence[0];
+      });
+      var body = "";
+      if (aegisOpen[inc.id]) {
+        body = '<div class="body">' + (inc.signals || []).map(function (sg) {
+          var isCause = sg.id === inc.ranked_cause;
+          var line = sg.evidence && sg.evidence[0] ? sg.evidence[0] : sg.metric;
+          return '<div class="mem' + (isCause ? " cause" : "") + '">' +
+            '<span class="det">' + aegisEsc(sg.detector) + "</span>" +
+            '<span class="at">@' + aegisEsc(sg.started_at) + "</span>" +
+            '<span class="txt">' + aegisEsc(String(line).slice(0, 95)) + "</span>" +
+            (isCause ? '<span class="aegis-cause-badge">RANKED CAUSE</span>' : "") +
+            "</div>";
+        }).join("");
+        body += '<div class="note-line"><b>why ranked:</b> ' +
+          (inc.cause_why || []).map(aegisEsc).join(" · ") + "</div>";
+        if (inc.precedents && inc.precedents.length) {
+          body += '<div class="prec"><b>memory:</b> ' +
+            inc.precedents.map(function (pr) {
+              return aegisEsc(pr.id) + " (sim " + aegisEsc(pr.similarity) +
+                ", outcome: " + aegisEsc(pr.outcome) + ")";
+            }).join(" · ") + " - precedent, not conclusion</div>";
+        }
+        var busy = !!aegisBusy[inc.id];
+        var invBusy = !!aegisInvBusy[inc.id];
+        body += '<div class="row" style="margin-top:10px;gap:8px">' +
+          '<button class="btn" data-aegis-explain="' + aegisEsc(inc.id) + '"' +
+          (model.available && !busy ? "" : " disabled") + ">" +
+          (busy ? "asking…" : "Explain · 1 call") + "</button>" +
+          '<button class="btn primary" data-aegis-investigate="' + aegisEsc(inc.id) + '"' +
+          (model.available && !invBusy ? "" : " disabled") + ">" +
+          (invBusy ? "investigating…" : "Investigate · runs tools") + "</button></div>" +
+          hypBlock(inc.hypothesis);
+        // The one label no code can infer: did the fix actually work? Without
+        // it every precedent reads "outcome: not recorded" forever.
+        if (inc.outcome) {
+          body += '<div class="note-line"><b>outcome recorded</b> · ' +
+            aegisEsc(inc.outcome.replace(/_/g, " ")) + "</div>";
+        } else if (inc.hypothesis) {
+          body += '<div class="note-line" style="margin-top:10px"><b>did this diagnosis hold up?</b>' +
+            " (teaches memory - future similar incidents cite it)</div>" +
+            '<div class="row" style="gap:8px">' +
+            ["worked", "did_not_work", "wrong_diagnosis"].map(function (o) {
+              return '<button class="btn" data-aegis-outcome="' +
+                aegisEsc(inc.id) + "|" + o + '">' +
+                o.replace(/_/g, " ") + "</button>";
+            }).join("") + "</div>";
+        }
+        var fixBusy = !!aegisFixBusy[inc.id];
+        body += '<div class="note-line" style="margin-top:12px;"><b>propose a fix</b>' +
+          " (draft only - your repo is read, never written)</div>" +
+          '<div class="aegis-fix-row">' +
+          '<input placeholder="/path/to/the/service\u2019s repo" data-aegis-repo="' +
+          aegisEsc(inc.id) + '" value="' +
+          aegisEsc(aegisRepoDraft[inc.id] || savedRepo()) + '">' +
+          '<button class="btn ghost" data-aegis-fix="' + aegisEsc(inc.id) + '"' +
+          (model.available && !fixBusy ? "" : " disabled") + ">" +
+          (fixBusy ? "working…" : "Propose fix") + "</button></div>";
+        var fixResult = aegisFixOut[inc.id];
+        if (fixResult) {
+          body += '<div class="aegis-fix-out' + (fixResult.ok ? " ok" : "") + '">' +
+            aegisEsc(fixResult.text) + "</div>";
+        }
+        var bundle = aegisProposal[inc.id];
+        if (bundle && bundle.ok) {
+          body += '<div class="note-line"><b>proposal</b> · ' +
+            aegisEsc(bundle.path) + "</div>" +
+            '<pre class="aegis-bundle">' + aegisEsc(bundle.proposal) + "</pre>" +
+            (bundle.patch ?
+              '<div class="row" style="gap:8px;margin-top:6px">' +
+              '<button class="btn" data-aegis-copy-patch="' + aegisEsc(inc.id) +
+              '">Copy patch</button></div>' : "");
+        } else if (fixResult && fixResult.ok) {
+          body += '<div class="row" style="margin-top:6px">' +
+            '<button class="btn" data-aegis-proposal="' + aegisEsc(inc.id) +
+            '">View full proposal</button></div>';
+        }
+        body += "</div>";
+      }
+      return '<div class="inc sev-' + aegisEsc(inc.severity) +
+        (aegisOpen[inc.id] ? " open" : "") + '"><div class="head" data-aegis-toggle="' +
+        aegisEsc(inc.id) + '">' +
+        '<span class="tag sev-tag ' + aegisEsc(inc.severity) + '">' +
+        aegisEsc(inc.severity) + "</span><b>" + aegisEsc(inc.id) + "</b>" +
+        '<span class="hint">' + aegisEsc(inc.status) + "</span>" +
+        '<span class="when">' + aegisEsc((inc.signals || []).length) +
+        " signals · @" + aegisEsc(inc.opened_at) + "</span></div>" +
+        '<div class="cause">' + aegisEsc(causeLine.slice(0, 120)) + "</div>" +
+        body + "</div>";
+    }).join("");
+  }
+
+  function renderFunnel(state) {
+    var funnel = state.funnel || [];
+    aegisEl("aegisFunnel").innerHTML = funnel.map(function (pair, index) {
+      return (index ? '<span class="arr">›</span>' : "") +
+        '<span class="step"><b>' + aegisEsc(pair[1]) + "</b> " +
+        aegisEsc(pair[0]) + "</span>";
+    }).join("");
+  }
+
+  /* ==========================================================
+     NOW - deciding what to say, not just what to display.
+     Every other surface in this app shows the user a mechanism and
+     lets them work out the meaning. This one owes them a sentence.
+     ========================================================== */
+
+  function nowAgo(ts) {
+    if (!ts) return "";
+    var m = /(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(ts);
+    if (!m) return ts;
+    var now = new Date();
+    var then = new Date(now);
+    then.setHours(+m[1], +m[2], +(m[3] || 0), 0);
+    var secs = Math.round((now - then) / 1000);
+    if (secs < 0) secs += 86400;                 // crossed midnight
+    if (secs < 90) return "just now";
+    if (secs < 5400) return Math.round(secs / 60) + " min ago";
+    return Math.round(secs / 3600) + "h ago";
+  }
+
+  function nowWorst(incidents) {
+    var order = { P1: 3, P2: 2, P3: 1 };
+    return (incidents || []).slice().sort(function (a, b) {
+      var d = (order[b.severity] || 0) - (order[a.severity] || 0);
+      return d || String(b.opened_at || "").localeCompare(String(a.opened_at || ""));
+    });
+  }
+
+  // What a signal MEANS, in the reader's terms. A detector name is our
+  // vocabulary; "slower than normal" is theirs.
+  var NOW_MEANS = {
+    LatencyShift: "slower than normal",
+    RateSpike: "happening far more than usual",
+    RateDrop: "happening far less than usual",
+    SilenceDetector: "stopped happening",
+    NoveltyDetector: "never seen before",
+    ErrorRatio: "failing more often",
+    CostAnomaly: "costing more than usual",
+  };
+
+  function nowHeadline(inc) {
+    var detectors = (inc.signals || []).map(function (s) { return s.detector; });
+    for (var i = 0; i < detectors.length; i++) {
+      if (NOW_MEANS[detectors[i]]) {
+        var what = nowSubject(inc);
+        return what ? what + " is " + NOW_MEANS[detectors[i]]
+                    : "Something is " + NOW_MEANS[detectors[i]];
+      }
+    }
+    return "Something changed in " + (nowSubject(inc) || "this system");
+  }
+
+  // Name the thing the user recognises: the operation, not the template id.
+  function nowSubject(inc) {
+    var line = ((inc.evidence || [])[0] || "");
+    var m = /\b([a-z_][a-z0-9_]{2,})\s+(?:completed|failed|started)/i.exec(line);
+    if (m) return m[1];
+    var svc = (inc.signals || [])[0] || {};
+    return svc.service || "";
+  }
+
+  function renderNow(state) {
+    var panel = document.querySelector('[data-view-panel="now"]');
+    if (!panel) return;
+    var incidents = state.incidents || [];
+    var attached = !!state.attached;
+    var stats = state.stats || {};
+
+    var card = aegisEl("nowVerdict");
+    var stateEl = aegisEl("nowState");
+    var lineEl = aegisEl("nowLine");
+    var subEl = aegisEl("nowSub");
+    var actsEl = aegisEl("nowActs");
+    if (!card) return;
+
+    var ranked = nowWorst(incidents);
+    var live = ranked.filter(function (i) { return i.status !== "resolved"; });
+    var worst = live[0] || ranked[0];
+    var tone = "is-ok", label = "All clear", head, sub = "", acts = "";
+
+    if (!attached) {
+      tone = ""; label = "Waiting for a source";
+      head = "Nothing is being watched yet.";
+      sub = "Attach a log file or stream a connector, and this page will tell " +
+            "you what is happening in one sentence.";
+      acts = '<a class="btn primary" href="#/settings">Choose a source</a>';
+    } else if (live.length) {
+      var p1 = live.filter(function (i) { return i.severity === "P1"; }).length;
+      tone = p1 ? "is-bad" : "is-warn";
+      label = p1 ? "Needs attention now" : "Something is off";
+      head = nowHeadline(worst) + ".";
+      var others = live.length - 1;
+      sub = (worst.hypothesis && worst.hypothesis.statement)
+        ? worst.hypothesis.statement
+        : "I have not looked into this yet - open it and I will investigate.";
+      if (others > 0) {
+        sub += " <b>" + others + " other " +
+               (others === 1 ? "incident" : "incidents") + "</b> also open.";
+      }
+      acts = '<a class="btn primary" href="#/incidents">Open ' +
+             aegisEsc(worst.id) + "</a>";
+    } else if (!stats.events) {
+      tone = ""; label = "Listening";
+      head = "Connected, nothing has arrived yet.";
+      sub = "As soon as this source produces activity, it will be summarised here.";
+    } else {
+      label = "All clear";
+      head = "Nothing needs you right now.";
+      sub = "I am watching <b>" + (stats.events || 0) + "</b> events" +
+            (state.understanding ? " and I know what this project does" : "") +
+            ". Anything unusual will appear here first.";
+    }
+
+    card.className = "verdict " + tone;
+    stateEl.textContent = label;
+    lineEl.textContent = head;
+    subEl.innerHTML = sub;
+    actsEl.innerHTML = acts;
+
+    // Numbers, only when they mean something.
+    var metrics = aegisEl("nowMetrics");
+    if (metrics) {
+      var cells = [];
+      if (attached && stats.events) {
+        cells.push(["events seen", stats.events, ""]);
+        if (live.length) cells.push(["needs you", live.length, "bad"]);
+        var ready = ((state.baselines || {}).operations || []).length;
+        if (ready) cells.push(["operations measured", ready, ""]);
+        if (state.streaming_from) cells.push(["streaming from", state.streaming_from, ""]);
+      }
+      metrics.hidden = !cells.length;
+      metrics.innerHTML = cells.map(function (c) {
+        return '<div class="nm"><div class="k">' + aegisEsc(c[0]) +
+          '</div><div class="v ' + c[2] + '">' + aegisEsc(c[1]) + "</div></div>";
+      }).join("");
+    }
+
+    // The feed: every open incident, said in a sentence, worst first.
+    var feed = aegisEl("nowFeed");
+    var feedHead = aegisEl("nowFeedHead");
+    var quiet = aegisEl("nowQuiet");
+    if (!feed) return;
+    feedHead.hidden = !live.length;
+    quiet.hidden = !!live.length || !attached;
+    if (!live.length && attached) {
+      quiet.textContent = stats.events
+        ? "No open incidents. Baselines keep learning while you are away."
+        : "Waiting for the first events to arrive.";
+    }
+    feed.innerHTML = live.map(function (inc) {
+      var hyp = inc.hypothesis || {};
+      var why = hyp.statement ||
+        "Not investigated yet - open this incident and I will run the tools.";
+      var evidence = (inc.evidence || [])[0] || "";
+      return '<div class="nf sev-' + aegisEsc(inc.severity) + '">' +
+        '<div class="nf-top"><span class="nf-what">' +
+          aegisEsc(nowHeadline(inc)) + "</span>" +
+          '<span class="nf-when">' + aegisEsc(nowAgo(inc.opened_at)) + "</span></div>" +
+        '<p class="nf-why">' + aegisEsc(why) + "</p>" +
+        (evidence ? '<div class="nf-ev">' + aegisEsc(evidence.slice(0, 160)) + "</div>" : "") +
+        '<div class="nf-acts">' +
+          '<a class="btn" href="#/incidents">Open ' + aegisEsc(inc.id) + "</a>" +
+          (hyp.immediate_action
+            ? '<span class="hint" style="align-self:center">next: ' +
+              aegisEsc(String(hyp.immediate_action).slice(0, 90)) + "</span>"
+            : "") +
+        "</div></div>";
+    }).join("");
+
+    var badge = document.getElementById("navNowBadge");
+    if (badge) { badge.textContent = live.length || ""; badge.hidden = !live.length; }
+  }
+
+  /* The project, drawn. Every node carries its own evidence, because a
+     diagram nobody can click into answers nothing. */
+  var pfSelected = null;
+  var pfData = null;
+
+  function pfNodeHtml(node) {
+    var meta = [];
+    if (node.median_ms != null) {
+      meta.push("median " + Math.round(node.median_ms) + "ms");
+      if (node.spread && node.spread >= 5) {
+        meta.push('<span class="' + (node.spread >= 20 ? "hot" : "warn") +
+          '">p95 ' + node.spread + "\u00d7 that</span>");
+      }
+    }
+    if (node.samples) meta.push(node.samples + " samples");
+    if (node.unguarded) {
+      meta.push('<span class="hot">' + node.unguarded + " unguarded</span>");
+    }
+    if (node.evidence) meta.push("seen " + node.evidence + "\u00d7");
+    if (node.running_here) meta.push("running here");
+    if (node.band === "depends" && !node.observed && node.in_code) {
+      meta.push("declared only");
+    }
+    var declared = (node.band === "depends" && !node.observed) ||
+                   (node.band === "entry" && !node.observed);
+    return '<button class="pf-node' + (declared ? " declared" : "") +
+      (pfSelected === node.id ? " sel" : "") +
+      '" data-pf="' + aegisEsc(node.id) + '">' +
+      '<span class="nm">' + aegisEsc(node.label) + "</span>" +
+      (meta.length ? '<span class="meta">' + meta.join(" \u00b7 ") + "</span>" : "") +
+      "</button>";
+  }
+
+  function renderProjectFlow(state) {
+    var card = aegisEl("pfCard");
+    var empty = aegisEl("pfEmpty");
+    if (!card || !empty) return;
+    var flow = state.project_flow;
+    pfData = flow;
+    if (!flow || !(flow.nodes || []).length) {
+      card.hidden = true; empty.hidden = false; return;
+    }
+    card.hidden = false; empty.hidden = true;
+
+    var counts = flow.counts || {};
+    aegisEl("pfCounts").innerHTML =
+      "<span><b>" + (counts.entry || 0) + "</b> ways in</span>" +
+      "<span><b>" + (counts.work || 0) + "</b> measured operations</span>" +
+      "<span><b>" + (counts.depends || 0) + "</b> dependencies</span>" +
+      (counts.unguarded ? '<span class="v-degraded"><b>' + counts.unguarded +
+        "</b> unguarded calls</span>" : "");
+
+    var titles = { entry: "ways in", work: "the work it does",
+                   depends: "what it leans on" };
+    aegisEl("pfBands").innerHTML = (flow.bands || []).map(function (band, i) {
+      var nodes = flow.nodes.filter(function (n) { return n.band === band; });
+      if (!nodes.length) return "";
+      return '<div class="pf-band"><div class="pf-band-name">' +
+        (i ? "\u2193 " : "") + aegisEsc(titles[band] || band) + "</div>" +
+        '<div class="pf-row">' + nodes.map(pfNodeHtml).join("") + "</div></div>";
+    }).join("");
+
+    renderPfDetail();
+  }
+
+  function renderPfDetail() {
+    var box = aegisEl("pfDetail");
+    if (!box || !pfData) return;
+    var node = (pfData.nodes || []).filter(function (n) {
+      return n.id === pfSelected; })[0];
+    if (!node) { box.hidden = true; return; }
+    box.hidden = false;
+    var html = "<h4>" + aegisEsc(node.label) + "</h4>";
+
+    if (node.median_ms != null) {
+      html += '<div class="note-line">Normally <b>' +
+        Math.round(node.median_ms) + "ms</b>, p95 <b>" +
+        Math.round(node.p95_ms || 0) + "ms</b> over " +
+        aegisEsc(node.samples) + " runs" +
+        (node.spread >= 5 ? " \u2014 a spread of " + node.spread +
+          "\u00d7, which is the shape of an occasional hang" : "") + "</div>";
+    }
+    if (node.source) {
+      html += '<div class="note-line">Source: <span class="mono">' +
+        aegisEsc(node.source) + "</span></div>";
+    }
+    (node.call_sites || []).forEach(function (site) {
+      html += '<div class="note-line"><span class="mono">' +
+        aegisEsc(site.source) + "</span> in " + aegisEsc(site.function) +
+        "() \u2014 " + (site.guarded ? "guarded" : "<b>not guarded</b>") +
+        ", " + (site.has_timeout ? "has timeout" : "<b>no timeout</b>") + "</div>";
+    });
+    if ((node.incidents || []).length) {
+      html += '<div class="note-line">Incidents here: ' +
+        node.incidents.map(aegisEsc).join(", ") + "</div>";
+    }
+    if ((node.log_lines || []).length) {
+      html += '<div class="note-line" style="margin-top:8px">Log lines:</div>' +
+        node.log_lines.map(function (line) {
+          return '<div class="pf-ev">' + aegisEsc(line) + "</div>";
+        }).join("");
+    }
+    if (node.band === "depends" || node.band === "work") {
+      // The tool already knows every valid target; making the user type one
+      // it could have offered is the whole of finding 18.
+      html += '<div class="row" style="gap:8px;margin-top:10px">' +
+        '<button class="btn" data-pf-sim="' + aegisEsc(node.label) +
+        '">What if this goes down?</button></div>';
+    }
+    if (!node.observed && node.band === "depends") {
+      html += '<div class="hint">Declared in your code, never seen in the ' +
+        "logs \u2014 either it is never reached, or nothing logs when it is.</div>";
+    }
+    box.innerHTML = html;
+  }
+
+  document.addEventListener("click", function (event) {
+    var together = event.target.closest("[data-watch-together]");
+    if (together) {
+      var paths = together.getAttribute("data-watch-together").split("|")
+                          .filter(Boolean);
+      var project = together.getAttribute("data-project");
+      if (!paths.length) return;
+      together.disabled = true; together.textContent = "attaching\u2026";
+      // Attach the first, then fold the rest in - combine() is what the
+      // cross-port work built and nothing ever offered.
+      fetch("/api/attach", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: paths[0], project: project }),
+      }).then(function (r) { return r.json(); })
+        .then(function () {
+          return Promise.all(paths.slice(1).map(function (path, i) {
+            return fetch("/api/aegis/combine", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: path, service: "svc-" + (i + 2) }),
+            }).then(function (r) { return r.json(); });
+          }));
+        })
+        .then(function () {
+          together.disabled = false; together.textContent = "Watch together";
+          location.hash = "#/now";
+          aegisRefresh();
+        })
+        .catch(function () {
+          together.disabled = false; together.textContent = "Watch together";
+        });
+      return;
+    }
+    var sim = event.target.closest("[data-pf-sim]");
+    if (sim) {
+      var box = aegisEl("simTarget");
+      if (box) {
+        box.value = sim.getAttribute("data-pf-sim");
+        location.hash = "#/flow";
+        box.scrollIntoView({ block: "center" });
+        var run = aegisEl("simBtn");
+        if (run) run.click();
+      }
+      return;
+    }
+    var hit = event.target.closest("[data-pf]");
+    if (!hit) return;
+    var id = hit.getAttribute("data-pf");
+    pfSelected = (pfSelected === id) ? null : id;
+    if (pfData) {
+      aegisEl("pfBands").querySelectorAll(".pf-node").forEach(function (el) {
+        el.classList.toggle("sel",
+          el.getAttribute("data-pf") === pfSelected);
+      });
+    }
+    renderPfDetail();
+  });
+
+  function renderCodeGraph(state) {
+    var row = aegisEl("cgRow");
+    var tag = aegisEl("cgTag");
+    var msg = aegisEl("cgMsg");
+    var build = aegisEl("cgBuild");
+    if (!row || !tag || !msg || !build) return;
+    var cg = state.code_graph;
+    row.hidden = !cg;
+    if (!cg) return;
+    var ready = cg.state === "ready";
+    tag.className = "tag " + (ready ? "st-live" : "st-empty");
+    tag.textContent = ready ? "CODE GRAPH" : (cg.state === "no_cli" ? "NO CLI" : "NOT BUILT");
+    msg.textContent = cg.detail || "";
+    // Only offer the build when it can actually succeed, and say what it
+    // writes before it is pressed - this is the one action that touches the
+    // user's own repository.
+    build.hidden = cg.state !== "no_index";
+  }
+
+  function renderUnderstanding(state) {
+    var out = aegisEl("undOut");
+    var meta = aegisEl("undMeta");
+    if (!out || !meta) return;
+    var text = state.understanding || "";
+    out.hidden = !text;
+    out.textContent = text;
+    meta.textContent = text ? "current - regenerates when code or behaviour changes"
+                            : "not generated yet";
+  }
+
+  function renderSpec(state) {
+    var spec = state.spec || {};
+    aegisEl("aegisSpecPath").textContent = spec.exists ? spec.path : "";
+    aegisEl("aegisSpec").innerHTML = (spec.steps || []).map(function (st) {
+      return '<div class="step-row"><span class="p">' +
+        Math.round(st.presence * 100) + '%</span><span class="l">' +
+        aegisEsc(String(st.label).slice(0, 58)) + "</span>" +
+        (st.critical ? '<span class="tag v-hollow bg-hollow">CRITICAL · ' +
+          aegisEsc(st.critical_source) + "</span>" : "") + "</div>";
+    }).join("") || '<div class="hint" style="padding:4px 0;">Not enough runs yet.</div>';
+  }
+
+  function renderPatterns(state) {
+    aegisEl("aegisPatterns").innerHTML = (state.patterns || []).map(function (pt) {
+      return '<div class="note-line">' + aegisEsc(pt.text) + "</div>";
+    }).join("") || '<div class="hint" style="padding:4px 0;">No recurring themes yet.</div>';
+  }
+
+  function renderQualityStrip(state) {
+    var strip = aegisEl("overviewQuality");
+    if (!strip) return;
+    var verdicts = state.verdicts || [];
+    if (!verdicts.length) { strip.hidden = true; return; }
+    var counts = {};
+    verdicts.forEach(function (v) { counts[v.verdict] = (counts[v.verdict] || 0) + 1; });
+    var chips = ["achieved", "hollow", "failed", "degraded", "unknown"]
+      .filter(function (k) { return counts[k]; })
+      .map(function (k) {
+        return '<span class="qchip ' + k + '">' + counts[k] + " " + k + "</span>";
+      }).join("");
+    var latest = verdicts[verdicts.length - 1];
+    strip.innerHTML = '<span class="qlabel">Run quality</span>' + chips +
+      '<span class="hint">latest: ' + aegisEsc(latest.verdict) + " @" +
+      aegisEsc(latest.opened_at) + "</span>" +
+      '<a href="#/runs">View runs →</a>';
+    strip.hidden = false;
+  }
+
+  function renderNotes(state) {
+    var notes = state.notes || [];
+    aegisEl("aegisNotes").textContent = notes.length ?
+      notes.length + " low-priority first-occurrence note(s) held back from paging." :
+      "None.";
+  }
+
+  function renderFlowGraph(state) {
+    var topo = (state.topology || {});
+    var order = (topo.nodes || []).slice();
+    var ranked = state.flow_order || [];
+    var chain = ranked.length ? ranked : order.map(function (n) { return n.component; });
+    var counts = {};
+    (topo.nodes || []).forEach(function (n) { counts[n.component] = n.events; });
+    aegisEl("dataFlow").innerHTML = chain.map(function (comp, i) {
+      return (i ? '<span class="hint">→</span>' : "") +
+        '<span class="node">' + aegisEsc(comp) +
+        ' <span class="n">' + aegisEsc(counts[comp] || 0) + "</span></span>";
+    }).join("") || '<div class="hint">Not enough traces yet.</div>';
+  }
+
+  function renderTemplates(state) {
+    var muted = state.suppressed || [];
+    aegisEl("dataTemplates").innerHTML = (state.templates || []).map(function (t) {
+      var isMuted = muted.indexOf(t.id) >= 0;
+      return "<tr><td class='num'>" + aegisEsc(t.count) + "</td>" +
+        "<td class='code'>" + aegisEsc(String(t.pattern).slice(0, 110)) + "</td>" +
+        '<td><button class="btn ghost" data-aegis-mute="' + aegisEsc(t.id) +
+        '" data-muted="' + (isMuted ? "1" : "") + '">' +
+        (isMuted ? "unmute" : "mute") + "</button></td></tr>";
+    }).join("") || '<tr><td colspan="3" class="hint">No shapes learned yet.</td></tr>';
+  }
+
+  function renderBaselines(state) {
+    var rows = (state.baselines || {}).operations || [];
+    aegisEl("dataBaselines").innerHTML = rows.map(function (b) {
+      return "<tr><td>" + aegisEsc(b.component) + "</td><td>" +
+        aegisEsc(b.operation) + "</td><td class='num'>" +
+        Math.round(b.median_ms) + "ms</td><td class='num'>" +
+        Math.round(b.p95_ms) + "ms</td><td class='num'>" +
+        aegisEsc(b.count) + "</td></tr>";
+    }).join("") ||
+    '<tr><td colspan="5" class="hint">Timings appear once an operation has ' +
+    'been seen 10+ times.</td></tr>';
+  }
+
+  function renderConnectors(payload) {
+    var list = payload.providers || [];
+    var live = payload.streaming_from || "";
+    aegisEl("connList").innerHTML = list.map(function (c) {
+      var streaming = c.name === live;
+      // "STREAMING" next to nothing reads as healthy. A connector that is
+      // reachable but returning no rows is a distinct state, and the one the
+      // user has to act on: the query usually points at the wrong project.
+      var label = streaming ? "STREAMING" : aegisEsc(c.status).toUpperCase();
+      var tone = streaming ? "live" : aegisEsc(c.status);
+      if (c.status === "empty") {
+        label = streaming ? "STREAMING · NO DATA" : "NO DATA";
+        tone = "empty";
+      }
+      return '<div class="conn"><span class="nm">' + aegisEsc(c.name) + "</span>" +
+        '<span class="tag st-' + tone + '">' + label + "</span>" +
+        '<span class="tg">' + aegisEsc(c.target) +
+        (c.detail ? " · " + aegisEsc(c.detail) : "") + "</span>" +
+        '<button class="btn ghost" data-conn-check="' + aegisEsc(c.name) + '">Test</button>' +
+        '<button class="btn ghost" data-conn-stream="' + aegisEsc(c.name) + '">' +
+        (streaming ? "Stop" : "Stream") + "</button>" +
+        '<button class="btn ghost" data-conn-remove="' + aegisEsc(c.name) + '">Remove</button>' +
+        "</div>";
+    }).join("") ||
+    '<div class="hint">No connectors yet. Local ports show you now; connectors ' +
+    'add weeks of history and the services you do not run locally.</div>';
+    badge("navConnBadge", list.length, true);
+  }
+
+  function renderSuggestions(payload) {
+    var list = payload.suggested || [];
+    var card = aegisEl("suggestCard");
+    if (!card) return;
+    if (!list.length) { card.hidden = true; return; }
+    card.hidden = false;
+
+    // Services already grouped by project are one system, and this is the
+    // moment to say so: the facts are on screen and the user has just been
+    // told these belong together. Offering it anywhere else means asking
+    // them to remember it.
+    var projects = {};
+    list.forEach(function (p) {
+      if (p.project) (projects[p.project] = projects[p.project] || []).push(p);
+    });
+    var together = Object.keys(projects).filter(function (name) {
+      return projects[name].length > 1;
+    }).map(function (name) {
+      var members = projects[name];
+      return '<div class="conn"><span class="nm">' + aegisEsc(name) + "</span>" +
+        '<span class="tg">' + members.length + " services here \u2014 " +
+        members.map(function (m) { return ":" + m.port; }).join(" ") +
+        " \u2014 one system, so a failure in one shows up in another</span>" +
+        '<button class="btn primary" data-watch-together="' +
+        aegisEsc(members.map(function (m) { return m.log_path; })
+                        .filter(Boolean).join("|")) +
+        '" data-project="' + aegisEsc(name) + '">Watch together</button></div>';
+    }).join("");
+
+    aegisEl("suggestList").innerHTML = together + list.map(function (p) {
+      return '<div class="conn">' +
+        (p.recommended ? '<span class="tag v-achieved">RECOMMENDED</span>' : "") +
+        '<span class="nm">:' + aegisEsc(p.port) + "</span>" +
+        '<span class="tg">' + aegisEsc(p.process) +
+        (p.kind ? " · " + aegisEsc(p.kind) : "") + " — " +
+        aegisEsc((p.reasons || []).join("; ")) + "</span>" +
+        '<button class="btn primary" data-aegis-suggest="' +
+        aegisEsc(p.log_path) + '" data-svc="port-' + aegisEsc(p.port) +
+        '">Watch</button></div>';
+    }).join("");
+  }
+
+  function renderStoredProjects(payload) {
+    var card = aegisEl("storedProjects");
+    if (!card) return;
+    var list = (payload && payload.projects) || [];
+    if (!list.length) {
+      card.innerHTML = '<div class="muted">nothing stored yet</div>';
+      return;
+    }
+    card.innerHTML = list.map(function (p) {
+      return '<div class="conn"><span class="nm">' + aegisEsc(p.name) + "</span>" +
+        '<span class="tg">' + aegisEsc(p.size_kb) + " KB on disk</span>" +
+        '<button class="btn danger" data-aegis-wipe="' + aegisEsc(p.name) +
+        '">Delete data</button></div>';
+    }).join("");
+  }
+
+  function applySources(payload) {
+    renderSuggestions(payload);
+    renderStoredProjects(payload);
+  }
+  window.aegisApplySources = applySources;
+
+  function refreshSuggestions() {
+    fetch("/api/aegis/sources").then(function (r) { return r.json(); })
+      .then(applySources).catch(function () {});
+  }
+
+  function refreshConnectors() {
+    fetch("/api/aegis/providers").then(function (r) { return r.json(); })
+      .then(renderConnectors).catch(function () {});
+  }
+
+  function renderDependencies(state) {
+    var banner = aegisEl("depBanner");
+    if (!banner) return;
+    var watching = (state.watching || []).map(function (w) { return w.path; });
+    var offers = (state.dependencies || []).filter(function (d) {
+      return d.running_here && d.combine_path &&
+             watching.indexOf(d.combine_path) < 0;
+    });
+    if (!offers.length) { banner.hidden = true; return; }
+    banner.hidden = false;
+    banner.innerHTML = '<div class="muted" style="margin-bottom:8px">' +
+      "This service depends on things running on this machine:</div>" +
+      offers.map(function (d) {
+        return '<div class="row" style="padding:6px 0">' +
+          '<b>' + aegisEsc(d.host) + ":" + aegisEsc(d.port) + "</b>" +
+          '<span class="faint">' + aegisEsc(d.process || "") + " · seen " +
+          aegisEsc(d.evidence) + "×" +
+          (d.single_point_of_failure ? ' · <span class="tag v-failed">SPOF</span>' : "") +
+          (d.guarded_in_code === false ?
+            ' · <span class="tag v-degraded">UNGUARDED</span>' : "") + "</span>" +
+          '<span class="grow"></span>' +
+          '<button class="btn primary" data-aegis-combine="' +
+          aegisEsc(d.combine_path) + '" data-svc="' + aegisEsc(d.host) + "-" +
+          aegisEsc(d.port) + '">Watch together</button></div>';
+      }).join("") +
+      '<div class="hint" style="margin-top:6px">Watching together joins both logs ' +
+      "into one story per request - a downstream failure stops looking like this " +
+      "service's fault.</div>";
+  }
+
+  function renderGaps(state) {
+    var gaps = state.gaps || [];
+    aegisEl("aegisGaps").innerHTML = gaps.length ? gaps.map(function (g) {
+      return '<div class="gap"><div class="k">' + aegisEsc(g.kind) +
+        '</div><div class="w">' + aegisEsc(g.what_to_add) +
+        '</div><div class="m">' + aegisEsc(g.measured) + "</div></div>";
+    }).join("") :
+    '<div class="hint" style="padding:4px 0;">No gaps - everything claimed was grounded.</div>';
+  }
+
+  var AEGIS_PANELS = ["aegisRunsPanel", "aegisIncidentsPanel",
+                      "aegisImprovePanel", "aegisSpecPanel", "dataPanel"];
+  var aegisWasAttached = false;
+
+  function setAegisAttached(on) {
+    AEGIS_PANELS.forEach(function (id) {
+      var node = aegisEl(id);
+      if (node) node.hidden = !on;
+    });
+    document.querySelectorAll("[data-aegis-empty]").forEach(function (node) {
+      node.hidden = on;
+    });
+  }
+
+  function badge(id, count, show) {
+    var node = aegisEl(id);
+    if (!node) return;
+    node.hidden = !show || !count;
+    node.textContent = count;
+  }
+
+  function renderProfile(state) {
+    // Which provider is actually being spent, visible at all times - a paid
+    // profile should never be a surprise discovered on an invoice.
+    var pill = aegisEl("profilePill");
+    var model = state.model || {};
+    if (!pill || !model.profile) return;
+    pill.hidden = false;
+    pill.textContent = (model.profile === "prod" ? "PAID · " : "free · ") +
+      (model.route || "");
+    pill.style.color = model.profile === "prod" ? "var(--warn)" : "var(--text-2)";
+  }
+
+  function aegisRefresh() {
+    fetch("/api/aegis/state").then(function (r) { return r.json(); })
+      .then(function (state) {
+        if (!state.attached) {
+          setAegisAttached(false);
+          var strip = aegisEl("overviewQuality");
+          if (strip) strip.hidden = true;
+          var panel = aegisEl("dataPanel");
+          if (panel) panel.hidden = true;
+          aegisWasAttached = false;
+          badge("navRunsBadge", 0, false);
+          badge("navIncBadge", 0, false);
+          badge("navImpBadge", 0, false);
+          return;
+        }
+        setAegisAttached(true);
+        // Landing: attaching from the Sources view carries you to Overview.
+        if (!aegisWasAttached &&
+            (location.hash === "#/settings" || location.hash === "")) {
+          location.hash = "#/overview";
+        }
+        aegisWasAttached = true;
+        renderFunnel(state);
+        renderVerdicts(state);
+        renderIncidents(state);
+        renderGaps(state);
+        renderSpec(state);
+      renderUnderstanding(state);
+      renderCodeGraph(state);
+      renderProjectFlow(state);
+      renderNow(state);
+        renderPatterns(state);
+        renderNotes(state);
+        renderQualityStrip(state);
+        renderProfile(state);
+        renderDependencies(state);
+        renderFlowGraph(state);
+        renderTemplates(state);
+        renderBaselines(state);
+        var dataPanel = aegisEl("dataPanel");
+        if (dataPanel) dataPanel.hidden = false;
+        window.__aegisProject = state.project || "";
+        var hollow = (state.verdicts || []).filter(function (v) {
+          return v.verdict === "hollow" || v.verdict === "failed";
+        }).length;
+        var open = (state.incidents || []).filter(function (i) {
+          return i.status !== "resolved";
+        }).length;
+        badge("navRunsBadge", hollow, true);
+        badge("navIncBadge", open, true);
+        badge("navImpBadge", (state.gaps || []).length, true);
+      })
+      .catch(function () { setAegisAttached(false); });
+  }
+
+  document.addEventListener("click", function (event) {
+    var toggle = event.target.closest("[data-aegis-toggle]");
+    if (toggle) {
+      var id = toggle.getAttribute("data-aegis-toggle");
+      aegisOpen[id] = !aegisOpen[id];
+      aegisRefresh();
+      return;
+    }
+    var mute = event.target.closest("[data-aegis-mute]");
+    if (mute) {
+      var undo = !!mute.getAttribute("data-muted");
+      mute.disabled = true;
+      fetch("/api/aegis/suppress", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template_id: mute.getAttribute("data-aegis-mute"),
+                               undo: undo }),
+      }).then(function () { aegisRefresh(); });
+      return;
+    }
+    var suggest = event.target.closest("[data-aegis-suggest]");
+    if (suggest) {
+      suggest.disabled = true;
+      suggest.textContent = "attaching…";
+      fetch("/api/attach", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: suggest.getAttribute("data-aegis-suggest") }),
+      }).then(function () { location.hash = "#/overview"; aegisRefresh(); })
+        .catch(function () { suggest.textContent = "failed"; });
+      return;
+    }
+    var combine = event.target.closest("[data-aegis-combine]");
+    if (combine) {
+      combine.disabled = true;
+      combine.textContent = "joining…";
+      fetch("/api/aegis/combine", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: combine.getAttribute("data-aegis-combine"),
+                               service: combine.getAttribute("data-svc") }),
+      }).then(function (r) { return r.json(); })
+        .then(function (reply) {
+          combine.textContent = reply.ok ? "watching ✓" : (reply.detail || "failed");
+          aegisRefresh();
+        })
+        .catch(function () { combine.textContent = "failed"; });
+      return;
+    }
+    var connBtn = event.target.closest("[data-conn-check],[data-conn-stream],[data-conn-remove]");
+    if (connBtn) {
+      var action = connBtn.hasAttribute("data-conn-check") ? "check" :
+                   connBtn.hasAttribute("data-conn-stream") ? "stream" : "remove";
+      var connName = connBtn.getAttribute("data-conn-" + action);
+      var stopping = action === "stream" && connBtn.textContent.trim() === "Stop";
+      connBtn.disabled = true;
+      connBtn.textContent = action === "check" ? "testing…" : "…";
+      fetch("/api/aegis/provider/" + action, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: stopping ? "" : connName }),
+      }).then(function (r) { return r.json(); })
+        .then(function (reply) {
+          var msg = aegisEl("connMsg");
+          if (msg) msg.textContent = reply.ok ?
+            (action === "check" ? connName + ": " + (reply.records || 0) +
+             " record(s) returned" : "") :
+            (connName + ": " + (reply.detail || "failed"));
+          refreshConnectors();
+          aegisRefresh();
+        })
+        .catch(function () { refreshConnectors(); });
+      return;
+    }
+    var fix = event.target.closest("[data-aegis-fix]");
+    if (fix) {
+      var fixId = fix.getAttribute("data-aegis-fix");
+      var repoInput = document.querySelector('[data-aegis-repo="' + fixId + '"]');
+      var repoPath = repoInput ? repoInput.value.trim() : "";
+      aegisRepoDraft[fixId] = repoPath;
+      if (!repoPath) {
+        aegisFixOut[fixId] = { ok: false, text: "give the repo path first" };
+        aegisRefresh();
+        return;
+      }
+      aegisFixBusy[fixId] = true;
+      aegisRefresh();
+      fetch("/api/aegis/remediate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ incident_id: fixId, repo_path: repoPath }),
+      }).then(function (r) { return r.json(); })
+        .then(function (reply) {
+          aegisFixBusy[fixId] = false;
+          aegisFixOut[fixId] = { ok: reply.ok,
+            text: (reply.status ? reply.status.toUpperCase() + " - " : "") +
+                  reply.detail + (reply.bundle ? "\nbundle: " + reply.bundle : "") };
+          aegisRefresh();
+        })
+        .catch(function () {
+          aegisFixBusy[fixId] = false;
+          aegisFixOut[fixId] = { ok: false, text: "request failed" };
+          aegisRefresh();
+        });
+      return;
+    }
+    var propBtn = event.target.closest("[data-aegis-proposal]");
+    if (propBtn) {
+      var propId = propBtn.getAttribute("data-aegis-proposal");
+      fetch("/api/aegis/proposal/" + propId, { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .then(function (reply) { aegisProposal[propId] = reply; aegisRefresh(); })
+        .catch(function () {});
+      return;
+    }
+    var copyBtn = event.target.closest("[data-aegis-copy-patch]");
+    if (copyBtn) {
+      var copyId = copyBtn.getAttribute("data-aegis-copy-patch");
+      var stored = aegisProposal[copyId];
+      if (stored && stored.patch && navigator.clipboard) {
+        navigator.clipboard.writeText(stored.patch).then(function () {
+          copyBtn.textContent = "copied";
+        }).catch(function () {});
+      }
+      return;
+    }
+    var wipeBtn = event.target.closest("[data-aegis-wipe]");
+    if (wipeBtn) {
+      var proj = wipeBtn.getAttribute("data-aegis-wipe");
+      if (!window.confirm("Delete everything learned about \"" + proj +
+          "\"? Baselines, incidents and memory are removed. Your log files are not touched.")) return;
+      fetch("/api/aegis/wipe-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: proj }),
+      }).then(function (r) { return r.json(); })
+        .then(function () { refreshSuggestions(); aegisRefresh(); })
+        .catch(function () {});
+      return;
+    }
+    var outcomeBtn = event.target.closest("[data-aegis-outcome]");
+    if (outcomeBtn) {
+      var parts = outcomeBtn.getAttribute("data-aegis-outcome").split("|");
+      fetch("/api/aegis/outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: parts[0], outcome: parts[1] }),
+      }).then(function (r) { return r.json(); })
+        .then(function () { aegisRefresh(); })
+        .catch(function () {});
+      return;
+    }
+    var investigate = event.target.closest("[data-aegis-investigate]");
+    if (investigate) {
+      var invId = investigate.getAttribute("data-aegis-investigate");
+      aegisInvBusy[invId] = true;
+      aegisRefresh();
+      fetch("/api/aegis/investigate/" + invId, { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .then(function () { aegisInvBusy[invId] = false; aegisRefresh(); })
+        .catch(function () { aegisInvBusy[invId] = false; aegisRefresh(); });
+      return;
+    }
+    var explain = event.target.closest("[data-aegis-explain]");
+    if (explain) {
+      var incId = explain.getAttribute("data-aegis-explain");
+      aegisBusy[incId] = true;
+      aegisRefresh();
+      fetch("/api/aegis/explain/" + incId, { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .then(function () { aegisBusy[incId] = false; aegisRefresh(); })
+        .catch(function () { aegisBusy[incId] = false; aegisRefresh(); });
+    }
+  });
+
+  function savedRepo() {
+    try { return localStorage.getItem("liq.repo." + (window.__aegisProject || "")) || ""; }
+    catch (err) { return ""; }
+  }
+
+  document.addEventListener("input", function (event) {
+    var repo = event.target.closest("[data-aegis-repo]");
+    if (!repo) return;
+    aegisRepoDraft[repo.getAttribute("data-aegis-repo")] = repo.value;
+    try { localStorage.setItem("liq.repo." + (window.__aegisProject || ""), repo.value); }
+    catch (err) { /* private mode - drafts just don't persist */ }
+  });
+
+  var connKind = aegisEl("connKind");
+  if (connKind) {
+    connKind.addEventListener("change", function () {
+      var target = aegisEl("connTarget");
+      var hint = aegisEl("connHint");
+      var kind = connKind.value;
+      // Opik refuses list('trace') without a project, so ask for it here
+      // rather than saving a connector that fails on every query.
+      var projectField = aegisEl("connProject");
+      if (projectField) projectField.hidden = (kind !== "opik-mcp");
+      // A server we have no preset for needs its tool named and its
+      // credentials passed; smuggling the tool through the API-key box as
+      // "tool:xyz" was a workaround, not an interface.
+      var toolField = aegisEl("connTool");
+      var envField = aegisEl("connEnv");
+      if (toolField) toolField.hidden = (kind !== "mcp");
+      if (envField) envField.hidden = (kind !== "mcp");
+      if (kind === "signoz") {
+        target.placeholder = "https://signoz.example.com";
+        hint.textContent = "Queries the SigNoz HTTP API directly.";
+      } else if (kind === "signoz-mcp") {
+        target.placeholder = "https://signoz.example.com (SIGNOZ_HOST)";
+        hint.textContent = "Runs SigNoz's own MCP server (uvx signoz-mcp-server) " +
+          "and calls its fetch_traces_or_logs tool. Needs uvx on this machine.";
+      } else if (kind === "opik-mcp") {
+        target.placeholder = "workspace, usually 'default'";
+        hint.textContent = "Runs Opik's MCP server (uvx opik-mcp) for LLM traces " +
+          "and spans. Needs uvx on this machine. The workspace is your Opik " +
+          "account (often 'default'); the project is the one your traces are in.";
+      } else {
+        target.placeholder = "command, e.g. uvx some-mcp-server";
+        hint.textContent = "Any MCP server: give the command that starts it, " +
+          "the tool that returns logs or traces, and any credentials it reads " +
+          "from the environment.";
+      }
+    });
+  }
+
+  var cgBuild = aegisEl("cgBuild");
+  if (cgBuild) {
+    cgBuild.addEventListener("click", function () {
+      if (!window.confirm("Build a code graph for this repo?\n\nThis runs " +
+          "the CodeGraph CLI, which creates a .codegraph/ folder INSIDE the " +
+          "repository. Aegis itself never writes there. It can take a few " +
+          "minutes on a large codebase.")) return;
+      cgBuild.disabled = true; cgBuild.textContent = "building…";
+      fetch("/api/aegis/build-code-graph", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }).then(function (r) { return r.json(); })
+        .then(function (reply) {
+          cgBuild.disabled = false; cgBuild.textContent = "Build code graph";
+          var msg = aegisEl("cgMsg");
+          if (msg && !reply.ok) msg.textContent = reply.detail || "failed";
+          aegisRefresh();
+        })
+        .catch(function () {
+          cgBuild.disabled = false; cgBuild.textContent = "Build code graph";
+        });
+    });
+  }
+
+  var undBtn = aegisEl("undBtn");
+  if (undBtn) {
+    undBtn.addEventListener("click", function () {
+      undBtn.disabled = true; undBtn.textContent = "writing…";
+      fetch("/api/aegis/understand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      }).then(function (r) { return r.json(); })
+        .then(function (reply) {
+          undBtn.disabled = false; undBtn.textContent = "Generate brief";
+          var out = aegisEl("undOut");
+          if (reply.ok && out) { out.hidden = false; out.textContent = reply.brief; }
+          else if (out) { out.hidden = false; out.textContent = reply.detail || "failed"; }
+          aegisRefresh();
+        })
+        .catch(function () {
+          undBtn.disabled = false; undBtn.textContent = "Generate brief";
+        });
+    });
+  }
+
+  var connAdd = aegisEl("connAdd");
+  if (connAdd) {
+    connAdd.addEventListener("click", function () {
+      var kind = aegisEl("connKind").value;
+      var name = aegisEl("connName").value.trim();
+      var target = aegisEl("connTarget").value.trim();
+      var key = aegisEl("connKey").value.trim();
+      var entry = { name: name, kind: kind === "signoz" ? "signoz" : "mcp" };
+      if (kind === "signoz") {
+        entry.base_url = target;
+        entry.api_key = key;
+      } else if (kind === "signoz-mcp") {
+        entry.preset = "signoz-mcp";
+        entry.env = { SIGNOZ_HOST: target, SIGNOZ_API_KEY: key };
+      } else if (kind === "opik-mcp") {
+        entry.preset = "opik-mcp";
+        entry.env = { OPIK_WORKSPACE: target || "default", OPIK_API_KEY: key };
+        var project = aegisEl("connProject");
+        entry.project_name = project ? project.value.trim() : "";
+      } else {
+        entry.command = target.split(/\s+/).filter(Boolean);
+        var toolInput = aegisEl("connTool");
+        var named = toolInput ? toolInput.value.trim() : "";
+        entry.logs_tool = named ||
+          (key.indexOf("tool:") === 0 ? key.slice(5) : "");
+        var envInput = aegisEl("connEnv");
+        var envText = envInput ? envInput.value.trim() : "";
+        if (envText) {
+          entry.env = {};
+          envText.split(/\s+/).forEach(function (pair) {
+            var at = pair.indexOf("=");
+            if (at > 0) entry.env[pair.slice(0, at)] = pair.slice(at + 1);
+          });
+        }
+      }
+      fetch("/api/aegis/provider/add", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      }).then(function (r) { return r.json(); })
+        .then(function (reply) {
+          aegisEl("connMsg").textContent = reply.ok ?
+            "added - press Test to verify it answers" : reply.detail;
+          if (reply.ok) {
+            aegisEl("connName").value = "";
+            aegisEl("connTarget").value = "";
+            aegisEl("connKey").value = "";
+          }
+          refreshConnectors();
+        });
+    });
+  }
+
+  var anaBtn = aegisEl("anaBtn");
+  if (anaBtn) anaBtn.addEventListener("click", function () {
+    var repo = aegisEl("anaRepo").value.trim();
+    var msg = aegisEl("anaMsg");
+    if (!repo) { msg.textContent = "give the repo path"; return; }
+    try { localStorage.setItem("liq.repo." + (window.__aegisProject || ""), repo); }
+    catch (err) {}
+    anaBtn.disabled = true; anaBtn.textContent = "reading…";
+    fetch("/api/aegis/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo_path: repo }),
+    }).then(function (r) { return r.json(); })
+      .then(function (rep) {
+        anaBtn.disabled = false; anaBtn.textContent = "Analyze";
+        if (!rep.ok) { msg.textContent = rep.detail; return; }
+        msg.textContent = "";
+        aegisEl("anaOut").innerHTML =
+          '<div class="row" style="gap:16px;flex-wrap:wrap">' +
+          "<span><b>" + rep.files + "</b> <span class='faint'>files</span></span>" +
+          "<span><b>" + rep.entrypoints + "</b> <span class='faint'>entrypoints</span></span>" +
+          "<span><b>" + rep.external_calls + "</b> <span class='faint'>external calls</span></span>" +
+          "<span><b>" + rep.log_statements + "</b> <span class='faint'>log statements</span></span>" +
+          (rep.unguarded ? '<span class="tag v-degraded">' + rep.unguarded +
+            " UNGUARDED CALL(S)</span>" : '<span class="tag v-achieved">all guarded</span>') +
+          "</div>";
+        aegisRefresh();
+        // Analyzing and then NOT writing the brief leaves the facts unread:
+        // everything downstream - Explain, Investigate, Propose fix - takes
+        // the brief, so the second step always wanted doing. One button,
+        // both steps; the brief is cached, so a re-analyze that changed
+        // nothing costs no model call.
+        msg.textContent = "writing the project brief…";
+        fetch("/api/aegis/understand", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).then(function (r) { return r.json(); })
+          .then(function (brief) {
+            msg.textContent = brief.ok ? "" : (brief.detail || "");
+            var out = aegisEl("undOut");
+            if (brief.ok && out) { out.hidden = false; out.textContent = brief.brief; }
+            aegisRefresh();
+          })
+          .catch(function () { msg.textContent = ""; });
+      })
+      .catch(function () { anaBtn.disabled = false; anaBtn.textContent = "Analyze";
+                           msg.textContent = "request failed"; });
+  });
+
+  var simBtn = aegisEl("simBtn");
+  if (simBtn) simBtn.addEventListener("click", function () {
+    var target = aegisEl("simTarget").value.trim();
+    var out = aegisEl("simOut");
+    if (!target) return;
+    simBtn.disabled = true;
+    fetch("/api/aegis/simulate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: target }),
+    }).then(function (r) { return r.json(); })
+      .then(function (rep) {
+        simBtn.disabled = false;
+        if (!rep.ok) { out.innerHTML = '<div class="hint">' + aegisEsc(rep.detail) + "</div>"; return; }
+        var html = "";
+        if (rep.impact_zone && rep.impact_zone.length)
+          html += '<div class="note-line"><b>impact zone:</b> ' +
+                  rep.impact_zone.map(aegisEsc).join(" · ") + "</div>";
+        (rep.predictions || []).forEach(function (p) {
+          var cls = p.outcome.indexOf("fail") >= 0 ? "v-failed" :
+                    p.outcome.indexOf("degrad") >= 0 ? "v-degraded" : "v-hollow";
+          html += '<div style="margin:8px 0"><span class="tag ' + cls + '">' +
+                  aegisEsc(p.outcome.toUpperCase()) + "</span> " +
+                  '<span class="muted">' + aegisEsc(p.because) + "</span></div>";
+        });
+        (rep.basis || []).forEach(function (b) {
+          html += '<div class="hint">· ' + aegisEsc(b) + "</div>"; });
+        (rep.gaps || []).forEach(function (g) {
+          html += '<div class="hint faint">△ ' + aegisEsc(g) + "</div>"; });
+        out.innerHTML = html;
+      })
+      .catch(function () { simBtn.disabled = false; });
+  });
+
+  refreshConnectors();
+  refreshSuggestions();
+  setInterval(refreshConnectors, 8000);
+  setInterval(refreshSuggestions, 15000);
+
+  aegisEl("aegisMarkBtn").addEventListener("click", function () {
+    var btn = aegisEl("aegisMarkBtn");
+    btn.disabled = true;
+    btn.textContent = "asking the model…";
+    fetch("/api/aegis/mark-purpose", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        btn.textContent = "Mark purpose steps (1 model call)";
+        btn.disabled = false;
+        aegisRefresh();
+      });
+  });
+
+  aegisRefresh();
+  setInterval(aegisRefresh, 3000);
+})();
+</script>
+<script>
+/* --- app-shell router: hash-based views, back-button friendly --- */
+(function () {
+  "use strict";
+  var VIEWS = ["now", "overview", "runs", "incidents", "activity", "flow",
+               "data", "improve", "settings", "connectors"];
+  var TITLES = { now: "Now", overview: "Detail", runs: "Run verdicts", incidents: "Incidents",
+                 activity: "Activity", flow: "Flow & spec", data: "Learned data",
+                 improve: "Improve", settings: "Settings", connectors: "Connectors" };
+  // Four top-level tabs; the rest live as sub-tabs under one of them, so the
+  // rail stays short without anything becoming unreachable.
+  var PARENT = { now: "now", overview: "overview", activity: "overview",
+                 flow: "overview", data: "overview", improve: "overview",
+                 runs: "runs", incidents: "incidents", settings: "settings",
+                 connectors: "settings" };
+
+  function savedView() {
+    try { return localStorage.getItem("liq.view") || ""; } catch (err) { return ""; }
+  }
+
+  function currentView() {
+    var name = (location.hash || "").replace("#/", "");
+    if (VIEWS.indexOf(name) >= 0) return name;
+    var remembered = savedView();
+    // Landing on Now is the point of it: the answer before the evidence.
+    return VIEWS.indexOf(remembered) >= 0 ? remembered : "now";
+  }
+
+  function applyView() {
+    var view = currentView();
+    document.querySelectorAll("[data-view-panel]").forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-view-panel") !== view;
+    });
+    var parent = PARENT[view] || view;
+    document.querySelectorAll(".nav-item").forEach(function (item) {
+      item.classList.toggle("active", item.getAttribute("data-view") === parent);
+    });
+    var overviewTabs = document.getElementById("subOverview");
+    var settingsTabs = document.getElementById("subSettings");
+    if (overviewTabs) overviewTabs.hidden = parent !== "overview";
+    if (settingsTabs) settingsTabs.hidden = parent !== "settings";
+    document.querySelectorAll(".subtab").forEach(function (tab) {
+      tab.classList.toggle("active", tab.getAttribute("data-sub") === view);
+    });
+    var title = document.getElementById("viewTitle");
+    if (title) title.textContent = TITLES[view] || view;
+    try { localStorage.setItem("liq.view", view); } catch (err) { /* fine */ }
+  }
+
+  window.addEventListener("hashchange", applyView);
+  applyView();
+
+  /* --- experience: who is watched, and a first-run welcome --- */
+  function setSourceChip(label, on) {
+    var chip = document.getElementById("headSource");
+    var text = document.getElementById("headSourceText");
+    if (!chip || !text) return;
+    chip.classList.toggle("on", on);
+    text.textContent = on ? "watching " + label : "no source - choose one";
+    var hint = document.getElementById("toolbarHint");
+    if (hint) hint.textContent = on ?
+      "Watching " + label + ". The brief updates as logs arrive." :
+      "Open Sources - or paste a log path below - to start.";
+  }
+
+  function uxPoll() {
+    // A source is EITHER a local log file (v1's runtime) OR a connector
+    // streaming from a backend (Aegis). Asking only v1 meant a working
+    // connector - already ingesting - still showed "Watch a project" and
+    // Events: 0, because v1's runtime has never heard of a provider.
+    Promise.all([
+      fetch("/api/state").then(function (r) { return r.json(); })
+        .catch(function () { return {}; }),
+      fetch("/api/aegis/state").then(function (r) { return r.json(); })
+        .catch(function () { return {}; }),
+    ]).then(function (both) {
+      var source = (both[0].state || {}).source || {};
+      var aegis = both[1] || {};
+      var watchingFile = source.type && source.type !== "idle";
+      var streaming = !!aegis.streaming_from;
+      var attached = watchingFile || streaming;
+      var label = streaming
+        ? aegis.streaming_from + " (connector)"
+        : (source.label || source.path || "source");
+      setSourceChip(label, attached);
+      var onboard = document.getElementById("onboardCard");
+      var brief = document.getElementById("briefBlock");
+      if (onboard) onboard.hidden = !!attached;
+      if (brief) brief.hidden = !attached;
+    });
+  }
+  uxPoll();
+  setInterval(uxPoll, 3000);
+
+  function onboardAttach(path) {
+    var err = document.getElementById("onboardErr");
+    if (!path) { if (err) err.textContent = "give a log file path"; return; }
+    fetch("/api/attach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: path }),
+    }).then(function (r) { return r.json(); })
+      .then(function (reply) {
+        if (reply.ok) { if (err) err.textContent = ""; uxPoll(); }
+        else if (err) err.textContent = reply.error || "could not attach";
+      })
+      .catch(function () { if (err) err.textContent = "request failed"; });
+  }
+
+  var attachBtn = document.getElementById("onboardAttach");
+  var pathInput = document.getElementById("onboardPath");
+  var browseBtn = document.getElementById("onboardSources");
+  if (attachBtn) attachBtn.addEventListener("click", function () {
+    onboardAttach(pathInput ? pathInput.value.trim() : "");
+  });
+  if (pathInput) pathInput.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") attachBtn.click();
+  });
+  if (browseBtn) browseBtn.addEventListener("click", function () {
+    location.hash = "#/settings";
+  });
+})();
+
+  /* --- theme: both are first-class, the choice is remembered --- */
+  (function () {
+    var root = document.documentElement;
+    function apply(name) {
+      root.setAttribute("data-theme", name);
+      try { localStorage.setItem("liq.theme", name); } catch (err) {}
+      var btn = document.getElementById("themeBtn");
+      if (btn) btn.textContent = name === "dark" ? "◐ Light" : "◑ Dark";
+    }
+    var saved = null;
+    try { saved = localStorage.getItem("liq.theme"); } catch (err) {}
+    if (!saved) {
+      saved = window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+    apply(saved);
+    var btn = document.getElementById("themeBtn");
+    if (btn) btn.addEventListener("click", function () {
+      apply(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    });
+  })();
+</script>
+</body>
+</html>
