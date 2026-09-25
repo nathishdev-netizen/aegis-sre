@@ -487,6 +487,12 @@
       margin-top: 3px; font-family: var(--mono, ui-monospace, monospace);
       overflow-wrap: anywhere; }
 
+    .ev-line { font-size: 11.5px; line-height: 1.5; color: var(--text-2);
+      font-family: var(--mono, ui-monospace, monospace);
+      background: var(--surface-2); border-radius: 6px;
+      padding: 7px 9px; margin-bottom: 5px; overflow-wrap: anywhere; }
+    .ev-line:last-child { margin-bottom: 0; }
+
     .sim-choice { font-size: 12px; padding: 5px 11px; }
     .sim-choice .v-degraded { font-size: 10.5px; }
     .pf-band-empty { font-size: 12px; line-height: 1.55; color: var(--text-3);
@@ -813,6 +819,11 @@
               <div class="card" id="insightsBox" hidden>
                 <div class="muted" style="margin-bottom:6px">Notable</div>
                 <ul id="insights" style="margin:0;padding-left:18px"></ul>
+              </div>
+              <div class="card" id="evidenceBox" hidden>
+                <div class="muted" style="margin-bottom:6px">What it read
+                  <span class="hint">- the lines the brief above rests on</span></div>
+                <div id="evidence"></div>
               </div>
             </div>
             <div>
@@ -1581,6 +1592,21 @@
         if (insights.length) {
           document.getElementById('insights').innerHTML =
             insights.map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
+        }
+      }
+
+      // The lines the brief rests on. The model returns them already - it is
+      // required to quote real log lines - and they were computed on every
+      // run and never shown, which left a fluent paragraph with nothing a
+      // reader could check it against. Claim and artifact, not claim alone.
+      const evidenceBox = document.getElementById('evidenceBox');
+      const evidence = (state.evidence || []).filter(Boolean);
+      if (evidenceBox) {
+        evidenceBox.hidden = !evidence.length;
+        if (evidence.length) {
+          document.getElementById('evidence').innerHTML = evidence
+            .map((line) => '<div class="ev-line">' + escapeHtml(line) + '</div>')
+            .join('');
         }
       }
 
