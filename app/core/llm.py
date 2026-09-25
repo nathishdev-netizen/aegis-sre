@@ -182,6 +182,12 @@ something none of the others did. "It behaved the same as the earlier request,
 which also completed in 7 steps" tells a developer more than the latest run's
 numbers alone.
 
+Walk the run: which component handled it, what each step did, and the
+numbers on them. "The api took the request, the orchestrator ran 7 steps -
+scope check, generate, quality check - and delivered 136 characters in
+4969ms" beats "the request completed in 7 steps". The specifics ARE the
+brief; do not hold them back for a list somewhere else.
+
 Then name what is worth looking at next, when the logs support one. A run with no
 errors can still be worth a second look: work that was offered and never
 completed, a step that always skips, a value that never arrives. End on that when
@@ -190,7 +196,7 @@ the outcome when it does not. Never invent a concern the lines do not show.
 
 Return JSON only:
 {
-  "summary": "3-5 sentences, plain spoken English: the latest run's outcome first, then how it compares with earlier runs, then what is worth checking next. No log jargon.",
+  "summary": "4-7 sentences, plain spoken English, and DETAILED - this paragraph is the whole brief, so put the specifics in it rather than saving them for another field. Outcome first, then the run step by step with its real numbers (what each stage did and how long it took), then how it compares with earlier runs, then what is worth checking next. Name the components, routes and identifiers the lines actually show. No log jargon.",
   "status": "running" | "failed" | "success" | "idle",
   "reason": "why it failed, or empty string if it has not failed",
   "causes": ["likely causes, most probable first; empty if not failed or if unknowable"],

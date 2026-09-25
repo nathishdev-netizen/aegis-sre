@@ -820,11 +820,6 @@
                 <div class="muted" style="margin-bottom:6px">Notable</div>
                 <ul id="insights" style="margin:0;padding-left:18px"></ul>
               </div>
-              <div class="card" id="evidenceBox" hidden>
-                <div class="muted" style="margin-bottom:6px">What it read
-                  <span class="hint">- the lines the brief above rests on</span></div>
-                <div id="evidence"></div>
-              </div>
             </div>
             <div>
               <div class="section-title">Ask about this run</div>
@@ -1595,20 +1590,6 @@
         }
       }
 
-      // The lines the brief rests on. The model returns them already - it is
-      // required to quote real log lines - and they were computed on every
-      // run and never shown, which left a fluent paragraph with nothing a
-      // reader could check it against. Claim and artifact, not claim alone.
-      const evidenceBox = document.getElementById('evidenceBox');
-      const evidence = (state.evidence || []).filter(Boolean);
-      if (evidenceBox) {
-        evidenceBox.hidden = !evidence.length;
-        if (evidence.length) {
-          document.getElementById('evidence').innerHTML = evidence
-            .map((line) => '<div class="ev-line">' + escapeHtml(line) + '</div>')
-            .join('');
-        }
-      }
 
       const note = document.getElementById('causesNote');
       if (note) {

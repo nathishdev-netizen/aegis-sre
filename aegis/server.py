@@ -35,6 +35,8 @@ from aegis.l7_reasoning.explainer import Explainer  # noqa: E402
 from aegis.l7_reasoning.governance import Budget  # noqa: E402
 from aegis.l7_reasoning.router import ModelRouter  # noqa: E402
 from aegis.pipeline import Pipeline  # noqa: E402
+from aegis.l1_ingestion.suggest import (  # noqa: E402
+    cwd_for_pid, probe_pids, suggest_ports)
 from aegis.l4_understanding.codebase import analyze_repo  # noqa: E402
 from aegis.l4_understanding.dependencies import DependencyMap  # noqa: E402
 from aegis.l4_understanding.simulate import simulate_failure  # noqa: E402
@@ -352,13 +354,11 @@ class AegisApp:
             from app.core import sources as v1_sources
             from app.core.discovery import discover_listening_ports
             listening = discover_listening_ports()
-            # One probe per process, reused by both the list and the ranking
-            # below - this scan is the expensive part.
-            logs_by_pid = {}
-            for item in listening:
-                pid = int(item.get("pid", 0) or 0)
-                if pid and pid not in logs_by_pid:
-                    logs_by_pid[pid] = v1_sources.best_log_file_for_pid(pid)
+            # ONE lsof for every process, reused by the list and the ranking
+            # below. Per-pid probes were 64 subprocesses and up to 44s; the
+            # Sources page showed nothing for all of it.
+            cwds_by_pid, logs_by_pid = probe_pids(
+                [int(item.get("pid", 0) or 0) for item in listening])
             for item in listening:
                 if not v1_sources.is_plausible_source(item):
                     continue
@@ -368,8 +368,78 @@ class AegisApp:
                                        "port": item.get("port"), "path": log})
         except Exception:
             pass
-        return {"recent": recent, "projects": projects,
-                "discovered": discovered[:8]}
+        # Ranked suggestions: 34 flat ports is a wall, not a recommendation.
+        suggestions: list[dict[str, Any]] = []
+        watched_project = ""
+        try:
+            watched_pid = 0
+            watched_cwd = ""
+            dependency_ports = {row["port"] for row in self.dependency_report()
+                                if row.get("port") and row.get("local")}
+            for item in listening:
+                pid = int(item.get("pid", 0) or 0)
+                if self.log_path and logs_by_pid.get(pid) == self.log_path:
+                    watched_pid = pid
+                    watched_cwd = cwds_by_pid.get(pid) or cwd_for_pid(pid)
+                    break
+            # A connector has no working directory, so the project is whatever
+            # the analyzed repo is called - the only thing that ties a streamed
+            # source to a place on disk.
+            if not watched_cwd:
+                repo = self._analyzed_repo()
+                if repo:
+                    watched_project = os.path.basename(repo.rstrip("/"))
+            if watched_cwd:
+                for part in reversed(watched_cwd.split("/")):
+                    if part and part not in ("services", "apps", "src", "packages"):
+                        watched_project = part
+                        break
+            suggestions = suggest_ports(
+                listening,
+                dependency_ports=dependency_ports,
+                watched_pid=watched_pid, watched_cwd=watched_cwd,
+                watched_project_root=self._analyzed_repo() or "",
+                watched_log=self.log_path or "",
+                watched_logs={str(c.path) for c, _n in
+                              (self.pipeline.secondaries if self.pipeline else [])},
+                own_pids={os.getpid()},
+                log_for_pid=lambda pid: logs_by_pid.get(int(pid or 0)),
+                cwd_for_pid=lambda pid: cwds_by_pid.get(int(pid or 0))
+                or cwd_for_pid(pid))
+            # The project's NAME comes from the cluster the ranking built, not
+            # from a guess at the watched directory: services/crawl guessed
+            # "crawl" while every row said "paideia-platform-explore", so
+            # nothing matched and the list hid the services just attached.
+            for row in suggestions:
+                if row.get("is_watched") and row.get("project"):
+                    watched_project = row["project"]
+                    break
+        except Exception:
+            suggestions = []
+
+        payload = {
+            "recent": recent, "projects": projects,
+            "discovered": discovered[:8],
+            # "Suggested" must mean RELATED, not merely readable. Splitting on
+            # watchable alone put every unrelated app on the machine under a
+            # heading that claims relevance. With nothing attached there is no
+            # "that" to be related to, and the right answer is every project on
+            # this machine - the cold start a user actually begins from.
+            "watching_something": bool(watched_project),
+            # What is being watched is always listed - a row cannot say
+            # WATCHING from under a heading it was dropped from.
+            "suggested": [
+                r for r in suggestions
+                if r.get("is_watched")
+                or (r["watchable"] and r["score"] >= 60
+                    and (not watched_project
+                         or r["score"] >= 100
+                         or r.get("project") == watched_project))][:8],
+            "other_ports": [r for r in suggestions
+                            if not (r["watchable"] and r["score"] >= 60)][:20],
+        }
+        self._sources_cache = (time.monotonic(), payload)
+        return payload
 
     # -- flow spec -----------------------------------------------------------
 
