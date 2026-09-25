@@ -72,7 +72,14 @@ REPRODUCER (already failing, do not modify it):
 Rules:
 - unified diff format (--- a/path, +++ b/path, @@ hunks), repo-relative paths
 - touch ONLY the mapped files; never tests, CI, dependencies, or config secrets
-- change the fewest lines that fix the bug; no refactoring, no cleanup
+- change the fewest lines that fix the bug; no refactoring, no cleanup.
+  If the bug is one expression inside a multi-line statement (a logger
+  call, a function call spanning several lines), remove and replace ONLY
+  that one inner line - never the whole surrounding statement. Removing
+  "logger.info(" to change one f-string argument three lines below it is
+  the shape to avoid: it turns a one-line fix into a multi-line block that
+  (a) is far more likely to be non-unique in the file and (b) is not
+  minimal.
 - the applier matches each removed "-" line against the file by its TEXT
   alone, not by position - it does not read the @@ line numbers, so do not
   rely on them to pick between occurrences. If a line like
