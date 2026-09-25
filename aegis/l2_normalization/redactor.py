@@ -97,7 +97,7 @@ def _luhn_ok(digits: str) -> bool:
 
 # Rules whose match must pass an extra check before it is treated as sensitive.
 _VALIDATORS = {
-    "CARD": lambda text: _luhn_ok(re.sub(r"\\D", "", text)),
+    "CARD": lambda text: _luhn_ok(re.sub(r"\D", "", text)),
 }
 
 

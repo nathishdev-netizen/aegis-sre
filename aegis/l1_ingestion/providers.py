@@ -487,7 +487,7 @@ class McpProvider:
                                          payload=text, service=query.service))
         return records
 
-    _TRACE_ID = re.compile(r"trace_id=(\\S+)")
+    _TRACE_ID = re.compile(r"trace_id=(\S+)")
 
     def _with_detail(self, line: str) -> str:
         """Append fields the list view omitted, for the newest rows only.
@@ -553,7 +553,7 @@ class McpProvider:
                 break
         if record:
             from aegis.l1_ingestion.tabular import flatten_fields
-            known = set(re.findall(r"(\\w+)=", line))
+            known = set(re.findall(r"(\w+)=", line))
             # The row already states these; a second copy under the vendor's
             # own name is noise in a line a model will read.
             known |= {"name", "duration", "total_estimated_cost"}
