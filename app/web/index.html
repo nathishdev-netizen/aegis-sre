@@ -3226,9 +3226,15 @@
       var watchingFile = source.type && source.type !== "idle";
       var streaming = !!aegis.streaming_from;
       var attached = watchingFile || streaming;
+      // The chip already says "watching", and v1's label is the sentence
+      // "Watching local log file" - so the two ran together as "watching
+      // Watching local log file". The file's own name is both shorter and
+      // more useful: it says WHICH log, which the generic label never did.
       var label = streaming
         ? aegis.streaming_from + " (connector)"
-        : (source.label || source.path || "source");
+        : (source.path
+             ? source.path.split("/").pop()
+             : (source.label || "source"));
       setSourceChip(label, attached);
       var onboard = document.getElementById("onboardCard");
       var brief = document.getElementById("briefBlock");
