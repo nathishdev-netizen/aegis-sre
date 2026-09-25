@@ -32,11 +32,19 @@ class RunResult:
 def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
     """Apply simple line-replacement hunks by unique prefix match.
 
-    Handles only the shape model patches usually take - N removed lines, N
-    added lines - and requires each removed line to match exactly ONE line in
-    the file (by either being a prefix of it or containing it). Anything
-    ambiguous fails, because a fuzzy patch applied to the wrong line is worse
-    than no patch.
+    Handles the shapes model patches actually take: N removed lines with N
+    added lines (1:1 replacement), or FEWER removed lines than added - a
+    model routinely writes a one-line fix preceded by an explanatory
+    comment, which is one "-" and several "+". Rejecting that outright, as
+    a strict 1:1 checker does, means a correct one-line fix never even gets
+    tested because it arrived with a comment attached.
+
+    The safety property is unchanged either way: every removed line must
+    still match exactly ONE line in the file (by prefix or substring).
+    Extra added lines beyond the matched count are inserted immediately
+    after the matched line, in order - never guessed at a second location.
+    Only genuinely ambiguous matches, or added-fewer-than-removed (which
+    has no sane single-line target), still fail.
     """
     current_file: Path | None = None
     minus: list[str] = []
@@ -47,20 +55,36 @@ def _tolerant_apply(work: Path, patch_text: str) -> tuple[bool, str]:
         if current_file is None or not minus:
             minus, plus = [], []
             return None
-        if len(minus) != len(plus):
-            return "hunk is not a 1:1 line replacement"
+        if len(plus) < len(minus):
+            return "hunk removes more lines than it adds - not a fix this tolerant applier can place safely"
         try:
             lines = current_file.read_text(errors="replace").splitlines(keepends=True)
         except OSError:
             return f"cannot read {current_file.name}"
-        for old_line, new_line in zip(minus, plus):
+        # Match every removed line to its unique target FIRST, before any
+        # write - so a later ambiguous line does not leave the file half
+        # patched from the lines already matched.
+        targets: list[int] = []
+        for old_line in minus:
             wanted = old_line.strip()
             hits = [i for i, line in enumerate(lines)
                     if line.strip().startswith(wanted) or wanted in line]
             if len(hits) != 1:
                 return f"{len(hits)} matches for {wanted[:40]!r} - not unique"
-            indent = lines[hits[0]][: len(lines[hits[0]]) - len(lines[hits[0]].lstrip())]
-            lines[hits[0]] = indent + new_line.strip() + "\n"
+            targets.append(hits[0])
+        # Pair each removed line with its replacement 1:1; any extra "+"
+        # lines beyond that are new lines inserted after the last match.
+        replacements = list(zip(targets, plus[:len(minus)]))
+        extra = plus[len(minus):]
+        for index, new_line in replacements:
+            indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+            lines[index] = indent + new_line.strip() + "\n"
+        if extra and replacements:
+            last_index = replacements[-1][0]
+            indent = lines[last_index][: len(lines[last_index]) - len(lines[last_index].lstrip())]
+            insert_at = last_index + 1
+            for offset, new_line in enumerate(extra):
+                lines.insert(insert_at + offset, indent + new_line.strip() + "\n")
         current_file.write_text("".join(lines))
         minus, plus = [], []
         return None

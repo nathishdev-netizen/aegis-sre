@@ -73,6 +73,13 @@ Rules:
 - unified diff format (--- a/path, +++ b/path, @@ hunks), repo-relative paths
 - touch ONLY the mapped files; never tests, CI, dependencies, or config secrets
 - change the fewest lines that fix the bug; no refactoring, no cleanup
+- the line(s) you remove must be findable UNIQUELY in the file - if a line
+  like "sources = _resolve_sources(request.sources)" could appear more than
+  once (e.g. the same call inside a sibling function), the applier cannot
+  tell which one you mean and will refuse the whole patch. Use the line
+  number from MAPPED SOURCE to pick the right occurrence, and if that is not
+  enough, include one extra line of unique surrounding context in the same
+  hunk rather than the bare line alone.
 - HARD LIMIT: {max_lines} changed lines (+ and - together) across the whole
   patch. A patch over that is rejected unread, so a rewritten function is
   worth nothing however correct it is. Add a guard, change a condition,
