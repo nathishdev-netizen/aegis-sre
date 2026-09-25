@@ -138,7 +138,10 @@ class ConformanceEngine:
                         observed=0.0, baseline=1.0, ratio=0.0,
                         started_at=events[-1].ts if events else "",
                         severity="P2", trace_id=trace_id,
-                        evidence=report.evidence or [deviation["observed"]],
+                        template_id=deviation.get("step_id", ""),
+                        evidence=([f"flow '{spec.name}': {deviation['expected']}"
+                                   f" - observed: {deviation['observed']}"]
+                                  + (report.evidence or [])),
                     ))
         return report, signals
 

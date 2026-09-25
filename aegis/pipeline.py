@@ -132,6 +132,19 @@ class Pipeline:
         self.store.flush()
         return committed
 
+    def _remine_topology(self) -> None:
+        """Re-derive who calls whom from the traces seen so far.
+
+        Cheap enough to redo periodically, and the incident manager ranks
+        causes by it - a service that everything depends on is a better
+        explanation than the one that merely reported first.
+        """
+        try:
+            self.topology = Topology.mine(self.trace_index.traces())
+            self.incidents.set_topology(self.topology)
+        except Exception:
+            pass
+
     def stats(self) -> dict[str, Any]:
         return {
             "project": self.project,
@@ -168,3 +181,44 @@ class Pipeline:
         self.linker.link(event)
         self.store.record_event(event)
         self.hot.add(event)
+        self.trace_index.add(event)
+        if self.normalizer.events_out % 200 == 0:
+            self._remine_topology()
+        for signal in self.detect.observe(event):
+            self.incidents.observe(signal, self.detect.last_now)
+        self._judge_quiet_traces()
+
+    # A trace is judged once it stops growing - judging on every event would
+    # call every run "hollow" until the step that proves otherwise arrives.
+    TRACE_QUIET_S = 20.0
+
+    def _judge_quiet_traces(self) -> None:
+        """A run that deviated from the spec becomes an incident.
+
+        C7 used to run only in shadow mode on a read path, so its deviations
+        were computed and thrown away: the Runs page could call a run hollow
+        while Incidents stayed empty, and nothing could be proposed or
+        verified. Judged here, once, when the run has actually finished.
+        """
+        spec = self.spec_provider() if self.spec_provider else None
+        if spec is None:
+            return
+        now = self.detect.last_now
+        if now is None:
+            return
+        for trace_id, events in self.trace_index.traces().items():
+            # No minimum event count: a run that died early has FEWER events
+            # precisely because it failed, and a "> 4 events" gate made
+            # exactly those runs invisible. Quietness proves it is over.
+            if trace_id in self._judged or len(events) < 2:
+                continue
+            last = _seconds(events[-1].ts) if events[-1].ts else None
+            if last is None or now - last < self.TRACE_QUIET_S:
+                continue
+            self._judged.add(trace_id)
+            try:
+                _report, signals = self.conformance.check(trace_id, events, spec)
+            except Exception:
+                continue
+            for signal in signals:
+                self.incidents.observe(signal, now)

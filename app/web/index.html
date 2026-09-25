@@ -425,6 +425,144 @@
       color: var(--text-3); margin-bottom: 9px; display: flex; gap: 9px; align-items: center; }
     .hero h1 { margin: 0; font-size: 23px; line-height: 1.32; font-weight: 650;
       letter-spacing: -.015em; }
+    /* The verdict, its dot and the account of the run are three different
+       things and were rendered as one unstyled run of text: a dot welded to
+       the first word, then a whole paragraph set in 23px headline type.
+       The verdict is the headline; the account is prose beneath it. */
+    .hero h1 .hl-icon { margin-right: 9px; font-size: .78em; vertical-align: .08em;
+      color: var(--accent); }
+    .hero h1 .hl-sub { display: block; margin-top: 10px; font-size: 14px;
+      line-height: 1.62; font-weight: 400; letter-spacing: 0;
+      color: var(--text-2); }
+
+    /* The run-quality strip named three classes no rule matched, so
+       "Run quality2 achieved" and "@10:35:48View runs" ran together. */
+    #overviewQuality { display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; }
+    #overviewQuality .qlabel { font-size: 10.5px; letter-spacing: .13em;
+      text-transform: uppercase; color: var(--text-3); }
+    #overviewQuality .qchip { font-size: 12px; font-weight: 600;
+      padding: 3px 9px; border-radius: 999px;
+      background: var(--surface-2); color: var(--text-2); }
+    #overviewQuality .qchip.achieved { background: var(--ok-bg); color: var(--ok); }
+    #overviewQuality .qchip.hollow { background: var(--hollow-bg); color: var(--hollow); }
+    #overviewQuality .qchip.failed { background: var(--bad-bg); color: var(--bad); }
+    #overviewQuality .qchip.degraded { background: var(--warn-bg); color: var(--warn); }
+    #overviewQuality .qchip.unknown { background: var(--surface-2); color: var(--text-3); }
+    #overviewQuality > a { margin-left: auto; font-size: 13px; }
+
+    /* The project brief, written as a flow: headings, numbered steps, and
+       one line per dependency. textContent printed the headings as literal
+       shouting inside one paragraph - the same wall it replaced. */
+    #undOut .brief-head { font-size: 10.5px; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--text-3); font-weight: 700;
+      margin: 16px 0 6px; }
+    #undOut .brief-head:first-child { margin-top: 0; }
+    #undOut p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.62;
+      color: var(--text-2); max-width: 88ch; }
+    #undOut .brief-row { font-size: 12.5px; margin: 0 0 4px; }
+    #undOut .brief-steps { margin: 2px 0 10px; padding-left: 0;
+      list-style: none; counter-reset: bs; }
+    #undOut .brief-steps li { counter-increment: bs; position: relative;
+      padding: 5px 0 5px 30px; font-size: 13px; line-height: 1.55;
+      color: var(--text-2); border-left: 2px solid var(--line);
+      margin-left: 9px; }
+    #undOut .brief-steps li::before { content: counter(bs);
+      position: absolute; left: -10px; top: 6px; width: 19px; height: 19px;
+      border-radius: 50%; background: var(--accent-bg, var(--surface-2));
+      color: var(--accent); font-size: 10.5px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; }
+    #undOut .brief-steps li:last-child { border-left-color: transparent; }
+
+    /* Where in the flow an incident broke - the link between "the spec says
+       a run does this" and "this incident". */
+    .dev-block { margin-top: 10px; border-left: 3px solid var(--hollow);
+      background: var(--hollow-bg); border-radius: 0 8px 8px 0;
+      padding: 9px 12px; }
+    .dev-head { font-size: 10.5px; font-weight: 800; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--hollow); margin-bottom: 5px; }
+    .dev-row { font-size: 12.5px; color: var(--text-2); margin-top: 4px; }
+    .dev-kind { font-weight: 600; }
+    .dev-detail { font-size: 11px; line-height: 1.5; color: var(--text-3);
+      margin-top: 3px; font-family: var(--mono, ui-monospace, monospace);
+      overflow-wrap: anywhere; }
+
+    .sim-choice { font-size: 12px; padding: 5px 11px; }
+    .sim-choice .v-degraded { font-size: 10.5px; }
+    .pf-band-empty { font-size: 12px; line-height: 1.55; color: var(--text-3);
+      background: var(--surface-2); border: 1px dashed var(--line);
+      border-radius: 9px; padding: 10px 12px; max-width: 70ch; }
+
+    /* Components: the rail and one card each. Nine classes the renderer has
+       always emitted had no rule at all, so every card collapsed into one
+       column of unstyled text. */
+    #compRail { align-items: center; gap: 7px; }
+    .cnode { display: inline-block; padding: 4px 11px; border-radius: 7px;
+      background: var(--surface-2); border: 1px solid var(--line);
+      font-size: 12.5px; font-weight: 600; }
+    .cnode.failed { background: var(--bad-bg); color: var(--bad);
+      border-color: transparent; }
+    .cnode.running, .cnode.active { background: var(--accent-bg, var(--surface-2));
+      color: var(--accent); border-color: transparent; }
+    .cnode.skipped { color: var(--text-3); }
+    .clink { color: var(--text-3); font-size: 13px; }
+    #compCards { display: grid; gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
+    .ccard { border: 1px solid var(--line); border-radius: 11px;
+      padding: 12px 13px; background: var(--surface);
+      border-left: 3px solid var(--line); }
+    .ccard.failed { border-left-color: var(--bad); }
+    .ccard.running, .ccard.retrying { border-left-color: var(--accent); }
+    .ccard.completed { border-left-color: var(--ok); }
+    .ccard.skipped { border-left-color: var(--text-3); }
+    .ccard-head { display: flex; align-items: baseline; gap: 8px;
+      justify-content: space-between; }
+    .ccard-name { font-size: 13.5px; font-weight: 650; }
+    .ccard-state { font-size: 10px; font-weight: 800; letter-spacing: .07em;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+      background: var(--surface-2); color: var(--text-3); }
+    .ccard.failed .ccard-state { background: var(--bad-bg); color: var(--bad); }
+    .ccard.completed .ccard-state { background: var(--ok-bg); color: var(--ok); }
+    .ccard.running .ccard-state, .ccard.retrying .ccard-state {
+      background: var(--accent-bg, var(--surface-2)); color: var(--accent); }
+    .ccard-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 7px;
+      font-size: 11.5px; color: var(--text-3); }
+    .ccard-stats b { color: var(--text-2); font-weight: 650; }
+    .ccard-last { margin-top: 8px; font-size: 11.5px; line-height: 1.5;
+      color: var(--text-2); font-family: var(--mono, ui-monospace, monospace);
+      background: var(--surface-2); border-radius: 6px; padding: 7px 8px;
+      overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* The run timeline: ten more classes with no rule, so every event
+       printed as four unstyled lines with no boundary between them. */
+    .story-rail { display: grid; gap: 8px; }
+    .story-event { border: 1px solid var(--line); border-radius: 10px;
+      padding: 10px 12px; background: var(--surface);
+      border-left: 3px solid var(--line); }
+    .story-event.failed { border-left-color: var(--bad); }
+    .story-event.running { border-left-color: var(--accent); }
+    .story-event.completed { border-left-color: var(--ok); }
+    .story-row { display: flex; align-items: flex-start; gap: 10px;
+      justify-content: space-between; }
+    .story-time { font-size: 11px; color: var(--text-3);
+      font-family: var(--mono, ui-monospace, monospace); }
+    .story-title { font-size: 13px; font-weight: 650; margin-top: 1px; }
+    .story-count { color: var(--text-3); font-weight: 500; font-size: 11.5px; }
+    .story-chip { font-size: 10px; font-weight: 800; letter-spacing: .06em;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+      background: var(--surface-2); color: var(--text-3); white-space: nowrap; }
+    .story-chip.bad { background: var(--bad-bg); color: var(--bad); }
+    .story-message { margin-top: 7px; font-size: 11.5px; line-height: 1.5;
+      color: var(--text-2); font-family: var(--mono, ui-monospace, monospace);
+      overflow-wrap: anywhere; }
+    .story-more { margin-top: 8px; }
+    .story-more > summary { cursor: pointer; font-size: 11.5px;
+      color: var(--text-3); }
+    .story-line { display: flex; gap: 9px; padding: 4px 0; font-size: 11px;
+      line-height: 1.45; color: var(--text-2);
+      font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+    .story-line > span { color: var(--text-3); flex: none; }
     .hero .why { color: var(--text-2); margin-top: 9px; font-size: 13.5px; }
     .hero .meter { height: 3px; border-radius: 3px; background: var(--surface-2);
       margin-top: 16px; overflow: hidden; }
@@ -806,8 +944,11 @@
           built from the mined flow, the dependency map and code guards - it says where to
           look, never what will certainly happen.</div>
         <div class="card">
+          <div class="hint" style="margin-bottom:8px">Pick something this project
+            actually depends on - the riskiest first:</div>
+          <div id="simChoices" class="row" style="flex-wrap:wrap;gap:7px;margin-bottom:11px"></div>
           <div class="row">
-            <input class="input" id="simTarget" placeholder="component or dependency, e.g. tts or localhost:6004" style="max-width:380px">
+            <input class="input" id="simTarget" placeholder="or type a name, e.g. orchestrator or localhost:8080" style="max-width:380px">
             <button class="btn" id="simBtn">Simulate failure</button>
           </div>
           <div id="simOut" style="margin-top:10px"></div>
@@ -1281,7 +1422,8 @@
       }
 
       el.className = 'headline ' + cls;
-      el.innerHTML = '<span class="hl-icon">' + icon + '</span>' + escapeHtml(text)
+      el.innerHTML = '<span class="hl-icon">' + icon + '</span>'
+        + '<span class="hl-text">' + escapeHtml(text) + '</span>'
         + (sub ? '<span class="hl-sub">' + escapeHtml(sub) + '</span>' : '');
     }
 
@@ -1656,6 +1798,26 @@
             (isCause ? '<span class="aegis-cause-badge">RANKED CAUSE</span>' : "") +
             "</div>";
         }).join("");
+        // The link between "the spec says a run does this" and "this
+        // incident". Without it a conformance incident read like any other
+        // signal and the user could not tell WHERE in the flow it broke.
+        if ((inc.deviations || []).length) {
+          body += '<div class="dev-block"><div class="dev-head">deviated from ' +
+            (inc.affected_flows || []).map(aegisEsc).join(", ") + "</div>" +
+            inc.deviations.map(function (d) {
+              var what = d.type === "purpose_never_ran"
+                ? "the run finished without ever doing what it exists to do"
+                : d.type === "missing_step"
+                ? "a step that runs in almost every other run did not run"
+                : String(d.type).replace(/_/g, " ");
+              return '<div class="dev-row"><span class="dev-kind">' +
+                aegisEsc(what) + "</span>" +
+                (d.trace_id ? '<span class="faint"> \u00b7 run ' +
+                  aegisEsc(String(d.trace_id).slice(0, 8)) + "</span>" : "") +
+                (d.detail ? '<div class="dev-detail">' +
+                  aegisEsc(d.detail) + "</div>" : "") + "</div>";
+            }).join("") + "</div>";
+        }
         body += '<div class="note-line"><b>why ranked:</b> ' +
           (inc.cause_why || []).map(aegisEsc).join(" · ") + "</div>";
         if (inc.precedents && inc.precedents.length) {
@@ -1972,13 +2134,55 @@
                    depends: "what it leans on" };
     aegisEl("pfBands").innerHTML = (flow.bands || []).map(function (band, i) {
       var nodes = flow.nodes.filter(function (n) { return n.band === band; });
-      if (!nodes.length) return "";
+      // A band with nothing in it used to vanish, so the three-part shape
+      // the lede promises silently became two and looked broken. An empty
+      // band says WHY it is empty - the work band needs measured durations.
+      if (!nodes.length) {
+        var whyEmpty = {
+          work: "Nothing timed yet. This band fills from measured durations - " +
+                "operations the logs report a duration for - so it stays empty " +
+                "until runs have been observed long enough to measure.",
+          entry: "No entrypoints found. Run Project analysis below to read " +
+                 "the routes out of the code.",
+          depends: "No outbound calls found in the analyzed code."
+        };
+        return '<div class="pf-band"><div class="pf-band-name">' +
+          (i ? "\u2193 " : "") + aegisEsc(titles[band] || band) + "</div>" +
+          '<div class="pf-band-empty">' +
+          aegisEsc(whyEmpty[band] || "Nothing here yet.") + "</div></div>";
+      }
       return '<div class="pf-band"><div class="pf-band-name">' +
         (i ? "\u2193 " : "") + aegisEsc(titles[band] || band) + "</div>" +
         '<div class="pf-row">' + nodes.map(pfNodeHtml).join("") + "</div></div>";
     }).join("");
 
     renderPfDetail();
+    renderSimChoices(flow);
+  }
+
+  // A blank box is not an invitation - you have to already know what this
+  // project depends on to type anything, and a near miss ("api") was
+  // answered with 25 raw strings including duplicates and test fixtures.
+  // The flow already knows the real targets; offer them, riskiest first.
+  function renderSimChoices(flow) {
+    var box = aegisEl("simChoices");
+    if (!box) return;
+    var nodes = (flow && flow.nodes) || [];
+    var targets = nodes.filter(function (n) {
+      return n.band === "depends" || n.band === "work"; });
+    if (!targets.length) { box.innerHTML = ""; return; }
+    // Unguarded and running-here first: those are the ones whose failure
+    // the code does not handle and whose logs you could actually read.
+    targets.sort(function (a, b) {
+      return ((b.unguarded || 0) - (a.unguarded || 0)) ||
+             ((b.observed ? 1 : 0) - (a.observed ? 1 : 0));
+    });
+    box.innerHTML = targets.slice(0, 8).map(function (n) {
+      return '<button class="btn sim-choice" data-sim="' + aegisEsc(n.label) +
+        '">' + aegisEsc(n.label) +
+        (n.unguarded ? ' <span class="v-degraded">\u00b7 unguarded</span>' : "") +
+        "</button>";
+    }).join("");
   }
 
   function renderPfDetail() {
@@ -2114,9 +2318,81 @@
     if (!out || !meta) return;
     var text = state.understanding || "";
     out.hidden = !text;
-    out.textContent = text;
+    // The brief is written as a flow with headings and numbered steps.
+    // textContent printed the headings as literal shouting inside one
+    // paragraph - the same wall it replaced. Render the structure.
+    out.innerHTML = text ? briefHtml(text) : "";
     meta.textContent = text ? "current - regenerates when code or behaviour changes"
                             : "not generated yet";
+  }
+
+  // Headings are known and fixed - anything else is prose or a step.
+  var BRIEF_HEADS = ["WHAT IT IS", "HOW A REQUEST FLOWS",
+                     "WHAT RUNS IN THE BACKGROUND", "WHAT IT LEANS ON",
+                     "WHAT IS MEASURED", "WHAT IS NOT KNOWABLE"];
+
+  // Escape first, then allow only **bold** and `code` back in - the model
+  // writes both, and printing the asterisks is how prose becomes noise.
+  function briefInline(text) {
+    return aegisEsc(text)
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+      .replace(/`([^`]+)`/g, '<span class="mono">$1</span>');
+  }
+
+  function briefHtml(text) {
+    var html = "";
+    var steps = [];
+    function flushSteps() {
+      if (!steps.length) return;
+      html += '<ol class="brief-steps">' + steps.join("") + "</ol>";
+      steps = [];
+    }
+    // The model often runs a heading onto the end of the previous line and
+    // puts "1. ... 2. ... 3. ..." all on one line. Break both apart before
+    // parsing, or the whole flow collapses into a single paragraph again.
+    var normalised = String(text);
+    BRIEF_HEADS.forEach(function (h) {
+      normalised = normalised.replace(
+        new RegExp("([^\\n])[ \\t]*((?:\\*\\*|##)?\\s*" + h + ")", "g"),
+        "$1\n$2");
+    });
+    normalised = normalised.replace(/(\S)\s+(\d+\.\s)/g, "$1\n$2");
+    normalised.split("\n").forEach(function (raw) {
+      var line = raw.trim();
+      if (!line) return;
+      // A line of pure markdown decoration ("*", "---") is not content.
+      if (/^[*_\-#\s]+$/.test(line)) return;
+      // A markdown table is the model answering "one line per dependency"
+      // its own way. Keep the rows, drop the pipes and the ---- separator.
+      if (/^\|/.test(line)) {
+        var cells = line.split("|").map(function (c) { return c.trim(); })
+                        .filter(Boolean);
+        if (!cells.length || cells.every(function (c) { return /^:?-+:?$/.test(c); })) return;
+        flushSteps();
+        html += '<p class="brief-row">' + cells.map(briefInline).join(
+          ' <span class="faint">\u00b7</span> ') + "</p>";
+        return;
+      }
+      // The heading arrives glued to the end of the previous sentence and is
+      // sometimes bold, sometimes bare. Match it however it is decorated.
+      var bare = line.replace(/^[#*_\s]+/, "").replace(/[*_:\s]+$/, "");
+      var head = BRIEF_HEADS.filter(function (h) {
+        return bare.toUpperCase() === h; })[0];
+      if (head) {
+        flushSteps();
+        html += '<div class="brief-head">' + aegisEsc(bare) + "</div>";
+        return;
+      }
+      var step = line.match(/^(\d+)[.)]\s+(.*)$/);
+      if (step) {
+        steps.push("<li>" + briefInline(step[2]) + "</li>");
+        return;
+      }
+      flushSteps();
+      html += "<p>" + briefInline(line.replace(/^[-*]\s+/, "")) + "</p>";
+    });
+    flushSteps();
+    return html;
   }
 
   function renderSpec(state) {
@@ -2803,11 +3079,23 @@
   });
 
   var simBtn = aegisEl("simBtn");
+  document.addEventListener("click", function (event) {
+    var choice = event.target.closest("[data-sim]");
+    if (!choice) return;
+    var picked = choice.getAttribute("data-sim");
+    aegisEl("simTarget").value = picked;
+    runSimulation(picked);
+  });
   if (simBtn) simBtn.addEventListener("click", function () {
-    var target = aegisEl("simTarget").value.trim();
+    runSimulation(aegisEl("simTarget").value.trim());
+  });
+  function runSimulation(target) {
     var out = aegisEl("simOut");
     if (!target) return;
     simBtn.disabled = true;
+    // Saying what is being predicted, for which target, beats a dead button.
+    out.innerHTML = '<div class="hint">predicting what a ' + aegisEsc(target) +
+      " failure would do\u2026</div>";
     fetch("/api/aegis/simulate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target: target }),
@@ -2833,7 +3121,7 @@
         out.innerHTML = html;
       })
       .catch(function () { simBtn.disabled = false; });
-  });
+  }
 
   refreshConnectors();
   refreshSuggestions();

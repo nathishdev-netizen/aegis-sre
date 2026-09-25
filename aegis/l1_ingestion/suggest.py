@@ -345,3 +345,70 @@ def suggest_ports(ports: list[dict[str, Any]], *,
         row["recommended"] = (bool(row["log_path"]) and row["score"] >= 100
                               and not row.get("is_watched"))
     return ranked
+
+
+def cwd_for_pid(pid: int) -> str:
+    """A process's working directory - which project it belongs to.
+
+    Kept separate from probe_pids so a single lookup (the watched service)
+    does not pay for scanning every process on the machine.
+    """
+    import subprocess
+    if not pid:
+        return ""
+    try:
+        result = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+                                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for line in result.stdout.splitlines():
+        if line.startswith("n/"):
+            return line[1:]
+    return ""
+
+
+def probe_pids(pids: list[int]) -> tuple[dict[int, str], dict[int, str]]:
+    """ONE lsof for every listening process: (cwd by pid, best log by pid).
+
+    The per-pid helpers each spawned lsof once per process - 32 processes,
+    64 subprocesses, seven to forty seconds depending on what else the
+    machine was doing - and the Sources page sat empty for all of it with
+    no explanation. lsof takes a comma-separated pid list and tags every
+    line with its pid, so one call answers both questions for all of them.
+    """
+    import subprocess
+    cwds: dict[int, str] = {}
+    logs: dict[int, list[str]] = {}
+    wanted = sorted({int(p) for p in pids if p})
+    if not wanted:
+        return {}, {}
+    try:
+        result = subprocess.run(
+            ["lsof", "-a", "-p", ",".join(str(p) for p in wanted),
+             "-d", "cwd,0-255", "-Fpfn"],
+            capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return {}, {}
+    pid = 0
+    fd = ""
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        tag, value = line[0], line[1:]
+        if tag == "p":
+            pid = int(value or 0)
+        elif tag == "f":
+            fd = value
+        elif tag == "n" and pid:
+            if fd == "cwd":
+                cwds[pid] = value
+            elif value.startswith("/") and value.endswith(".log") and not any(
+                    value.startswith(x) for x in
+                    ("/private/var/", "/var/", "/System/", "/Library/")):
+                logs.setdefault(pid, []).append(value)
+    best: dict[int, str] = {}
+    for one, files in logs.items():
+        # Same preference as v1: a file under .logs/ or logs/ is the app's own.
+        own = [f for f in files if "/.logs/" in f or "/logs/" in f]
+        best[one] = (own or files)[0]
+    return cwds, best
