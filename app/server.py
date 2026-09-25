@@ -20,6 +20,47 @@ PORT = settings.port
 runtime = RuntimeState()
 
 
+
+# -- the Aegis bridge --------------------------------------------------------
+# v1 is frozen and must never import aegis at module level: the watcher has to
+# keep working if the analysis layer is absent or broken. So the bridge is
+# lazy, built once on first use, and every failure is reported as a JSON
+# payload rather than a 500 that takes the page down with it.
+_AEGIS = None
+_AEGIS_TRIED = False
+
+
+def _aegis():
+    global _AEGIS, _AEGIS_TRIED
+    if _AEGIS is not None or _AEGIS_TRIED:
+        return _AEGIS
+    _AEGIS_TRIED = True
+    try:
+        from aegis.server import AegisApp
+        _AEGIS = AegisApp()
+    except Exception:
+        _AEGIS = None
+    return _AEGIS
+
+
+def _catch_up_with_v1(app) -> None:
+    """Point Aegis at whatever v1 just attached to.
+
+    The UI attaches through v1's /api/attach and Aegis only FOLLOWS, so a
+    combine issued immediately afterwards used to answer "attach a source
+    first" - the bridge had not yet heard about it.
+    """
+    try:
+        source = getattr(runtime, "_snapshot", None)
+        source = getattr(source, "source", None) or {}
+        path = source.get("path")
+        if (path and source.get("type") == "file"
+                and path != app.log_path and Path(path).is_file()):
+            app.attach(path)
+    except Exception:
+        pass
+
+
 def read_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -63,6 +104,42 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(html)
             return
 
+        if self.path == "/healthz":
+            write_json(self, HTTPStatus.OK,
+                       {"ok": True, "service": "log-intelligence",
+                        "version": "1.0.0"})
+            return
+
+        if self.path.startswith("/api/aegis/"):
+            app = _aegis()
+            if app is None:
+                write_json(self, HTTPStatus.OK,
+                           {"ok": False, "detail": "aegis unavailable"})
+                return
+            tail = self.path[len("/api/aegis/"):]
+            name, _, rest = tail.partition("/")
+            query = ""
+            if "?" in name:
+                name, _, query = name.partition("?")
+            if "?" in rest:
+                rest, _, query = rest.partition("?")
+            force = "force=1" in query
+            if name == "state":
+                write_json(self, HTTPStatus.OK, app.state())
+                return
+            if name == "sources":
+                write_json(self, HTTPStatus.OK, app.sources(force=force))
+                return
+            if name == "providers":
+                write_json(self, HTTPStatus.OK, {"providers": app.providers()})
+                return
+            if name == "proposal" and rest:
+                write_json(self, HTTPStatus.OK, app.proposal(rest))
+                return
+            write_json(self, HTTPStatus.NOT_FOUND,
+                       {"ok": False, "detail": f"no such route: {self.path}"})
+            return
+
         if self.path == "/api/state":
             write_json(self, HTTPStatus.OK, {"state": runtime.snapshot()})
             return
@@ -95,6 +172,76 @@ class RequestHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length).decode("utf-8") if length else "{}"
         body = json.loads(raw or "{}")
+
+        if self.path.startswith("/api/aegis/"):
+            app = _aegis()
+            if app is None:
+                write_json(self, HTTPStatus.OK,
+                           {"ok": False, "detail": "aegis unavailable"})
+                return
+            name = self.path[len("/api/aegis/"):]
+            if name == "combine":
+                # v1 owns the attach; catch up before answering, or the first
+                # combine after a fresh attach is rejected as "no source".
+                _catch_up_with_v1(app)
+                write_json(self, HTTPStatus.OK, app.combine(
+                    str(body.get("path", "")), str(body.get("service", ""))))
+                return
+            if name == "explain":
+                write_json(self, HTTPStatus.OK,
+                           app.explain(str(body.get("incident_id", ""))))
+                return
+            if name == "investigate":
+                write_json(self, HTTPStatus.OK,
+                           app.investigate(str(body.get("incident_id", ""))))
+                return
+            if name == "remediate":
+                write_json(self, HTTPStatus.OK, app.remediate(
+                    str(body.get("incident_id", "")), str(body.get("repo_path", ""))))
+                return
+            if name == "simulate":
+                write_json(self, HTTPStatus.OK,
+                           app.simulate(str(body.get("target", ""))))
+                return
+            if name == "analyze":
+                write_json(self, HTTPStatus.OK,
+                           app.analyze_project(str(body.get("repo_path", ""))))
+                return
+            if name == "understand":
+                write_json(self, HTTPStatus.OK,
+                           app.understand(force=bool(body.get("force"))))
+                return
+            if name == "build-code-graph":
+                write_json(self, HTTPStatus.OK,
+                           app.build_code_graph(str(body.get("repo_path", ""))))
+                return
+            if name == "mark-purpose":
+                write_json(self, HTTPStatus.OK, app.mark_purpose())
+                return
+            if name == "outcome":
+                write_json(self, HTTPStatus.OK, app.record_outcome(
+                    str(body.get("incident_id", "")), str(body.get("outcome", "")),
+                    str(body.get("note", ""))))
+                return
+            if name == "verify-fix":
+                write_json(self, HTTPStatus.OK,
+                           app.verify_fix(str(body.get("incident_id", ""))))
+                return
+            if name == "suppress":
+                write_json(self, HTTPStatus.OK, app.suppress(
+                    str(body.get("template_id", "")), str(body.get("reason", "")),
+                    bool(body.get("undo"))))
+                return
+            if name == "wipe-project":
+                write_json(self, HTTPStatus.OK,
+                           app.wipe_project(str(body.get("project", ""))))
+                return
+            if name == "provider":
+                write_json(self, HTTPStatus.OK, app.add_provider(body))
+                return
+            write_json(self, HTTPStatus.NOT_FOUND,
+                       {"ok": False, "detail": f"no such route: {self.path}"})
+            return
 
         if self.path == "/api/log":
             line = body.get("line", "")
@@ -135,6 +282,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 write_json(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Missing path"})
                 return
             snapshot = runtime.attach_file(path)
+            # Aegis follows v1's source rather than owning one. Telling it
+            # here - not lazily on the next call - is what makes the very
+            # first combine or state read after an attach correct.
+            app = _aegis()
+            if app is not None:
+                try:
+                    app.attach(path, body.get("project") or None)
+                except Exception:
+                    pass
             write_json(self, HTTPStatus.OK, {"ok": True, "state": snapshot})
             return
 

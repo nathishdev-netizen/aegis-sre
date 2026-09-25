@@ -268,6 +268,16 @@ class DetectionEngine:
         self._err_gate = HysteresisGate(sustain_s=20.0, clear_sustain_s=60.0)
         self._err_recent: deque = deque(maxlen=3)
 
+    @property
+    def last_now(self) -> float | None:
+        """Log time as the detectors last saw it.
+
+        Everything downstream ages on the STREAM's clock, not the wall
+        clock - an incident in a replayed file must settle on the file's
+        own timeline, or a five-minute-old log resolves nothing.
+        """
+        return self._last_event_at
+
     # -- the one entry point -------------------------------------------------
 
     def observe(self, event: Event) -> list[Signal]:

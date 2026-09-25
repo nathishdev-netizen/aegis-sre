@@ -23,6 +23,13 @@ from aegis.l6_correlation.incidents import IncidentManager
 from aegis.l6_correlation.memory import IncidentMemory
 
 
+def _count_by_status(incidents) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for incident in incidents:
+        counts[incident.status] = counts.get(incident.status, 0) + 1
+    return counts
+
+
 class Pipeline:
     def __init__(self, project: str, log_path: str | Path,
                  store_root: Path | str | None = None) -> None:
@@ -135,7 +142,23 @@ class Pipeline:
             "extracted": self.linker.extracted,
             "inferred": self.linker.inferred,
             "unattributed": self.linker.unattributed,
+            # The funnel the UI draws: lines in, events out, templates
+            # learned, signals raised, incidents opened. Every stage is a
+            # count, because detection is counting.
+            "signals": len(self.detect.signals),
+            "incidents": len(self.incidents.incidents),
+            "by_status": _count_by_status(self.incidents.incidents),
+            "notes": len(self.incidents.notes),
         }
+
+    def suppress_template(self, template_id: str, reason: str = "") -> None:
+        """Mute one template for good. Persisted, so it survives a restart -
+        a mute the user has to re-apply every session is not a mute."""
+        self.store.add_suppression(template_id, reason)
+        self.detect.suppressed.add(template_id)
+
+    def unsuppress_template(self, template_id: str) -> None:
+        self.detect.suppressed.discard(template_id)
 
     def close(self) -> None:
         self.store.flush()
