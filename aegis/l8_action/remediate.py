@@ -221,7 +221,7 @@ class RemediationAgent:
         if not locations:
             return ""
         from aegis.l4_understanding.codegraph import CodeGraph, index_present
-        repo = str(self.repo_path)
+        repo = str(self.repo)
         if not index_present(repo):
             return ""
         target = locations[0].fragment or locations[0].source

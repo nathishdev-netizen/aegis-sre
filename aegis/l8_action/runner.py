@@ -108,9 +108,15 @@ class TestRunner:
         sandbox = Path(tempfile.mkdtemp(prefix="aegis-sandbox-"))
         try:
             work = sandbox / "repo"
+            # Sockets, fifos and device files cannot be copied - copytree
+            # raises on the first one and the whole proposal dies with an
+            # errno nobody can act on. CodeGraph leaves a daemon.sock in the
+            # repo it indexes, so this is the common case, not an edge one.
             shutil.copytree(self.repo, work,
-                            ignore=shutil.ignore_patterns(".git", "node_modules",
-                                                          ".venv", "__pycache__"))
+                            ignore=shutil.ignore_patterns(
+                                ".git", "node_modules", ".venv", "__pycache__",
+                                ".codegraph", "*.sock", "*.pid", ".DS_Store"),
+                            ignore_dangling_symlinks=True)
             if patch_text:
                 patch_bin = shutil.which("patch")
                 if patch_bin is None:
