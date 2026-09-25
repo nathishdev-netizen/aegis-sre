@@ -1944,7 +1944,15 @@
             (bundle.patch ?
               '<div class="row" style="gap:8px;margin-top:6px">' +
               '<button class="btn" data-aegis-copy-patch="' + aegisEsc(inc.id) +
-              '">Copy patch</button></div>' : "");
+              '">Copy patch</button>' +
+              // The proposal says what it WOULD do; this is where you say do
+              // it. Offered only when there is a patch to apply, and it
+              // undoes itself if your own tests disagree - which is what
+              // makes saying yes reasonable.
+              '<button class="btn primary" data-aegis-apply="' +
+              aegisEsc(inc.id) + '">Apply this fix \u00b7 reverts if your ' +
+              'tests fail</button></div>' +
+              '<div id="apply-' + aegisEsc(inc.id) + '"></div>' : "");
         } else if (fixResult && fixResult.ok) {
           body += '<div class="row" style="margin-top:6px">' +
             '<button class="btn" data-aegis-proposal="' + aegisEsc(inc.id) +
@@ -2899,6 +2907,89 @@
           copyBtn.textContent = "copied";
         }).catch(function () {});
       }
+      return;
+    }
+    var applyBtn = event.target.closest("[data-aegis-apply]");
+    if (applyBtn) {
+      var applyId = applyBtn.getAttribute("data-aegis-apply");
+      var applyRepo = (aegisRepoDraft[applyId] || savedRepo() || "").trim();
+      var applyOut = document.getElementById("apply-" + applyId);
+      if (!applyRepo) {
+        if (applyOut) applyOut.innerHTML =
+          '<div class="hint">set the repo path above first</div>';
+        return;
+      }
+      // Writing to someone's working tree is the one step here that is hard
+      // to take back by accident, so it is asked plainly and once.
+      if (!window.confirm(
+          "Apply this fix to " + applyRepo + "?\n\n" +
+          "Aegis will edit the files, run your own test suite, and put " +
+          "everything back automatically if those tests fail.\n\n" +
+          "Nothing is committed - `git diff` shows the change.")) return;
+      applyBtn.disabled = true;
+      applyBtn.textContent = "applying, then running your tests\u2026";
+      if (applyOut) applyOut.innerHTML =
+        '<div class="hint">this runs your project\u2019s own suite - it can ' +
+        "take a minute\u2026</div>";
+      fetch("/api/aegis/apply-fix", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ incident_id: applyId, repo_path: applyRepo }),
+      }).then(function (r) { return r.json(); })
+        .then(function (rep) {
+          applyBtn.disabled = false;
+          applyBtn.textContent = "Apply this fix \u00b7 reverts if your tests fail";
+          if (!applyOut) return;
+          var html = '<div class="aegis-fix-out' + (rep.ok ? " ok" : "") +
+            '">' + aegisEsc(rep.detail || "") + "</div>";
+          if ((rep.files || []).length) {
+            html += '<div class="hint">files changed: ' +
+              rep.files.map(aegisEsc).join(", ") + "</div>";
+          }
+          if (rep.suite_output && !rep.ok) {
+            html += '<pre class="aegis-bundle">' +
+              aegisEsc(rep.suite_output) + "</pre>";
+          }
+          if (rep.ok && rep.backup_path) {
+            html += '<div class="row" style="gap:8px;margin-top:6px">' +
+              '<button class="btn" data-aegis-revert="' + aegisEsc(applyId) +
+              '" data-backup="' + aegisEsc(rep.backup_path) +
+              '" data-files="' + aegisEsc((rep.files || []).join("|")) +
+              '">Undo this change</button></div>';
+          }
+          applyOut.innerHTML = html;
+          aegisRefresh();
+        })
+        .catch(function () {
+          applyBtn.disabled = false;
+          applyBtn.textContent = "Apply this fix \u00b7 reverts if your tests fail";
+        });
+      return;
+    }
+    var revertBtn = event.target.closest("[data-aegis-revert]");
+    if (revertBtn) {
+      var revId = revertBtn.getAttribute("data-aegis-revert");
+      revertBtn.disabled = true;
+      revertBtn.textContent = "reverting\u2026";
+      fetch("/api/aegis/revert-fix", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          incident_id: revId,
+          repo_path: (aegisRepoDraft[revId] || savedRepo() || "").trim(),
+          backup_path: revertBtn.getAttribute("data-backup"),
+          files: (revertBtn.getAttribute("data-files") || "").split("|")
+                   .filter(Boolean),
+        }),
+      }).then(function (r) { return r.json(); })
+        .then(function (rep) {
+          var box = document.getElementById("apply-" + revId);
+          if (box) box.innerHTML = '<div class="aegis-fix-out">' +
+            aegisEsc(rep.detail || "") + "</div>";
+          aegisRefresh();
+        })
+        .catch(function () {
+          revertBtn.disabled = false;
+          revertBtn.textContent = "Undo this change";
+        });
       return;
     }
     var wipeBtn = event.target.closest("[data-aegis-wipe]");

@@ -248,6 +248,19 @@ class RequestHandler(BaseHTTPRequestHandler):
                     return
                 write_json(self, HTTPStatus.OK, app.add_provider(body))
                 return
+            if name == "apply-fix":
+                write_json(self, HTTPStatus.OK, app.apply_fix(
+                    str(body.get("incident_id", "")),
+                    str(body.get("repo_path", "")),
+                    bool(body.get("allow_dirty"))))
+                return
+            if name == "revert-fix":
+                write_json(self, HTTPStatus.OK, app.revert_fix(
+                    str(body.get("incident_id", "")),
+                    str(body.get("repo_path", "")),
+                    str(body.get("backup_path", "")),
+                    list(body.get("files") or [])))
+                return
             if name == "proposal":
                 write_json(self, HTTPStatus.OK,
                            app.proposal(str(body.get("incident_id", ""))))
