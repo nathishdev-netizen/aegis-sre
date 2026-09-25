@@ -59,7 +59,9 @@ def test_clear_requires_sustained_recovery():
         assert gate.update(float(t), above_fire=False, below_clear=True) != "clear"
     # A relapse resets the recovery clock entirely.
     gate.update(60.0, above_fire=True, below_clear=False)
-    for t in range(65, 120, 5):
+    # A full 60s of held recovery after the relapse - the range must actually
+    # span clear_sustain_s, which the first version of this test did not.
+    for t in range(65, 130, 5):
         change = gate.update(float(t), above_fire=False, below_clear=True)
     assert change == "clear"
 

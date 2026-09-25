@@ -41,6 +41,8 @@ DURATION_PATTERNS = (
     re.compile(r"\btook\s+(\d+(?:\.\d+)?)\s*ms\b", re.I),
     re.compile(r"\bduration[=:\s]+(\d+(?:\.\d+)?)\s*ms\b", re.I),
     re.compile(r"\belapsed[=:\s]+(\d+(?:\.\d+)?)\s*ms\b", re.I),
+    # JSON idiom: the unit lives in the KEY ("durationMs": 45, latency_ms=12).
+    re.compile(r"\b(?:duration|latency|elapsed|took)[_]?ms[\"']?\s*[=:]\s*[\"']?(\d+(?:\.\d+)?)", re.I),
     re.compile(r"\b(\d+(?:\.\d+)?)\s*ms\b", re.I),
 )
 
@@ -49,6 +51,10 @@ SECONDS_PATTERNS = (
     re.compile(r"\bin\s+(\d+(?:\.\d+)?)\s*s(?:ec|econds?)?\b", re.I),
     re.compile(r"\bafter\s+(\d+(?:\.\d+)?)\s*s(?:ec|econds?)?\b", re.I),
     re.compile(r"\bduration[=:\s]+(\d+(?:\.\d+)?)\s*s(?:ec|econds?)?\b", re.I),
+    re.compile(r"\btook\s+(\d+(?:\.\d+)?)\s*s(?:ec|econds?)?\b", re.I),
+    # "- 16s," as a call/run total. Comma- or dash-delimited so a version string
+    # like "v3s" or an id fragment cannot be read as a measurement.
+    re.compile(r"[-\u2013]\s*(\d+(?:\.\d+)?)\s*s\s*[,.]", re.I),
 )
 
 # Values that are identifiers or settings, not measurements of this run. Without this
@@ -69,6 +75,14 @@ def _operation_name(message: str, duration_text: str) -> str:
     """
     head = message[: message.find(duration_text)] if duration_text in message else message
 
+    # Drop any logger scaffolding the parser left in place ("INFO voice.tts:") - it is
+    # the same on every line of a component, so including it collapses every distinct
+    # operation into one bucket named after the logger.
+    head = re.sub(
+        r"^\s*(?:INFO|WARN|WARNING|ERROR|DEBUG|TRACE|CRITICAL|FATAL|SUCCESS)\s+",
+        "", head, flags=re.I,
+    )
+    head = re.sub(r"^\s*[\w.]+:\s*", "", head)
     # Drop the component tag; the caller records that separately.
     head = re.sub(r"^\s*\[[^\]]+\]\s*", "", head)
     # Drop identifiers and values - they differ per run and would make every run its

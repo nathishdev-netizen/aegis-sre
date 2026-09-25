@@ -25,13 +25,26 @@ Doc rules kept, each one load-bearing:
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
 # Below this a match is noise, not a precedent.
 MIN_SIMILARITY = 0.35
 
-_WEIGHTS = {"templates": 0.5, "detectors": 0.3, "services": 0.1, "severity": 0.1}
+# The cause line's own words carry weight because template ids alone proved
+# too coarse in practice: two occurrences of the same "Lookup FAILED" error
+# landed in different templates (their error tails differ), while every
+# novelty-driven incident shares the detector - so the true precedent TIED
+# with two unrelated incidents at 0.5. Words from the redacted cause line
+# separate them.
+_WEIGHTS = {"templates": 0.35, "cause_tokens": 0.25, "detectors": 0.2,
+            "services": 0.1, "severity": 0.1}
+
+
+def _cause_tokens(incident: dict[str, Any]) -> list[str]:
+    line = (incident.get("evidence") or [""])[0].lower()
+    return sorted({w for w in re.findall(r"[a-z_.<>]+", line) if len(w) > 2})
 
 
 class SignatureExtractor:
@@ -45,6 +58,7 @@ class SignatureExtractor:
             "severity": incident.get("severity", ""),
             "deviation_types": sorted({d.get("type", "") for d in
                                        incident.get("deviations", [])} - {""}),
+            "cause_tokens": _cause_tokens(incident),
         }
 
 
@@ -78,8 +92,12 @@ class IncidentMemory:
     def remember(self, incident: dict[str, Any],
                  hypothesis: dict[str, Any] | None = None) -> None:
         cause_evidence = (incident.get("evidence") or [""])[0]
+        # Session counters restart at INC-1, so the bare id would make today's
+        # INC-1 OVERWRITE yesterday's precedent. The archive key carries the
+        # opening time; replaying the same file replaces the same rows (no
+        # duplicates) while a new day's incidents archive alongside the old.
         self.store.archive_incident({
-            "id": str(incident.get("id", "")),
+            "id": f"{incident.get('id', '')}@{incident.get('opened_at', '')}",
             "opened_at": incident.get("opened_at", ""),
             "resolved_at": incident.get("resolved_at") or "",
             "severity": incident.get("severity", ""),
@@ -106,10 +124,10 @@ class IncidentMemory:
 
     def similar(self, incident: dict[str, Any], top: int = 3) -> list[dict[str, Any]]:
         target = SignatureExtractor.extract(incident)
-        own_id = str(incident.get("id", ""))
+        own_key = f"{incident.get('id', '')}@{incident.get('opened_at', '')}"
         matches = []
         for row in self.store.archived_incidents():
-            if row["id"] == own_id:
+            if row["id"] == own_key:
                 continue
             try:
                 signature = json.loads(row["signature"] or "{}")
@@ -122,7 +140,8 @@ class IncidentMemory:
                 except ValueError:
                     hypothesis = {}
                 matches.append({
-                    "id": row["id"],
+                    "id": row["id"].split("@")[0],
+                    "key": row["id"],
                     "similarity": score,
                     "opened_at": row["opened_at"],
                     "severity": row["severity"],

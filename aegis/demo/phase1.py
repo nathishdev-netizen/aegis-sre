@@ -9,6 +9,7 @@ complete call's journey, assembled from lines that mostly never named it.
 
 from __future__ import annotations
 
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -18,7 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from aegis.l2_normalization.normalizer import Normalizer  # noqa: E402
 from aegis.l2_normalization.tracelinker import TraceLinker  # noqa: E402
 
-DEFAULT_LOG = "/Users/nathish/Desktop/Nathish/tt/Demos/voice-gateway/.logs/voice-gateway.log"
+# A demo with no argument uses AEGIS_DEMO_LOG - a product has no
+# business hardcoding one machine's paths.
+DEFAULT_LOG = os.environ.get("AEGIS_DEMO_LOG", "")
 
 
 def rule(title: str) -> None:

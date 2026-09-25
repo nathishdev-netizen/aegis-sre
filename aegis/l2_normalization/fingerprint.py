@@ -27,6 +27,24 @@ WILDCARD = "<*>"
 # Tokens replaced before matching, so that two lines differing only in an id or
 # a duration land on the same template. Ordered: specific before general.
 _VARIABLE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Quoted strings first, so their whole content collapses to one token. The
+    # doc's own template example writes `sku <STR>` - and without this, fifteen
+    # occurrences of the same warning quoting different filler text became
+    # fifteen templates and fifteen novelty signals. Bounded at 80 chars so a
+    # stray apostrophe cannot swallow half a line.
+    # A quoted HTTP request line is structure, not a variable: masking
+    # "GET /api/orders HTTP/1.1" to <STR> merged an access log's every line -
+    # 200s and 502s, /healthz and /api - into ONE template, so a 502 storm
+    # would have been invisible. Unquote it and let tokenization handle it.
+    (re.compile(r'"((?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s[^"\n]{0,120})"'), r"\1"),
+    # Keep the status code distinct: sc200 and sc502 must not merge to <NUM>.
+    (re.compile(r'\b(HTTP/\d(?:\.\d)?)\s+(\d{3})\b'), r"\1 sc\2"),
+    (re.compile(r'\bstatus[=:]\s*(\d{3})\b', re.I), r"status:sc\1"),
+    # ...then collapse to the CLASS: 200 and 201 are the same story, 200 and
+    # 502 are not. The class token is a hard split below.
+    (re.compile(r"\bsc([1-5])\d{2}\b"), r"sc\1xx"),
+    (re.compile(r"'[^'\n]{0,80}'"), "<STR>"),
+    (re.compile(r'"[^"\n]{0,80}"'), "<STR>"),
     (re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I), "<UUID>"),
     (re.compile(r"\b[0-9a-f]{16,}\b", re.I), "<HEX>"),
     (re.compile(r"https?://\S+"), "<URL>"),
@@ -140,16 +158,24 @@ class Fingerprinter:
             node["__leaf__"] = []
         return node["__leaf__"]
 
-    @staticmethod
-    def _similarity(tokens: list[str], template: list[str]) -> float:
-        """Fraction of positions that agree, wildcards counting as agreement."""
+    _STATUS_CLASS = re.compile(r"^sc[1-5]xx$")
+
+    @classmethod
+    def _similarity(cls, tokens: list[str], template: list[str]) -> float:
+        """Fraction of positions that agree, wildcards counting as agreement.
+
+        A status-class mismatch (sc2xx vs sc5xx) is a hard veto, not one
+        disagreeing token: an access log's lines differ in almost nothing
+        else, so plain similarity merged 200s and 502s into one template and
+        a 502 storm was statistically invisible."""
         if not template:
             return 0.0
-        agreed = sum(
-            1
-            for token, slot in zip(tokens, template)
-            if token == slot or slot == WILDCARD
-        )
+        agreed = 0
+        for token, slot in zip(tokens, template):
+            if token == slot or slot == WILDCARD:
+                agreed += 1
+            elif cls._STATUS_CLASS.match(token) and cls._STATUS_CLASS.match(slot):
+                return 0.0
         return agreed / len(template)
 
     @staticmethod
@@ -172,7 +198,12 @@ class Fingerprinter:
         if not tokens:
             tokens = ["<EMPTY>"]
 
-        leaf = self._leaf_for(tokens, create=True) or []
+        # `or []` here would be a bug: an empty leaf is falsy, so the real list
+        # would be discarded and every template appended to a throwaway - every
+        # line becoming its own template, which is the opposite of the job.
+        leaf = self._leaf_for(tokens, create=True)
+        if leaf is None:
+            leaf = []
         best: TemplateRecord | None = None
         best_score = 0.0
         for candidate in leaf:

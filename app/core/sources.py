@@ -11,6 +11,7 @@ attachment rules directly testable without spinning up threads or a server.
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -23,11 +24,22 @@ OWN_PID = os.getpid()
 
 # Ports that are never useful to attach to, even though they are listening.
 IGNORED_PORTS = frozenset({
-    5432,   # postgres
-    3306,   # mysql
-    6379,   # redis
-    27017,  # mongodb
-    11211,  # memcached
+    5432, 5433,   # postgres
+    3306,         # mysql
+    6379,         # redis
+    27017,        # mongodb
+    11211,        # memcached
+    9200, 9300,   # elasticsearch
+    2379,         # etcd
+    4040,         # ngrok inspector
+    7000, 5000,   # macOS AirPlay / ControlCenter
+})
+
+# Processes that are infrastructure, whatever port they hold. A database writes a log
+# file, so a port click on one "succeeds" and floods the dashboard with noise.
+IGNORED_PROCESSES = frozenset({
+    "postgres", "postmaster", "mysqld", "redis-server", "mongod", "memcached",
+    "rapportd", "controlce", "controlcenter", "ngrok",
 })
 
 
@@ -56,7 +68,10 @@ def is_plausible_source(item: dict[str, Any]) -> bool:
     """Whether a listening port is worth probing for logs at all."""
     if is_self(item):
         return False
-    return int(item.get("port", 0) or 0) not in IGNORED_PORTS
+    if int(item.get("port", 0) or 0) in IGNORED_PORTS:
+        return False
+    name = str(item.get("process", "")).lower()
+    return not any(name.startswith(p) for p in IGNORED_PROCESSES)
 
 
 def rank_candidates(ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -144,3 +159,48 @@ def describe_source(
         "attached": attached,
         "lines_seen": lines_seen,
     }
+
+
+def log_files_for_pid(pid: int) -> list[str]:
+    """Log files the process on this port already has open for writing.
+
+    Far more reliable than guessing conventional paths: if the app writes a log file,
+    the OS knows about it. Lets a click on a port attach to that app's real log even
+    when it serves nothing over HTTP.
+    """
+    if not pid:
+        return []
+    try:
+        result = subprocess.run(
+            ["lsof", "-p", str(pid)],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return []
+
+    candidates: list[str] = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 9:
+            continue
+        path = parts[-1]
+        if not path.startswith("/") or not path.endswith(".log"):
+            continue
+        # Skip the OS and other apps' logs - we want this project's own output.
+        if any(path.startswith(prefix) for prefix in ("/private/var/", "/var/", "/System/", "/Library/")):
+            continue
+        if path not in candidates:
+            candidates.append(path)
+    return candidates
+
+
+def best_log_file_for_pid(pid: int) -> str | None:
+    """Pick the most likely application log among the files a process has open."""
+    files = log_files_for_pid(pid)
+    if not files:
+        return None
+    # A file under a .logs/ or logs/ directory is almost certainly the app's own.
+    for path in files:
+        if "/.logs/" in path or "/logs/" in path:
+            return path
+    return files[0]

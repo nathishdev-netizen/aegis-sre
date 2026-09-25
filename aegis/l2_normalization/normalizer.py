@@ -21,6 +21,8 @@ nothing in app/ imports aegis - the existing agent stays provably unaffected.
 from __future__ import annotations
 
 import itertools
+import json
+import re
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -33,6 +35,61 @@ from aegis.l2_normalization.redactor import Redactor
 # A dump can be long, but an unbounded fold would let one malformed stream
 # swallow the whole file into a single event.
 MAX_CONTINUATION_LINES = 200
+
+# Structured-log metadata keys: consumed by parsing (level, time) or already
+# the message itself. Everything ELSE in a JSON log line is payload the v1
+# parser used to throw away - unwrapping {"msg": ..., "reqId": ..., "durationMs":
+# ...} to just the msg discarded the very fields correlation and baselines
+# feed on. They are re-attached as key=value text, which turns every JSON log
+# into logfmt - one downstream idiom instead of two.
+_JSON_META_KEYS = {"level", "severity", "time", "timestamp", "ts", "@timestamp",
+                   "msg", "message", "log", "logger", "name", "hostname", "pid", "v"}
+
+
+def _flatten_json_fields(raw_line: str, parsed_message: str) -> str:
+    stripped = raw_line.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return parsed_message
+    try:
+        payload = json.loads(stripped)
+    except ValueError:
+        return parsed_message
+    if not isinstance(payload, dict):
+        return parsed_message
+    extras = [f"{key}={value}" for key, value in payload.items()
+              if key.lower() not in _JSON_META_KEYS
+              and not isinstance(value, (dict, list)) and value is not None]
+    if not extras:
+        return parsed_message
+    return f"{parsed_message} {' '.join(extras)}".strip()
+
+
+# Logger scaffolding ("INFO voice.tts:") that sits between the timestamp and the
+# actual content in this format family.
+_SCAFFOLD = re.compile(
+    r"^\s*(?:INFO|WARN|WARNING|ERROR|DEBUG|TRACE|CRITICAL|FATAL|SUCCESS)\s+[\w.]+:\s*",
+    re.I,
+)
+
+# Rows of a structured dump (a table printed row by row through the logger).
+# Each row is a fully-formed log line with its own timestamp - so indentation
+# folding never sees them - but a box-drawing prefix or a bare closing brace
+# marks the CONTENT as a continuation of the entry above.
+_DUMP_ROW = re.compile(r"^(?:[\u2500-\u257f]|[}\]],?$)")
+
+# A top-left corner opens a dump: it is the dump's TITLE, so it starts the
+# event the following rows fold into, rather than folding itself.
+_DUMP_START = re.compile(r"^[\u250c\u256d]")
+
+
+def _continues_previous(raw_line: str, parsed_message: str) -> bool:
+    """Continuation by indentation (tracebacks) or by content (dump rows)."""
+    if is_continuation(raw_line):
+        return True
+    content = _SCAFFOLD.sub("", parsed_message or "").strip()
+    if _DUMP_START.match(content):
+        return False
+    return bool(content) and bool(_DUMP_ROW.match(content))
 
 
 @dataclass
@@ -58,6 +115,7 @@ class Normalizer:
         self.redactor = redactor or Redactor()
         self.fingerprinter = fingerprinter or Fingerprinter()
         self._pending: _Pending | None = None
+        self._last_real_ts = ""
         self._ids = itertools.count(1)
         self.lines_in = 0
         self.events_out = 0
@@ -70,17 +128,28 @@ class Normalizer:
             return None
         self.lines_in += 1
 
-        if self._pending is not None and is_continuation(raw_line) \
+        parsed = parse_log_line(raw_line.rstrip())
+        parsed["message"] = _flatten_json_fields(raw_line, parsed["message"])
+        # The v1 parser stamps wall-clock "now" on a line that carries no
+        # timestamp - right for live tailing, but on a historical file it
+        # fabricates a time that appears nowhere in the evidence. A timestamp
+        # is real only if the line actually contains it; otherwise the line
+        # inherits the last real one, like a reader would assume.
+        if parsed["timestamp"] and parsed["timestamp"] not in raw_line:
+            parsed["timestamp"] = self._last_real_ts
+        else:
+            self._last_real_ts = parsed["timestamp"]
+        if self._pending is not None \
+                and _continues_previous(raw_line, parsed["message"]) \
                 and len(self._pending.extra_lines) < MAX_CONTINUATION_LINES:
-            self._pending.extra_lines.append(raw_line.rstrip())
+            # Keep only the content: repeating the timestamp and logger name on
+            # every folded row buries the values the row exists to show.
+            content = _SCAFFOLD.sub("", parsed["message"] or raw_line.rstrip())
+            self._pending.extra_lines.append(content)
             return None
 
         completed = self._finalize()
-        self._pending = _Pending(
-            parsed=parse_log_line(raw_line.rstrip()),
-            extra_lines=[],
-            service=self.service,
-        )
+        self._pending = _Pending(parsed=parsed, extra_lines=[], service=self.service)
         return completed
 
     def flush(self) -> Event | None:
@@ -121,6 +190,9 @@ class Normalizer:
         )
 
         self.events_out += 1
+        fields = {"template_pattern": match.pattern}
+        if pending.extra_lines:
+            fields["folded_lines"] = len(pending.extra_lines)
         return Event(
             id=f"E-{next(self._ids)}",
             ts=pending.parsed["timestamp"],
@@ -130,5 +202,5 @@ class Normalizer:
             template_id=match.template_id,
             redactions=redaction.counts,
             is_novel=match.is_novel,
-            fields={"folded_lines": len(pending.extra_lines)} if pending.extra_lines else {},
+            fields=fields,
         )

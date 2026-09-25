@@ -115,6 +115,78 @@ def test_redaction_runs_before_fingerprinting():
         fingerprinter.add(redactor.redact(f"[api] CALL START from={number}").text)
     assert fingerprinter.template_count == 1
 
+# --- Normalizer folding (Phase 0b) -------------------------------------------
+
+def _events(lines, **kw):
+    from aegis.l2_normalization.normalizer import Normalizer
+    return list(Normalizer(**kw).feed_all(lines))
+
+
+def test_dump_rows_fold_under_their_title():
+    """The reference service prints a table row by row THROUGH the logger, so
+    every row is a fully-formed line with its own timestamp - indentation
+    folding never sees them, and 543 of 1288 lines became junk templates."""
+    events = _events([
+        "2026-09-01 19:00:47 INFO voice: ┌─ PLIVO → /voice/hangup",
+        "2026-09-01 19:00:47 INFO voice: │  BillDuration = 60",
+        "2026-09-01 19:00:47 INFO voice: │  CallStatus   = ringing",
+        "2026-09-01 19:00:48 INFO voice: [api] CALL END - 16s",
+    ])
+    assert len(events) == 2, [e.text_redacted for e in events]
+    assert events[0].fields["folded_lines"] == 2
+    assert "BillDuration = 60" in events[0].text_redacted
+
+
+def test_dump_title_starts_its_own_event():
+    """First fix folded the ┌ title row under whatever came before it, so every
+    dump collapsed into the blank "INFO voice:" template and the template list
+    said nothing about what was dumped."""
+    events = _events([
+        "2026-09-01 19:00:46 INFO voice: [api] answering",
+        "2026-09-01 19:00:47 INFO voice: ┌─ PLIVO → /voice/hangup",
+        "2026-09-01 19:00:47 INFO voice: │  BillDuration = 60",
+    ])
+    assert len(events) >= 2
+    # The title must live in its own event (with its rows folded under it),
+    # not inside the previous one. Its logger scaffold may legitimately
+    # precede the ┌ character, so assert containment, not prefix.
+    assert "┌─ PLIVO" not in events[0].text_redacted
+    assert "┌─ PLIVO" in events[1].text_redacted
+    assert events[1].fields.get("folded_lines") == 1
+
+
+def test_template_names_the_head_not_the_body():
+    """A folded event's template is its head line's shape; the body varies per
+    occurrence and would fragment the template space if included."""
+    events = _events([
+        "2026-09-01 19:00:47 INFO voice: ┌─ PLIVO → /voice/answer",
+        "2026-09-01 19:00:47 INFO voice: │  CallUUID = abc",
+        "2026-09-01 19:00:48 INFO voice: ┌─ PLIVO → /voice/answer",
+        "2026-09-01 19:00:48 INFO voice: │  CallUUID = def",
+    ])
+    assert len(events) == 2
+    assert events[0].template_id == events[1].template_id
+
+
+def test_folding_is_bounded():
+    """One malformed stream must not swallow the whole file into one event."""
+    from aegis.l2_normalization.normalizer import MAX_CONTINUATION_LINES
+    lines = ["2026-09-01 19:00:47 INFO voice: ┌─ dump"] + [
+        "2026-09-01 19:00:47 INFO voice: │  row = 1"
+    ] * (MAX_CONTINUATION_LINES + 50)
+    events = _events(lines)
+    assert len(events) > 1, "unbounded fold swallowed the stream"
+
+
+def test_normalizer_redacts_folded_bodies_too():
+    """PII inside a dump body must not survive just because it was folded."""
+    events = _events([
+        "2026-09-01 19:00:47 INFO voice: ┌─ PLIVO → /voice/answer",
+        "2026-09-01 19:00:47 INFO voice: │  CallerName = +919449248040",
+    ])
+    assert "919449248040" not in events[0].text_redacted
+    assert events[0].redactions.get("PHONE") == 1
+
 
 if __name__ == "__main__":
     failures = 0

@@ -34,13 +34,26 @@ from aegis.contracts.events import (
 # Explicit keys, in order of trust. A real trace_id outranks an application's
 # own call id, which outranks a generic request id.
 _KEY_PATTERNS = (
-    re.compile(r"\btrace[_-]?id[=:]\s*([\w-]{8,})", re.I),
+    re.compile(r"\btrace[_-]?id[\"']?\s*[=:]\s*[\"']?([\w-]{8,})", re.I),
     re.compile(r"\bcall(?:_?uuid|_?id)?[=:]\s*([\w-]{8,})", re.I),
-    re.compile(r"\b(?:request|correlation|session)[_-]?id[=:]\s*([\w-]{8,})", re.I),
+    # Quotes are optional so the same rule reads logfmt (requestID=abc) and
+    # JSON ("reqId":"req-9f1c") - the world's most common structured formats,
+    # and the first corpus run showed neither was being read at all.
+    re.compile(r"\b(?:req|request|correlation|session)[_-]?id[\"']?\s*[=:]\s*[\"']?([\w-]{6,})", re.I),
 )
 
-# A session is over when its owner says so...
-_CLOSERS = re.compile(r"\b(?:CALL END|hangup|session (?:closed|ended)|disconnected)\b", re.I)
+# Session boundaries, learned from the project's own vocabulary rather than
+# hardcoded. The first attempt said "CALL END" - the reference project's word -
+# and every other project's sessions stayed open forever. The second attempt
+# said any "END" - and the reference project's "TURN END" closed the whole
+# call mid-conversation. The rule that survives both: an opener like
+# "CALL START" or "ORDER START" names the session's own noun, and only that
+# noun's END closes it. Hard closers (hangup, disconnected) close regardless,
+# and a session opened without a named noun accepts any end-word.
+_OPENER = re.compile(r"\b(\w+)\s+START(?:ED)?\b", re.I)
+_NOUN_END = re.compile(r"\b(\w+)\s+END(?:ED)?\b", re.I)
+_HARD_CLOSERS = re.compile(r"\b(?:hangup|hung up|disconnected)\b", re.I)
+_GENERIC_END = re.compile(r"\b(?:end(?:ed)?|closed|completed?|finished)\b", re.I)
 # ...or when it has been silent this long. Without a timeout, a crash that
 # never logs its END would leave the session open forever and every later
 # unkeyed line would be inferred into a call that finished an hour ago.
@@ -56,24 +69,10 @@ def _epoch(ts: str) -> float | None:
         return None
 
 
-_OPENER = re.compile(r"\b(\w+)\s+START(?:ED)?\b", re.I)
-_NOUN_END = re.compile(r"\b(\w+)\s+END(?:ED)?\b", re.I)
-_HARD_CLOSERS = re.compile(r"\b(?:hangup|hung up|disconnected)\b", re.I)
-_GENERIC_END = re.compile(r"\b(?:end(?:ed)?|closed|completed?|finished)\b", re.I)
-
-
 @dataclass
 class _Session:
     key: str
     last_seen: float | None
-    # The session's own word for itself ("CALL", "ORDER"), from its opener.
-    noun: str = ""
-    # The session's own word for itself ("CALL", "ORDER"), from its opener.
-    noun: str = ""
-    # The session's own word for itself ("CALL", "ORDER"), from its opener.
-    noun: str = ""
-    # The session's own word for itself ("CALL", "ORDER"), from its opener.
-    noun: str = ""
     # The session's own word for itself ("CALL", "ORDER"), from its opener.
     noun: str = ""
 
@@ -124,10 +123,6 @@ class TraceLinker:
             event.correlation_basis = CORRELATION_NONE
             self.unattributed += 1
         return event
-
-
-
-
 
     @staticmethod
     def _closes(text: str, session: _Session) -> bool:

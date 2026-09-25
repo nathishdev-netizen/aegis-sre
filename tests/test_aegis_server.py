@@ -38,7 +38,8 @@ def test_state_carries_everything_the_page_renders():
     app = _app(CALLS)
     state = app.state()
     for key in ("project", "funnel", "verdicts", "incidents", "notes",
-                "templates", "patterns", "spec", "model", "updated_at"):
+                "templates", "patterns", "spec", "model", "updated_at",
+                "events", "gaps"):
         assert key in state, f"page would render without {key!r}"
     assert state["funnel"][0][1] == 16     # log lines
     assert state["model"]["calls_made"] == 0, "state() must never spend a model call"
@@ -68,6 +69,26 @@ def test_the_page_ships_with_the_server():
     page = (WEB_DIR / "index.html").read_text()
     assert "api/state" in page
     assert "Run verdicts" in page
+
+
+def test_stream_events_are_redacted():
+    """The live-stream panel shows what the pipeline stored - which must be
+    the redacted form, or the browser becomes the leak."""
+    app = _app("2026-09-01 10:00:00 INFO voice: CALL from=916360722483\n" * 5)
+    events = app.state()["events"]
+    assert events
+    assert all("916360722483" not in e["text"] for e in events)
+    assert any("<PHONE>" in e["text"] for e in events)
+    app.close()
+
+
+def test_ask_rejects_empty_questions_without_spending():
+    app = _app(CALLS)
+    before = app.router.budget.calls_made
+    result = app.ask("   ")
+    assert result["ok"] is False
+    assert app.router.budget.calls_made == before, "an empty question cost a call"
+    app.close()
 
 
 if __name__ == "__main__":

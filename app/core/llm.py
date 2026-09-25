@@ -19,6 +19,10 @@ from typing import Any
 from app.config import settings
 
 
+# Why the last model call failed, so the UI can be specific rather than silent.
+_LAST_ERROR: str | None = None
+
+
 def _client() -> Any | None:
     """Return an OpenAI client, or None when the SDK or API key is unavailable."""
     if not settings.llm_available:
@@ -59,13 +63,36 @@ def status() -> dict[str, Any]:
             "available": False,
             "detail": "openai package not installed (pip install -r requirements.txt).",
         }
+    if _LAST_ERROR:
+        return {"mode": "patterns", "available": False, "detail": _LAST_ERROR}
     return {"mode": "llm", "available": True, "detail": f"Interpreting with {settings.model}."}
+
+
+RUN_START_RE = re.compile(
+    r"\b(request received|incoming request|received request|call start|"
+    r"job start(?:ed|ing)?|task start(?:ed|ing)?|run start(?:ed|ing)?|"
+    r"starting (?:run|job|task|request)|invocation start)\b",
+    re.I,
+)
+
+
+def _latest_run(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Trim to the most recent run, if the logs mark where one begins.
+
+    Telling the model to "describe the latest run" is not enough when it is handed
+    200 lines spanning five calls - it described an old failure while the newest call
+    had succeeded. Cutting the context is what actually scopes the answer.
+    """
+    for index in range(len(logs) - 1, -1, -1):
+        if RUN_START_RE.search(str(logs[index].get("message", ""))):
+            return logs[index:]
+    return logs
 
 
 def _run_context(snapshot: dict[str, Any]) -> str:
     """Compact, factual view of the run. Only observed data - no derived guesses."""
     timeline = snapshot.get("timeline", [])[-settings.llm_timeline_window:]
-    logs = snapshot.get("log_lines", [])[-settings.llm_log_window:]
+    logs = _latest_run(snapshot.get("log_lines", []))[-settings.llm_log_window:]
     stages = [s for s in snapshot.get("stages", []) if s.get("seen")]
 
     lines = [
@@ -81,6 +108,10 @@ def _run_context(snapshot: dict[str, Any]) -> str:
     lines.append("RAW LOG LINES (oldest to newest):")
     for item in logs:
         lines.append(f"  {item.get('level','')} {item.get('message','')}")
+        # Stack traces are folded into their parent entry; include them so the model
+        # can name the failing frame instead of guessing from the summary line.
+        for detail in (item.get("detail") or [])[:20]:
+            lines.append(f"      {detail}")
     return "\n".join(lines)
 
 
@@ -97,12 +128,31 @@ def _chat(messages: list[dict[str, str]], *, max_tokens: int = 700) -> str | Non
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content
-    except Exception:
+    except Exception as exc:
         # A model/network failure must never fabricate a result; callers degrade.
+        # But record WHY, so the UI can say "out of credits" instead of silently
+        # behaving as though no key were configured.
+        global _LAST_ERROR
+        text = str(exc)
+        if "insufficient_quota" in text or "no credits remaining" in text:
+            _LAST_ERROR = "OpenAI account has no credits remaining - add credits to re-enable AI answers"
+        elif "rate_limit" in text.lower() or "429" in text:
+            _LAST_ERROR = "OpenAI rate limit hit - retrying shortly"
+        elif "invalid_api_key" in text or "Incorrect API key" in text:
+            _LAST_ERROR = "OPENAI_API_KEY is not valid"
+        else:
+            _LAST_ERROR = f"{exc.__class__.__name__}: {text[:120]}"
         return None
 
 
 INTERPRET_SYSTEM = """You interpret backend execution logs for a developer watching a run live.
+
+The lines may span SEVERAL separate runs (requests, calls, jobs). Describe the MOST
+RECENT one, and say so. Do not blend outcomes: if an earlier run succeeded and the
+latest failed, the answer is that the latest failed - never "completed successfully"
+in the same breath as a failure. Where the logs mark boundaries (CALL START/CALL END,
+Request received/Response sent, a correlation id), use them to find where the last
+run begins.
 
 You are given only what was actually observed. Ground every claim in that evidence.
 
@@ -114,13 +164,26 @@ Rules:
   explicit, low when you are reading between the lines.
 - If the run has not failed, reason and causes must be empty and status must not be "failed".
 
+Write the summary the way a colleague would say it out loud. State what happened -
+never narrate your own reading of the logs. Say "A call from 916... was answered and
+greeted", not "The most recent run involved a call". No phrases like "the run", "the
+system", "the logs indicate", "it appears that".
+
+Lead with the outcome. If something failed, the first sentence says what failed and
+why; the detail comes after.
+
+Also report what the numbers in the run mean. Durations, counts and repeated
+patterns are where the useful detail is - a step that took 6.9s, a turn that was
+skipped, a retry that succeeded. Only state what the lines actually show.
+
 Return JSON only:
 {
-  "summary": "2-3 sentences in plain English: what the run did and where it stands now.",
+  "summary": "2-3 sentences, plain spoken English. Outcome first. No log jargon.",
   "status": "running" | "failed" | "success" | "idle",
   "reason": "why it failed, or empty string if it has not failed",
   "causes": ["likely causes, most probable first; empty if not failed or if unknowable"],
   "fixes": ["concrete next steps a developer can take; empty if nothing is wrong"],
+  "insights": ["notable observations about THIS run - slow steps with their timings, skipped work and why, retries, anything a developer would want flagged. Empty if nothing stands out."],
   "confidence": 0-100,
   "evidence": ["exact log lines that support your reading"]
 }"""
@@ -149,8 +212,14 @@ def interpret_run(snapshot: dict[str, Any]) -> dict[str, Any] | None:
         "summary": str(data.get("summary", "")).strip(),
         "status": data.get("status"),
         "reason": str(data.get("reason", "")).strip(),
-        "causes": [str(c) for c in data.get("causes", []) if str(c).strip()],
+        # A cause of "unknown" is not a cause - it fills the panel with a word that
+        # says less than an empty panel would.
+        "causes": [
+            str(c) for c in data.get("causes", [])
+            if str(c).strip() and str(c).strip().lower() not in {"unknown", "n/a", "none", "unclear"}
+        ],
         "fixes": [str(f) for f in data.get("fixes", []) if str(f).strip()],
+        "insights": [str(i) for i in data.get("insights", []) if str(i).strip()][:5],
         "confidence": max(0, min(100, int(data.get("confidence", 0) or 0))),
         "evidence": [str(e) for e in data.get("evidence", []) if str(e).strip()],
         "source": "llm",
@@ -181,6 +250,12 @@ Rules:
   the verdict is "unknown".
 - Honour negation and outcome words in the question (failed, succeeded, skipped, retried).
 - Do not infer that a component exists because the question implies it does.
+- Prefer the EARLIEST line that explains an outcome over the last line that states it.
+  A summary line often reports a decision whose real cause was logged just before it -
+  "refused as not whitelisted" may follow "lookup FAILED ... 500 Internal Server Error",
+  in which case the honest answer is that the lookup errored and the service failed
+  closed, NOT that the user was genuinely off the list. Read the lines before the
+  outcome before concluding why it happened.
 
 Return JSON only:
 {
@@ -237,7 +312,8 @@ def answer_question(snapshot: dict[str, Any], question: str) -> dict[str, Any] |
     # embedding service fail?" about a database failure will otherwise accept the
     # premise and answer yes, citing lines that say nothing about embeddings.
     corpus = " ".join(
-        str(item.get("message", "")) for item in snapshot.get("log_lines", [])
+        str(item.get("message", "")) + " " + " ".join(item.get("detail") or [])
+        for item in snapshot.get("log_lines", [])
     ).lower()
     if corpus:
         grounded = [e for e in evidence if _appears_in(e, corpus)]

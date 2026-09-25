@@ -130,11 +130,13 @@ def detect_format(lines: list[str]) -> tuple[str, str]:
         else:
             fmt["plain"] += 1
 
-    # "plain" only wins if nothing more specific showed up at all: a structured format
-    # appearing in a meaningful minority still tells us more than the plain majority.
-    structured = [(name, n) for name, n in fmt.items() if name != "plain"]
+    # Rank by specificity, not raw count. A server's framework banner (uvicorn) is
+    # boilerplate; the application's own lines (loguru/json) describe the pipeline and
+    # matter more, even when the banner is briefly more numerous at startup.
+    SPECIFICITY = {"json": 4, "loguru": 3, "bracketed": 2, "uvicorn": 1, "plain": 0}
+    structured = [(name, n) for name, n in fmt.items() if name != "plain" and n]
     if structured:
-        line_format = max(structured, key=lambda item: item[1])[0]
+        line_format = max(structured, key=lambda item: (SPECIFICITY[item[0]], item[1]))[0]
     else:
         line_format = "plain"
 
@@ -229,7 +231,11 @@ def extract_components(lines: list[str], line_format: str = "unknown") -> tuple[
             if method == "none":
                 method = "logger-module"
 
-    viable = {name: n for name, n in counts.items() if n >= MIN_OCCURRENCES}
+    # A tag repeated across lines is certainly a component. When the tags come from an
+    # explicit, structured convention (a bracket tag or a JSON field) a single occurrence
+    # is still real - a stage that ran once in a short log is not noise.
+    threshold = 1 if method in ("bracket-tag", "json-field") else MIN_OCCURRENCES
+    viable = {name: n for name, n in counts.items() if n >= threshold}
     if not viable:
         return [], {}, "none"
 

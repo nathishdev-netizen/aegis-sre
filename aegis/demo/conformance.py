@@ -11,6 +11,7 @@ green on every dashboard - and achieved nothing.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -27,7 +28,9 @@ from aegis.l7_reasoning.router import ModelRouter  # noqa: E402
 from aegis.pipeline import Pipeline  # noqa: E402
 from aegis.l3_storage.store import AEGIS_HOME  # noqa: E402
 
-DEFAULT_LOG = "/Users/nathish/Desktop/Nathish/tt/Demos/voice-gateway/.logs/voice-gateway.log"
+# A demo with no argument uses AEGIS_DEMO_LOG - a product has no
+# business hardcoding one machine's paths.
+DEFAULT_LOG = os.environ.get("AEGIS_DEMO_LOG", "")
 VERDICT_ORDER = {"failed": 0, "hollow": 1, "degraded": 2, "achieved": 3, "unknown": 4}
 
 

@@ -13,10 +13,18 @@ from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
 from app.config import settings
+from app.core import learn as learning
+from app.core.baselines import Baselines
 from app.core import llm, sources
 from app.core.discovery import discover_listening_ports
+from app.store import Store
 from app.core.parser import (
     detect_branch,
+    is_run_start,
+    is_continuation,
+    strip_ansi,
+    unwrap_payload,
+    unwrap_payload_preserving_indent,
     infer_cause,
     infer_component,
     infer_skipped_component,
@@ -98,7 +106,13 @@ class Snapshot:
     # to avoid presenting a pattern match as if it were an explanation.
     interpretation: str = "patterns"
     evidence: list[str] = field(default_factory=list)
+    # Notable observations about this run - slow steps, skipped work, retries.
+    insights: list[str] = field(default_factory=list)
     backend: dict[str, Any] = field(default_factory=dict)
+    # What has been learned about this source's own format and vocabulary.
+    profile: dict[str, Any] = field(default_factory=dict)
+    # How this run compares to the same operations' own measured history.
+    baselines: dict[str, Any] = field(default_factory=dict)
 
 
 def _stage_list() -> list[StageState]:
@@ -121,7 +135,29 @@ class RuntimeState:
         self._selected_port: int | None = None
         self._event_counter = 0
         self._interpreting = False
+        self._pending_interpretation = False
+        self._raw_for_learning: list[str] = []
+        # Durations measured per source, persisted so "is this normal?" is answerable on
+        # a fresh start rather than only after the agent has watched for a while.
+        self._store: Store | None = None
+        self._baselines = Baselines()
+        self._findings: list[dict[str, Any]] = []
         self._snapshot = self._fresh_snapshot()
+
+    def _use_baselines_for(self, source_key: str) -> None:
+        """Point history at a source. Each source keeps its own baselines - one
+        project's timings say nothing about another's."""
+        if self._store is None:
+            try:
+                self._store = Store()
+            except Exception:
+                # No history is survivable; refusing to start is not.
+                self._store = None
+        try:
+            self._baselines = Baselines(self._store, source=source_key)
+        except Exception:
+            self._baselines = Baselines()
+        self._findings = []
 
     def _fresh_snapshot(self) -> Snapshot:
         return Snapshot(
@@ -153,8 +189,33 @@ class RuntimeState:
             updated_at=now_iso(),
             interpretation="patterns",
             evidence=[],
+            insights=[],
             backend=llm.status(),
+            profile={},
+            baselines={"findings": [], "operations": [], "ready": 0},
         )
+
+    def _publish_baselines_locked(self) -> None:
+        """Put measured history on the snapshot for the UI.
+
+        Only baselines with enough samples are marked ready - the UI must be able to
+        say "not enough history yet" rather than present two samples as a norm.
+        """
+        try:
+            operations = self._baselines.summary()
+        except Exception:
+            return
+        ready = [op for op in operations if op["ready"]]
+        self._snapshot.baselines = {
+            # Newest first: the finding that just fired is the one being looked at.
+            "findings": [
+                {**finding, "text": self._baselines.describe(finding)}
+                for finding in reversed(self._findings[-5:])
+            ],
+            "operations": ready[:12],
+            "ready": len(ready),
+            "learning": len(operations) - len(ready),
+        }
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -232,6 +293,7 @@ class RuntimeState:
         source: str,
         synthetic: bool = False,
         skipped: bool = False,
+        raw_line: str = "",
     ) -> dict[str, Any]:
         lane = self._lane(component)
         group = self._branch_group(lane, branch_id, branch_label)
@@ -247,6 +309,7 @@ class RuntimeState:
             "source": source,
             "synthetic": synthetic,
             "skipped": skipped,
+            "raw_line": raw_line or message,
         }
         group["nodes"].append(node)
         self._update_lane_status(lane)
@@ -282,29 +345,78 @@ class RuntimeState:
         if stage_key and status in {"running", "retrying", "failed", "completed"}:
             self._update_stage(stage_key, status)
 
+    # How serious each status is. A later, milder event must not quietly downgrade a
+    # failure the run has already recorded - a WARNING after an ERROR was resetting the
+    # whole run to "warning" and dropping its causes and fixes.
+    _STATUS_SEVERITY = {
+        "idle": 0, "info": 0, "observed": 0, "running": 1, "completed": 1,
+        "success": 1, "warning": 2, "retrying": 2, "skipped": 2, "failed": 3,
+    }
+
     def _set_current(self, stage_key: str | None, label: str, status: str) -> None:
         if stage_key:
             self._snapshot.current_stage = stage_key
         self._snapshot.current_label = label
-        self._snapshot.status = status
+
+        current = self._STATUS_SEVERITY.get(self._snapshot.status, 0)
+        incoming = self._STATUS_SEVERITY.get(status, 0)
+        # "running" always applies: it says where the run IS, not how it is going.
+        if incoming >= current or status == "running":
+            self._snapshot.status = status if incoming >= current else self._snapshot.status
+            if status == "running" and current < 3:
+                self._snapshot.status = status
 
     def _append_timeline(self, entry: TimelineEntry) -> None:
         self._snapshot.timeline.append(asdict(entry))
         self._snapshot.timeline = self._snapshot.timeline[-settings.max_timeline:]
 
     def _summarize(self) -> str:
+        """A plain-English sentence for when no model has interpreted the run yet.
+
+        This is a fallback, not a log dump. The previous version pasted a whole raw
+        ERROR line into the sentence, which produced the wall of text it was meant to
+        spare the reader.
+        """
         timeline = list(reversed(self._snapshot.timeline))
         last_failure = next((item for item in timeline if item["status"] == "failed"), None)
+
+        # Name the component that failed rather than quoting the line that says so.
+        failed = [
+            lane["component"] for lane in self._snapshot.graph["lanes"]
+            if lane["status"] == "failed" and lane["component"] != "runtime"
+        ]
+        where = failed[0] if failed else None
+
         if self._snapshot.status == "failed":
-            tail = f" Latest evidence: {last_failure['message']}" if last_failure else ""
-            return f"The run failed at {self._snapshot.current_label}.{tail}".strip()
+            # Fall back to the failing line's own component when no lane has been
+            # built yet - "This run failed" alone tells the reader nothing.
+            if not where and last_failure:
+                where = self._component_for(last_failure["message"], last_failure["message"])
+                if where == "runtime":
+                    where = None
+            detail = self._snapshot.reason
+            if detail in {"Run in progress.", "Awaiting execution events.", ""}:
+                detail = None
+            if where and detail:
+                return f"{where} failed. {detail}"
+            if where:
+                return f"{where} failed during this run."
+            return detail or "This run failed - the logs do not say why."
+
         if self._snapshot.status == "success":
-            return f"The run completed successfully after {self._snapshot.metrics['total_events']} events."
+            components = len([
+                lane for lane in self._snapshot.graph["lanes"]
+                if lane["component"] != "runtime"
+            ])
+            return f"The run finished normally across {components} component(s)."
+
         if self._snapshot.running:
-            if last_failure:
-                return f"The run is currently at {self._snapshot.current_label}, and the latest issue was {last_failure['message']}."
-            return f"The run is currently at {self._snapshot.current_label}."
-        return "Waiting for logs."
+            active = self._snapshot.current_label or "the current step"
+            if where:
+                return f"Still running at {active}, but {where} has already failed."
+            return f"Still running at {active}."
+
+        return "Nothing to report yet - waiting for the first log line."
 
     def _looks_like_completion(self, message: str, transition: dict[str, Any] | None) -> bool:
         lowered = message.lower()
@@ -325,8 +437,14 @@ class RuntimeState:
         terms = [word for word in words if len(word) > 2 and word not in stopwords]
         return list(dict.fromkeys(terms))
 
+    def _refresh_backend_status(self) -> None:
+        """Re-read the interpretation backend so the badge reflects reality now."""
+        with self._lock:
+            self._snapshot.backend = llm.status()
+
     def answer_query(self, query: str) -> dict[str, Any]:
         query = (query or "").strip()
+        self._refresh_backend_status()
         if not query:
             return {
                 "answer": "Ask a question about the current run.",
@@ -429,25 +547,49 @@ class RuntimeState:
     def refresh_ports(self) -> list[dict[str, Any]]:
         # Never offer or attach to ourselves: reading our own SSE feed makes the
         # agent parse its own state JSON and invent failures that never happened.
-        ports = [item for item in discover_listening_ports() if not self._is_self(item)]
+        # Filter the list the UI OFFERS, not just auto-attach candidates. Postgres is
+        # listening and writes a log file, so clicking it "worked" - and filled the
+        # dashboard with 2600 lines of database noise instead of the user's app.
+        ports = [item for item in discover_listening_ports() if sources.is_plausible_source(item)]
         auto_attach_port = self._pick_auto_port(ports) if settings.auto_attach else None
         with self._lock:
             self._snapshot.ports = ports
             self._snapshot.updated_at = now_iso()
         self.broadcast()
-        if auto_attach_port is not None and self._selected_port != auto_attach_port:
+        # Auto-attach is a convenience for an idle agent, never an override. A source
+        # the user chose - a file, a pipe, or a port they clicked - must survive a
+        # background port scan; otherwise the run they are watching is wiped mid-call.
+        with self._lock:
+            already_attached = (
+                self._selected_port is not None
+                or self._watched_path is not None
+                or self._snapshot.source.get("type") in {"file", "pipe"}
+            )
+        if auto_attach_port is not None and not already_attached:
             self.attach_port(auto_attach_port)
         return ports
 
     def _pick_auto_port(self, ports: list[dict[str, Any]]) -> int | None:
         return sources.pick_auto_port(ports)
 
+    # How much existing history to read when first attaching to a file. Starting at the
+    # very end shows an empty dashboard until the next line happens to arrive, which
+    # reads as broken - and discards the run that is often the reason for attaching.
+    BACKFILL_LINES = 200
+
     def _watch_file(self, path: Path) -> None:
         self._watch_stop.clear()
         self._watched_path = path
+        backfill: list[str] = []
         try:
-            self._watched_offset = path.stat().st_size
-        except FileNotFoundError:
+            size = path.stat().st_size
+            # Read the tail of what is already there, then continue from the true end
+            # so nothing is ingested twice.
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                existing = handle.read().splitlines()
+            backfill = [line for line in existing[-self.BACKFILL_LINES:] if line.strip()]
+            self._watched_offset = size
+        except (FileNotFoundError, OSError):
             self._watched_offset = 0
 
         self._snapshot.source = {
@@ -456,6 +598,14 @@ class RuntimeState:
             "path": str(path),
         }
         self.broadcast()
+
+        for line in backfill:
+            self.ingest_line(line, source=f"file:{path.name}")
+        # Interpret what was just backfilled. Otherwise a file that has stopped
+        # growing never triggers a model pass, and the brief shows the pattern
+        # template forever - which is exactly what the user kept seeing.
+        if backfill:
+            self._request_interpretation()
 
         def loop() -> None:
             while not self._watch_stop.is_set():
@@ -482,9 +632,12 @@ class RuntimeState:
                             if line.strip():
                                 self.ingest_line(line, source=f"file:{path.name}")
                 except Exception as exc:  # noqa: BLE001
+                    # Report WHAT failed, not just the exception class. "Watch error:
+                    # PermissionError" gave no way to tell a real permission problem
+                    # from a bug in this loop.
                     self._snapshot.source = {
                         "type": "file",
-                        "label": f"Watch error: {exc.__class__.__name__}",
+                        "label": f"Watch error: {exc.__class__.__name__}: {exc}"[:160],
                         "path": str(path),
                     }
                     self.broadcast()
@@ -493,13 +646,66 @@ class RuntimeState:
         self._watcher_thread = threading.Thread(target=loop, daemon=True)
         self._watcher_thread.start()
 
+    # Where the last attached source is remembered, so a restart resumes watching the
+    # same thing instead of coming back empty and looking broken.
+    _SESSION_FILE = Path.home() / ".loganalyst-session.json"
+
+    def _remember_source(self, path: str) -> None:
+        # Only remember a source that actually exists. A probe at a path that is not
+        # there, or a throwaway test fixture, silently replaced the user's real source
+        # and the agent came back watching nothing.
+        if not Path(path).is_file():
+            return
+        try:
+            self._SESSION_FILE.write_text(json.dumps({"path": path}), encoding="utf-8")
+        except OSError:
+            pass  # remembering is a convenience, never a requirement
+
+    def restore_last_source(self) -> bool:
+        """Re-attach to the source watched before the last shutdown."""
+        try:
+            data = json.loads(self._SESSION_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return False
+        path = data.get("path")
+        if not path or not Path(path).exists():
+            return False
+        self.attach_file(path)
+        return True
+
     def attach_file(self, raw_path: str) -> dict[str, Any]:
         path = Path(raw_path).expanduser()
         with self._lock:
             self._stop_watcher_locked()
             self._stop_port_trace_locked()
+            self._clear_run_locked()
+            # History is per source. Timings from one project say nothing about
+            # another's, so attaching elsewhere must not compare against them.
+            self._use_baselines_for(str(path))
             self._watch_stop = threading.Event()
             self._watch_file(path)
+        self._remember_source(str(path))
+        return self.snapshot()
+
+    def set_external_source(self, label: str) -> dict[str, Any]:
+        """Adopt a source that pushes to us, rather than one we pull from.
+
+        A piped stream is not discoverable by port scanning, so it announces itself;
+        any existing watcher is stopped so two sources never interleave.
+        """
+        with self._lock:
+            self._stop_watcher_locked()
+            self._stop_port_trace_locked()
+            self._clear_run_locked()
+            self._snapshot.source = {
+                "type": "pipe",
+                "label": label,
+                "path": "stdin",
+                "attached": True,
+                "lines_seen": 0,
+            }
+            self._snapshot.updated_at = now_iso()
+        self.broadcast()
         return self.snapshot()
 
     def detach_source(self) -> dict[str, Any]:
@@ -510,13 +716,59 @@ class RuntimeState:
         self.broadcast()
         return self.snapshot()
 
+    def _clear_run_locked(self) -> None:
+        """Drop the previous source's run so a new attachment starts clean.
+
+        Attaching elsewhere while keeping the old timeline, graph and metrics makes
+        the UI attribute one source's failures to another.
+        """
+        fresh = self._fresh_snapshot()
+        self._raw_for_learning = []
+        keep_ports = self._snapshot.ports
+        self._snapshot = fresh
+        self._snapshot.ports = keep_ports
+        self._event_counter = 0
+
     def attach_port(self, port: int) -> dict[str, Any]:
+        # Prefer the log FILE the process on this port already writes. Most real apps
+        # serve no log endpoint, so probing them first means seven 404s in their console
+        # before we conclude what the OS could have told us immediately.
+        pid = next(
+            (int(item.get("pid", 0) or 0) for item in self._snapshot.ports
+             if int(item.get("port", 0) or 0) == port),
+            0,
+        )
+        if not pid:
+            pid = next(
+                (int(item.get("pid", 0) or 0) for item in discover_listening_ports()
+                 if int(item.get("port", 0) or 0) == port),
+                0,
+            )
+        log_path = sources.best_log_file_for_pid(pid) if pid else None
+        if log_path:
+            snapshot = self.attach_file(log_path)
+            with self._lock:
+                self._snapshot.source = {
+                    "type": "file",
+                    "label": f"Reading port {port}'s log file",
+                    "path": log_path,
+                    "attached": True,
+                    "lines_seen": 0,
+                    "via_port": port,
+                }
+                self._snapshot.updated_at = now_iso()
+            self.broadcast()
+            return self.snapshot()
+
         with self._lock:
             self._stop_watcher_locked()
             self._stop_port_trace_locked()
             # Bind a fresh stop Event and generation to THIS attach. Both are passed
             # into the thread as locals, so replacing self._port_stop on a later
             # attach can never kill the new tracer or resurrect an orphaned one.
+            self._clear_run_locked()
+            # A streamed port keeps its own history, keyed by port rather than path.
+            self._use_baselines_for(f"port:{port}")
             stop_event = threading.Event()
             self._port_stop = stop_event
             self._port_generation += 1
@@ -561,6 +813,7 @@ class RuntimeState:
 
         while not stop_event.is_set() and self._is_current_port_trace(generation):
             probed: list[str] = []
+            found = False
 
             for path in probe_paths:
                 if stop_event.is_set() or not self._is_current_port_trace(generation):
@@ -623,10 +876,13 @@ class RuntimeState:
                                             )
                             # Stream ended; fall through and re-probe.
                             if count:
+                                found = True
                                 break
                         else:
                             body = response.read().decode("utf-8", errors="replace")
-                            lines = [line.strip() for line in body.splitlines() if line.strip()]
+                            # rstrip only: leading whitespace identifies stack frames
+                            # and must survive to the continuation check.
+                            lines = [line.rstrip() for line in body.splitlines() if line.strip()]
                             fresh = [line for line in lines if line not in seen_polled]
                             if lines:
                                 self._set_source(
@@ -643,12 +899,17 @@ class RuntimeState:
                                     self.ingest_line(line, source=f"port:{port}")
                                 # Keep polling this endpoint instead of returning, so
                                 # later lines are picked up too.
+                                found = True
                                 break
                 except (HTTPError, URLError, TimeoutError, ConnectionError, OSError):
+                    # A 404 raises HTTPError. `continue` here skips the for/else, which
+                    # is why an app with no log endpoint used to be probed forever.
                     continue
 
-            else:
-                # Every probe path failed: report it as not-a-log-source, not as attached.
+            if not found:
+                # Every probe path failed. Report it and STOP: re-probing forever turns
+                # the agent into a 404 flood against an app that simply does not serve
+                # logs over HTTP. The user can re-attach explicitly if that changes.
                 self._set_source(
                     generation,
                     f"No readable log stream found on port {port}",
@@ -657,18 +918,171 @@ class RuntimeState:
                     lines_seen=0,
                     probed=probed,
                 )
+                with self._lock:
+                    if self._port_generation == generation:
+                        self._selected_port = None
+                return
 
             stop_event.wait(3.0)
 
+    def _append_continuation(self, raw_line: str) -> dict[str, Any]:
+        """Attach a stack-trace line to the entry it belongs to.
+
+        A traceback is one failure, not five. Folding continuations into the parent
+        keeps metrics honest, stops fake components appearing in the graph, and gives
+        the model the whole trace as a single piece of evidence.
+        """
+        text = strip_ansi(raw_line or "").rstrip()
+        with self._lock:
+            if not self._snapshot.log_lines:
+                return json.loads(json.dumps(asdict(self._snapshot)))
+            entry = self._snapshot.log_lines[-1]
+            detail = entry.get("detail") or []
+            if len(detail) < 40:
+                detail.append(text)
+            entry["detail"] = detail
+            self._snapshot.updated_at = now_iso()
+
+            if self._snapshot.timeline:
+                last = self._snapshot.timeline[-1]
+                last_detail = last.get("detail") or []
+                if len(last_detail) < 40:
+                    last_detail.append(text)
+                last["detail"] = last_detail
+        self.broadcast()
+        return self.snapshot()
+
+    def _relabel_lanes_locked(self) -> None:
+        """Re-assign every node once the project's vocabulary is known.
+
+        The first lines of a source arrive before there is enough evidence to learn from
+        (a framework banner, typically), so they are labelled with the built-in guesses.
+        Relabel each NODE rather than each lane: lines grouped together under a guess
+        often belong to different components, so a lane must be able to split apart and
+        not merely be renamed.
+        """
+        discovered = self._snapshot.profile.get("components") or []
+        if not discovered:
+            return
+
+        loose: list[tuple[str, dict[str, Any]]] = []
+        for lane in self._snapshot.graph["lanes"]:
+            for group in lane["branch_groups"]:
+                for node in group["nodes"]:
+                    raw = node.get("raw_line") or node.get("message", "")
+                    renamed = self._component_for(node.get("message", ""), raw)
+                    loose.append((renamed if renamed in discovered else "runtime", node))
+
+        merged: dict[str, dict[str, Any]] = {}
+        for name, node in loose:
+            lane = merged.get(name)
+            if lane is None:
+                lane = {
+                    "component": name,
+                    "status": "idle",
+                    "seen": True,
+                    "branch_groups": [{"id": "main", "label": "Main path",
+                                       "status": "idle", "nodes": []}],
+                    "node_count": 0,
+                }
+                merged[name] = lane
+            node["component"] = name
+            lane["branch_groups"][0]["nodes"].append(node)
+
+        for lane in merged.values():
+            self._update_lane_status(lane)
+        self._snapshot.graph["lanes"] = list(merged.values())
+
+    def _component_for(self, message: str, raw_line: str) -> str:
+        """Name the component for a line, preferring the project's own vocabulary.
+
+        A discovered tag beats the built-in keyword rules: the rules were written for an
+        imagined pipeline, while the tag is what this project actually calls the stage.
+        """
+        discovered = self._snapshot.profile.get("components") or []
+        if discovered:
+            text = strip_ansi(raw_line or "")
+            # An explicit [tag] is definitive - but only the LAST one on the line.
+            # Loguru writes "app.identity:lookup:44 - [intent] ..." so an earlier module
+            # path would otherwise win over the tag the developer actually wrote.
+            tags = re.findall(r"\[([a-zA-Z][\w.\-]{1,30})\]", text)
+            for match in reversed(tags):
+                name = match.rsplit(".", 1)[-1].lower()
+                if name in discovered:
+                    return name
+            lowered = text.lower()
+            for name in discovered:
+                if re.search(rf"\b{re.escape(name)}\b", lowered):
+                    return name
+            # The project's vocabulary is known and this line is not part of it -
+            # framework banners, warnings from libraries. Say so, rather than inventing
+            # a pipeline stage the project does not have.
+            return "runtime"
+
+    # Debug scaffolding a developer switched on deliberately (payload/header dumps,
+    # box-drawing frames). It is not execution - counting it swamps the real events.
+    _NOISE = re.compile(
+        # Box-drawing characters anywhere: loggers put them after their own prefix,
+        # so anchoring to the line start missed every one of them.
+        r"[\u2500-\u257F]"
+        r"|\[(?:hdr|header|headers|body|payload|req|res|dump|raw)\]",
+        re.I,
+    )
+
+    def _is_noise(self, raw_line: str, message: str) -> bool:
+        text = strip_ansi(raw_line or "")
+        if self._NOISE.search(text) or self._NOISE.search(message or ""):
+            return True
+        # A line whose entire content is a logger prefix carries no information.
+        return not re.sub(r"^\s*[\w.]+:?\s*$", "", (message or "").strip())
+        return infer_component(message)
+
     def ingest_line(self, raw_line: str, source: str = "manual") -> dict[str, Any]:
+        # Continuation lines belong to the previous event; they are not events.
+        # Unwrap first (SSE sends {"line": "  File ..."}) but keep the indentation,
+        # since indentation is what identifies a stack frame.
+        unwrapped = unwrap_payload_preserving_indent(raw_line)
+        if is_continuation(unwrapped):
+            return self._append_continuation(unwrapped)
+
+        # Payload/header dumps are debug scaffolding, not execution. Fold them into the
+        # preceding event so they stay readable without swamping the metrics - 170 of
+        # 200 events were header lines from DUMP_PAYLOADS.
+        _peek = parse_log_line(raw_line)
+        if self._is_noise(raw_line, _peek["message"]) and self._snapshot.log_lines:
+            return self._append_continuation(unwrapped)
+
         parsed = parse_log_line(raw_line)
-        component = infer_component(parsed["message"])
+        with self._lock:
+            # Learn before naming: otherwise the first lines are labelled with the
+            # built-in guesses and the diagram carries two vocabularies at once.
+            self._raw_for_learning.append(raw_line)
+            if len(self._raw_for_learning) > 400:
+                self._raw_for_learning = self._raw_for_learning[-400:]
+            if len(self._raw_for_learning) % 5 == 0 or not self._snapshot.profile:
+                previous = self._snapshot.profile.get("components") or []
+                self._snapshot.profile = learning.learn(self._raw_for_learning).as_dict()
+                if (self._snapshot.profile.get("components") or []) != previous:
+                    self._relabel_lanes_locked()
+        component = self._component_for(parsed["message"], raw_line)
+        # Measure before any interpretation: a duration is a fact about this run, and
+        # comparing it to the same operation's own history needs no model.
+        try:
+            finding = self._baselines.observe(component, parsed["message"], parsed["timestamp"])
+        except Exception:
+            finding = None
+        if finding:
+            with self._lock:
+                self._findings.append(finding)
+                self._findings = self._findings[-20:]
         transition = infer_transition(parsed["message"])
         branch = detect_branch(parsed["message"])
         skipped_component = infer_skipped_component(parsed["message"])
         with self._lock:
             self._event_counter += 1
-            self._snapshot.running = True
+            # `running` is derived from the verdict below, not set on every line: a
+            # tailed file keeps delivering lines long after a run has failed, so
+            # "a line arrived" is not evidence that the run is still healthy.
             self._snapshot.metrics["total_events"] += 1
             self._snapshot.log_lines.append({**parsed, "source": source})
             self._snapshot.log_lines = self._snapshot.log_lines[-settings.max_log_lines:]
@@ -704,6 +1118,11 @@ class RuntimeState:
                     self._snapshot.metrics["skipped"] += 1
 
             if skipped_component:
+                # Route through the discovered vocabulary too: a synthetic skip node
+                # built from infer_component put "API / Gateway" beside the project's
+                # own "api" lane, showing one component twice under two names.
+                skipped_component = self._component_for(parsed["message"], raw_line) \
+                    if (self._snapshot.profile.get("components") or []) else skipped_component
                 self._add_graph_node(
                     component=skipped_component,
                     label=f"{skipped_component} skipped",
@@ -719,16 +1138,34 @@ class RuntimeState:
                 self._snapshot.metrics.setdefault("skipped", 0)
                 self._snapshot.metrics["skipped"] += 1
 
+            # A new run starts here, whatever this project calls it. Checked BEFORE the
+            # transition branch and regardless of current status: a successful call that
+            # followed a failed one kept reporting the failure, because the reset only
+            # ran for a stage named "request" and only when status was already terminal.
+            if is_run_start(parsed["message"]):
+                self._snapshot.status = "running"
+                self._snapshot.reason = "Run in progress."
+                self._snapshot.possible_causes = []
+                self._snapshot.suggested_fixes = []
+                self._snapshot.evidence = []
+                self._snapshot.confidence = 0
+                self._snapshot.interpretation = "patterns"
+                # Lane statuses describe the previous run; a fresh run redraws them.
+                self._snapshot.graph["lanes"] = []
+                self._snapshot.metrics["failures"] = 0
+                self._snapshot.metrics["retries"] = 0
+                self._snapshot.metrics["skipped"] = 0
+
             if transition:
-                # A new request starts a new run: clear the previous cycle's verdict so
-                # a stale "completed successfully" cannot sit next to a fresh failure.
-                if transition["stage"] == "request" and self._snapshot.status in {"failed", "success"}:
+                if False:
                     self._snapshot.status = "running"
                     self._snapshot.reason = "Run in progress."
                     self._snapshot.possible_causes = []
                     self._snapshot.suggested_fixes = []
                     self._snapshot.evidence = []
                     self._snapshot.confidence = 0
+                    # The previous run's model summary does not describe this one.
+                    self._snapshot.interpretation = "patterns"
                 if transition["stage"]:
                     self._set_stage_flow(transition["stage"], transition["status"])
                 if transition["status"] == "retrying":
@@ -756,7 +1193,10 @@ class RuntimeState:
                     )
                 )
 
-            cause = infer_cause(parsed["message"])
+            # A failure cause must come from a line that reports a failure. An INFO
+            # line mentioning a failure word is describing config or history, not an
+            # error - that is how "timeout=45.0s" became a reported outage.
+            cause = infer_cause(parsed["message"]) if parsed["level"] in {"ERROR", "WARN"} else None
             if cause:
                 # Pattern match only. Labelled as such, and given no confidence score -
                 # a regex hit on "timeout" is an observation, not a diagnosis. The LLM
@@ -767,24 +1207,37 @@ class RuntimeState:
                 self._snapshot.confidence = 0
                 self._snapshot.interpretation = "patterns"
                 self._snapshot.status = "failed"
-                self._snapshot.running = True
+                # `running` means "still executing", not "a failure was seen". Setting
+                # it here made the headline read "Run in progress" on a failed run,
+                # directly contradicting the FAILED badge beside it.
 
             if self._looks_like_completion(parsed["message"], transition):
                 self._snapshot.running = False
-                self._snapshot.status = "success"
                 self._snapshot.current_stage = "response"
                 self._snapshot.current_label = "Completed"
-                self._snapshot.reason = "Execution completed successfully."
-                self._snapshot.confidence = 0
                 self._set_stage_flow("response", "completed")
+                # A run that reached the end after failing did not succeed - it finished
+                # degraded. Overwriting the failure here erased the reason and the fixes,
+                # leaving a run with a red ERROR line reporting "completed successfully".
+                if self._snapshot.status != "failed":
+                    self._snapshot.status = "success"
+                    self._snapshot.reason = "Execution completed successfully."
+                    self._snapshot.confidence = 0
+                elif self._snapshot.reason == "Execution completed successfully.":
+                    # A completion line arrived after a failure: the run finished, but
+                    # it did not succeed. Leaving the success text made the brief say
+                    # "completed successfully" directly above the failure that caused it.
+                    self._snapshot.reason = "The run reached its end, but a step failed."
 
-            status_for_node = (
-                "failed"
-                if self._snapshot.status == "failed"
-                else transition["status"]
-                if transition
-                else "observed"
-            )
+            # A node describes the line that produced it. Stamping every node with the
+            # run's overall status marked "Authentication passed" as failed once any
+            # later step failed - a success line must never render as a failure.
+            if transition:
+                status_for_node = transition["status"]
+            elif parsed["level"] == "ERROR":
+                status_for_node = "failed"
+            else:
+                status_for_node = "observed"
             node = self._add_graph_node(
                 component=component,
                 label=transition["label"] if transition else parsed["message"] or component,
@@ -794,12 +1247,21 @@ class RuntimeState:
                 branch_id=branch_id,
                 branch_label=branch_label,
                 source=source,
+                raw_line=raw_line,
             )
             self._snapshot.graph["last_component"] = component
             self._snapshot.graph["last_node_id"] = node["id"]
             self._snapshot.graph["next_likely"] = self._most_likely_successor(component)
 
-            self._snapshot.summary = self._summarize()
+            # A run is "running" only while it has neither failed nor completed.
+            self._snapshot.running = self._snapshot.status not in {"failed", "success", "idle"}
+            # Do not overwrite a model-written summary with the template. Ingest runs
+            # on every line, so a tailed file destroyed the AI summary seconds after
+            # it arrived - which is why the brief kept reverting to "The run failed at
+            # X". The next interpretation pass replaces it properly.
+            if self._snapshot.interpretation != "llm":
+                self._snapshot.summary = self._summarize()
+            self._publish_baselines_locked()
             self._snapshot.updated_at = now_iso()
 
         self.broadcast()
@@ -816,6 +1278,7 @@ class RuntimeState:
             return
         with self._lock:
             if self._interpreting:
+                self._pending_interpretation = True
                 return
             self._interpreting = True
 
@@ -837,12 +1300,19 @@ class RuntimeState:
                         self._snapshot.suggested_fixes = result["fixes"]
                     self._snapshot.confidence = result["confidence"]
                     self._snapshot.evidence = result["evidence"]
+                    self._snapshot.insights = result.get("insights") or []
                     self._snapshot.interpretation = "llm"
                     self._snapshot.updated_at = now_iso()
                 self.broadcast()
             finally:
                 with self._lock:
                     self._interpreting = False
+                    stale = self._pending_interpretation
+                    self._pending_interpretation = False
+                # Lines that arrived mid-call were skipped by the in-flight guard;
+                # run once more so the brief reflects them.
+                if stale:
+                    self._request_interpretation()
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -925,4 +1395,3 @@ class RuntimeState:
             timer.start()
 
         emit()
-

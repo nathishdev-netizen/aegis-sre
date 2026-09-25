@@ -23,19 +23,28 @@ from typing import Any
 # Ordered. Longer, more specific patterns run first so a card number is not
 # partially consumed by the generic long-digit rule.
 _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
-    # Card numbers: 13-19 digits, optionally grouped. Checked before phone
-    # numbers, which are shorter and would otherwise match a fragment.
-    ("CARD", re.compile(r"\b(?:\d[ -]?){13,19}\b")),
+    # Card numbers: 13-19 digits, optionally grouped, and validated by Luhn (see
+    # _luhn_ok). Checked before phone numbers, which are shorter and would
+    # otherwise match a fragment.
+    # The trailing separator is not consumed - "(?:\d[ -]?){13,19}" swallowed the
+    # space after the last digit and produced "<CARD>charged".
+    ("CARD", re.compile(r"(?<![\d.])\d(?:[ -]?\d){12,18}(?![\d.])")),
     ("EMAIL", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
-    # Bearer tokens, API keys and the like. Deliberately broad.
-    ("TOKEN", re.compile(
-        r"\b(?:sk|pk|rk|ghp|gho|ghs|xox[baprs])[-_][A-Za-z0-9_-]{8,}\b")),
-    ("TOKEN", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*", re.I)),
-    # Common secret-bearing keys in structured text: token=..., password: "..."
+    # Keyed secrets first: once "api_key=sk-..." is redacted as SECRET, the value
+    # is gone, so the TOKEN rules below cannot match it again and count it twice.
     ("SECRET", re.compile(
         r"\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|"
         r"refresh[_-]?token|authorization|auth[_-]?token|private[_-]?key)"
-        r"\s*[=:]\s*[\"']?([^\s\"',}]{4,})[\"']?", re.I)),
+        r"\s*[=:]\s*[\"']?"
+        # An optional scheme word is consumed with the value. Without this,
+        # "Authorization: Bearer eyJ..." redacted the word "Bearer" and left the
+        # token itself in the clear - a fail-open, which P7 forbids outright.
+        r"(?:(?:Bearer|Basic|Token|JWT)\s+)?"
+        r"([^\s\"',}]{4,})[\"']?", re.I)),
+    # Bare tokens with no key name in front of them. Deliberately broad.
+    ("TOKEN", re.compile(
+        r"\b(?:sk|pk|rk|ghp|gho|ghs|xox[baprs])[-_][A-Za-z0-9_-]{8,}\b")),
+    ("TOKEN", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*", re.I)),
     # Phone numbers: 10-15 digits with an optional country prefix. The reference
     # log carries these as bare digits (from=916360722483), so a leading + is
     # not required - which is precisely why a naive rule would have missed them.
@@ -54,26 +63,6 @@ _KEEP = re.compile(
     r"|v\d+(?:\.\d+)*\b"                                       # versions
     r")", re.I,
 )
-
-
-
-
-# Rules whose match must pass an extra check before it is treated as sensitive.
-
-
-
-
-# Rules whose match must pass an extra check before it is treated as sensitive.
-
-
-
-
-# Rules whose match must pass an extra check before it is treated as sensitive.
-
-
-
-
-# Rules whose match must pass an extra check before it is treated as sensitive.
 
 
 def _luhn_ok(digits: str) -> bool:

@@ -103,12 +103,29 @@ MESSY = [
     ("INFO", "Response sent status=500"),
 ]
 
+# A real Python traceback: one failure that spans many physical lines.
+TRACEBACK = [
+    ("INFO", "Request received POST /api/embed"),
+    ("INFO", "Authentication passed for user 4821"),
+    ("INFO", "Calling embedding service at http://embeddings:8080"),
+    ("ERROR", "Unhandled exception in request handler"),
+    ("RAW", "Traceback (most recent call last):"),
+    ("RAW", '  File "/app/pipeline.py", line 88, in embed'),
+    ("RAW", "    return client.embed(payload)"),
+    ("RAW", '  File "/app/client.py", line 42, in embed'),
+    ("RAW", "    raise TimeoutError('embedding service unreachable')"),
+    ("RAW", "TimeoutError: embedding service unreachable"),
+    ("INFO", "Request finished status=500"),
+]
+
+
 SCENARIOS = {
     "success": SUCCESS,
     "failure": FAILURE,
     "db": DB_FAILURE,
     "ratelimit": RATE_LIMIT,
     "messy": MESSY,
+    "traceback": TRACEBACK,
 }
 
 
@@ -124,8 +141,12 @@ def build_lines(scenario: str, count: int) -> list[str]:
     while True:
         source = pool[cycle % len(pool)]
         for level, message in source:
-            stamp = time.strftime("%H:%M:%S")
-            lines.append(f"{stamp} {level} {message}" if message.strip() else message)
+            if level == "RAW":
+                # Emitted verbatim: indentation is what marks a continuation line.
+                lines.append(message)
+            else:
+                stamp = time.strftime("%H:%M:%S")
+                lines.append(f"{stamp} {level} {message}" if message.strip() else message)
             if count and len(lines) >= count:
                 return lines
         cycle += 1

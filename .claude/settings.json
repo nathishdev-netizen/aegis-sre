@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill -f \"python3 run.py\")",
+      "Bash(curl -s -X POST --max-time 10 http://127.0.0.1:3000/api/reset -d '{}')",
+      "Bash(curl -s -X POST --max-time 10 http://127.0.0.1:3000/api/trace-port -H 'Content-Type: application/json' -d '{\"port\":5055}')",
+      "Bash(python3 -c ' *)",
+      "Bash(awk '{print $2, $11, $12}')",
+      "Bash(kill -9 14985)",
+      "Bash(python3 -c \"from dotenv import load_dotenv; print\\('dotenv OK'\\)\")",
+      "Bash(python3 tests/test_regressions.py)",
+      "Bash(pkill -9 -f \"python3 run.py\")",
+      "Bash(pkill -9 -f hotel_pipeline)",
+      "Bash(nohup python3 demo/hotel_pipeline.py)",
+      "Bash(lsof -ti:3000)",
+      "Bash(python3 -c \"import json,sys; s=json.load\\(sys.stdin\\)['state']; print\\('backend:', s['backend']\\)\")",
+      "Bash(nohup python3 demo/log_generator.py --scenario failure --count 22 --rate 4 --port 5060)",
+      "Bash(curl -s -X POST --max-time 10 http://127.0.0.1:3000/api/trace-port -H 'content-type: application/json' -d '{\"port\":5060}')",
+      "Bash(curl -s --max-time 15 http://127.0.0.1:3000/api/state)",
+      "Bash(pkill -f log_generator)",
+      "Bash(nohup python3 demo/log_generator.py --scenario messy --count 12 --rate 5 --port 5061)",
+      "Bash(curl -s -X POST --max-time 10 http://127.0.0.1:3000/api/trace-port -H 'content-type: application/json' -d '{\"port\":5061}')",
+      "Bash(pkill -f hotel_pipeline)",
+      "Bash(nohup python3 demo/log_generator.py --scenario ratelimit --count 16 --rate 4 --port 5062)",
+      "Bash(timeout 12 python3 run.py)",
+      "Bash(nohup python3 demo/log_generator.py --scenario db --count 14 --rate 4 --port 5063)",
+      "Bash(curl -s -X POST --max-time 10 http://127.0.0.1:3000/api/trace-port -H 'content-type: application/json' -d '{\"port\":5063}')",
+      "Bash(curl -s -X POST --max-time 20 http://127.0.0.1:3000/api/ask -H 'content-type: application/json' -d '{\"query\":\"Did the embedding service fail?\"}')"
+    ]
+  }
+}

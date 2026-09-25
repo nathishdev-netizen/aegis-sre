@@ -1,0 +1,26 @@
+{
+  "name": "log-agent",
+  "version": "1.0.0",
+  "description": "Local AI agent that watches a running app and explains its logs",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac --publish never"
+  },
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "local.loganalyst.agent",
+    "productName": "Log Agent",
+    "files": ["src/**/*", "web/**/*"],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [{ "target": "dir", "arch": ["arm64"] }],
+      "identity": null
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}

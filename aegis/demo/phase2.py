@@ -9,6 +9,7 @@ speak; a model (later, C10) decides what to say.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from collections import Counter
@@ -20,7 +21,9 @@ from aegis.contracts.events import Event  # noqa: E402
 from aegis.l5_detection.detectors import DetectionEngine  # noqa: E402
 from aegis.pipeline import Pipeline  # noqa: E402
 
-DEFAULT_LOG = "/Users/nathish/Desktop/Nathish/tt/Demos/voice-gateway/.logs/voice-gateway.log"
+# A demo with no argument uses AEGIS_DEMO_LOG - a product has no
+# business hardcoding one machine's paths.
+DEFAULT_LOG = os.environ.get("AEGIS_DEMO_LOG", "")
 
 
 def rule(title: str) -> None:
@@ -84,12 +87,15 @@ def main(argv: list[str]) -> int:
                       text_redacted=text, template_id=template)
         fires += sum(1 for s in engine.observe(event) if s.detector == "RateSpike")
 
-    # Ten minutes of a quiet baseline, then the doc's 400-line burst.
+    # Ten minutes of a quiet baseline, then a 400-line burst. The burst spans
+    # 40 seconds because the gate requires the breach to SUSTAIN - a first
+    # version compressed it into 10s and correctly got zero signals, which is
+    # hysteresis refusing to page on a blip shorter than its sustain window.
     for minute in range(10):
         feed("reserve failed for sku <STR>: insufficient stock", minute * 60, "T-0912")
     for i in range(400):
-        feed("reserve failed for sku <STR>: insufficient stock", 660 + i // 40, "T-0912")
-    print(f"  400 identical error lines in 10 seconds -> {fires} RateSpike signal(s).")
+        feed("reserve failed for sku <STR>: insufficient stock", 660 + i // 10, "T-0912")
+    print(f"  400 identical error lines in 40 seconds -> {fires} RateSpike signal(s).")
     print("  One incident-worthy signal, not four hundred alerts. Hysteresis holds")
     print("  it FIRING until the rate stays low; there is no flapping to page on.")
 

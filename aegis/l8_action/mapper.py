@@ -43,8 +43,13 @@ def _fragments(evidence_line: str) -> list[str]:
     fragments = []
     for piece in pieces:
         words = piece.split()
-        if len(words) >= 3:
-            fragments.append(" ".join(words))
+        cleaned = " ".join(words)
+        # Colons chop log messages into short pieces, and a strict three-word
+        # minimum dropped "pool exhausted" entirely - the mapper found nothing
+        # for the doc's own worked example. Two words qualify when they are
+        # long enough to be distinctive rather than half the repo.
+        if len(words) >= 3 or (len(words) == 2 and len(cleaned) >= 12):
+            fragments.append(cleaned)
     fragments.sort(key=len, reverse=True)
     return fragments[:4]
 

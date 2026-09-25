@@ -75,7 +75,7 @@ class Settings:
     llm_timeline_window: int = 30
 
     # Source attachment
-    auto_attach: bool = True
+    auto_attach: bool = False
     probe_paths: tuple[str, ...] = field(
         default_factory=lambda: (
             "/events", "/stream", "/logs/stream",
@@ -104,7 +104,7 @@ def load_settings() -> Settings:
         max_timeline=_get_int("LOG_AGENT_MAX_TIMELINE", 60),
         llm_log_window=_get_int("LOG_AGENT_LLM_LOG_WINDOW", 60),
         llm_timeline_window=_get_int("LOG_AGENT_LLM_TIMELINE_WINDOW", 30),
-        auto_attach=_get_bool("LOG_AGENT_AUTO_ATTACH", True),
+        auto_attach=_get_bool("LOG_AGENT_AUTO_ATTACH", False),
         probe_paths=probe_paths,
     )
 

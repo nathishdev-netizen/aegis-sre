@@ -27,22 +27,6 @@ def infer_level(line: str) -> str:
     return "INFO"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 
@@ -55,7 +39,8 @@ def strip_ansi(text: str) -> str:
     return ANSI_ESCAPE.sub("", text)
 
 
-# A line that continues the previous entry rather than starting a new one.
+
+# Lines that belong to a preceding log entry rather than starting a new one.
 # A Python traceback, a Java stack trace or a wrapped message is ONE event; treating
 # each physical line as its own event inflates metrics and invents components.
 CONTINUATION_PATTERNS = (
@@ -82,7 +67,6 @@ def is_continuation(line: str) -> bool:
     if NEW_ENTRY_PATTERN.match(text):
         return False
     return any(pattern.match(text) for pattern in CONTINUATION_PATTERNS)
-
 
 def unwrap_payload_preserving_indent(raw_line: str) -> str:
     """Unwrap a JSON payload but keep leading whitespace.
@@ -138,14 +122,52 @@ def unwrap_payload(raw_line: str) -> str:
     return line
 
 
+# Leading timestamp in the shapes real loggers emit:
+#   10:00:01                      bare time
+#   2026-08-28 16:00:18.807       Loguru / stdlib date + time + millis
+#   2026-08-28T16:00:18.807Z      ISO 8601
+TIMESTAMP_PREFIX = re.compile(
+    r"^\s*(?:(?P<date>\d{4}-\d{2}-\d{2})[ T])?"
+    r"(?P<time>\d{1,2}:\d{2}:\d{2})"
+    r"(?P<frac>[.,]\d{1,6})?"
+    r"(?P<tz>Z|[+-]\d{2}:?\d{2})?"
+    r"\s*"
+)
+
+# Loguru's "| LEVEL | module:func:line - " scaffolding, and the bracketed service
+# tag some services prefix. Removing it leaves the human-written message.
+LOGGER_SCAFFOLD = re.compile(
+    r"^\s*\|?\s*(?:INFO|WARN|WARNING|ERROR|DEBUG|TRACE|CRITICAL|FATAL|SUCCESS)\s*\|\s*"
+    r"[\w.]+:[\w.<>]+:\d+\s*[-\u2014]\s*",
+    re.I,
+)
+
+
 def parse_log_line(raw_line: str) -> dict:
     line = unwrap_payload(raw_line)
-    timestamp_match = re.match(r"^(\d{2}:\d{2}:\d{2})(?:\s+|$)", line)
-    timestamp = timestamp_match.group(1) if timestamp_match else short_time(now_iso())
-    level_match = re.search(r"\b(INFO|WARN|WARNING|ERROR|DEBUG|TRACE)\b", line)
-    level = level_match.group(1).upper() if level_match else infer_level(line)
-    message = re.sub(r"^(\d{2}:\d{2}:\d{2})(?:\s+)?", "", line).strip()
-    return {"raw_line": line, "timestamp": timestamp, "level": level, "message": message}
+
+    match = TIMESTAMP_PREFIX.match(line)
+    if match:
+        timestamp = match.group("time")
+        # Normalise to HH:MM:SS so the timeline sorts and displays consistently.
+        if len(timestamp.split(":")[0]) == 1:
+            timestamp = "0" + timestamp
+        rest = line[match.end():]
+    else:
+        timestamp = short_time(now_iso())
+        rest = line
+
+    # Strip logger scaffolding so the message is what a human actually wrote.
+    rest = LOGGER_SCAFFOLD.sub("", rest, count=1)
+
+    level_match = re.search(r"\b(INFO|WARN|WARNING|ERROR|DEBUG|TRACE|CRITICAL|FATAL|SUCCESS)\b", line)
+    if level_match:
+        found = level_match.group(1).upper()
+        level = {"WARNING": "WARN", "CRITICAL": "ERROR", "FATAL": "ERROR", "SUCCESS": "INFO"}.get(found, found)
+    else:
+        level = infer_level(line)
+
+    return {"raw_line": line, "timestamp": timestamp, "level": level, "message": rest.strip() or line.strip()}
 
 
 COMPONENT_RULES = [
@@ -163,8 +185,24 @@ COMPONENT_RULES = [
 ]
 
 
+# A run boundary is whatever THIS project calls the start of a unit of work. Only
+# "request received" was recognised, so a voice gateway logging "CALL START" never
+# began a new run - and every call inherited the previous one's verdict.
+RUN_START = re.compile(
+    r"\b(request received|incoming request|received request|call start|"
+    r"job start(?:ed|ing)?|task start(?:ed|ing)?|run start(?:ed|ing)?|"
+    r"starting (?:run|job|task|request)|invocation start)\b",
+    re.I,
+)
+
+
+def is_run_start(message: str) -> bool:
+    """Whether this line opens a new unit of work."""
+    return bool(RUN_START.search(message or ""))
+
+
 TRANSITIONS = [
-    (re.compile(r"request received|incoming request|received request", re.I), {"stage": "request", "status": "running", "label": "Request received"}),
+    (RUN_START, {"stage": "request", "status": "running", "label": "the start of a new run"}),
     (re.compile(r"auth|authentication|authorized|login", re.I), {"stage": "auth", "status": "completed", "label": "Authentication passed"}),
     (re.compile(r"parse|parsing|extract", re.I), {"stage": "parse", "status": "completed", "label": "Input parsed"}),
     (re.compile(r"retrieve|retriev", re.I), {"stage": "retrieve", "status": "running", "label": "Retrieval in progress"}),
@@ -174,20 +212,64 @@ TRANSITIONS = [
     (re.compile(r"response sent|done|completed|success", re.I), {"stage": "response", "status": "completed", "label": "Response sent"}),
     (re.compile(r"retry", re.I), {"stage": None, "status": "retrying", "label": "Retry attempted"}),
     (re.compile(r"warn|warning", re.I), {"stage": None, "status": "warning", "label": "Warning"}),
-    (re.compile(r"timeout|timed out", re.I), {"stage": None, "status": "failed", "label": "Timeout"}),
-    (re.compile(r"connection refused|connection timeout|connection reset|dns|unreachable|econnrefused", re.I), {"stage": None, "status": "failed", "label": "Connection failure"}),
-    (re.compile(r"error|exception|traceback|failed", re.I), {"stage": None, "status": "failed", "label": "Failure"}),
+    (re.compile(r"\b(timed\s+out|timeout\s+(?:after|calling|waiting|while|exceeded)|(?:read|connect|connection|request|operation)\s+timeout)\b", re.I), {"stage": None, "status": "failed", "label": "Timeout"}),
+    (re.compile(r"\b(connection\s+(?:refused|reset|aborted)|econnrefused|could not resolve|name or service not known|host unreachable|network unreachable)\b", re.I), {"stage": None, "status": "failed", "label": "Connection failure"}),
+    (re.compile(r"\b(error|exception|traceback|failed|failure)\b", re.I), {"stage": None, "status": "failed", "label": "Failure"}),
 ]
 
 
+# A cause is only a cause when the line describes something GOING WRONG. Matching a
+# bare keyword anywhere flagged config values as failures - "timeout=45.0s" in a
+# startup banner was reported as "Connection timed out" on a perfectly healthy boot.
 CAUSES = [
-    (re.compile(r"timeout", re.I), "Connection timed out", ["Verify the endpoint is reachable", "Check service health", "Inspect network latency", "Confirm timeout settings"]),
-    (re.compile(r"connection refused", re.I), "Target service refused the connection", ["Confirm the service is running", "Verify the port and host", "Check firewall or security group rules", "Inspect container/network bindings"]),
-    (re.compile(r"dns", re.I), "DNS lookup failed", ["Verify the hostname", "Check DNS resolution", "Confirm service discovery configuration"]),
-    (re.compile(r"auth|unauthorized|forbidden", re.I), "Authentication or authorization issue", ["Check credentials", "Verify API keys and tokens", "Confirm role and permission scopes"]),
-    (re.compile(r"rate limit", re.I), "Rate limit exceeded", ["Reduce request volume", "Add backoff and retries", "Check provider quotas"]),
-    (re.compile(r"permission denied", re.I), "Permission denied", ["Check file or service permissions", "Review container and OS access policies"]),
-    (re.compile(r"parse|json|yaml|syntax", re.I), "Input parsing issue", ["Validate the payload format", "Inspect the malformed record", "Add schema validation"]),
+    (re.compile(r"\b(timed\s+out|timeout\s+(?:after|calling|waiting|while|exceeded)|"
+                r"(?:read|connect|connection|request|operation)\s+timeout)\b", re.I),
+     "Connection timed out",
+     ["Verify the endpoint is reachable", "Check service health", "Inspect network latency",
+      "Confirm timeout settings"]),
+    (re.compile(r"\bconnection\s+(?:refused|reset|aborted|closed)\b", re.I),
+     "Target service refused the connection",
+     ["Confirm the service is running", "Verify the port and host",
+      "Check firewall or security group rules", "Inspect container/network bindings"]),
+    (re.compile(r"\b(?:dns\s+(?:lookup|resolution)\s+failed|name or service not known|"
+                r"could not resolve|nodename nor servname)\b", re.I),
+     "DNS lookup failed",
+     ["Verify the hostname", "Check DNS resolution", "Confirm service discovery configuration"]),
+    (re.compile(r"\b(unauthorized|forbidden|auth\w* (?:failed|error|denied|rejected)|"
+                r"invalid (?:token|credentials)|\b401\b|\b403\b)\b", re.I),
+     "Authentication or authorization issue",
+     ["Check credentials", "Verify API keys and tokens", "Confirm role and permission scopes"]),
+    (re.compile(r"\b(rate limit(?:ed|s)? (?:exceeded|hit|reached)|too many requests|\b429\b)\b", re.I),
+     "Rate limit exceeded",
+     ["Reduce request volume", "Add backoff and retries", "Check provider quotas"]),
+    (re.compile(r"\bpermission denied\b|\baccess denied\b", re.I),
+     "Permission denied",
+     ["Check file or service permissions", "Review container and OS access policies"]),
+    (re.compile(r"\b(?:failed to (?:parse|decode)|(?:parse|decode|json|yaml|syntax) error|"
+                r"malformed|invalid (?:json|yaml|payload|format))\b", re.I),
+     "Input parsing issue",
+     ["Validate the payload format", "Inspect the malformed record", "Add schema validation"]),
+    # An upstream service answering 5xx is one of the most common real failures and
+    # was not covered at all - the run showed "failed" with no cause and no fixes.
+    (re.compile(r"\b(5\d{2}\s+(?:internal server error|bad gateway|service unavailable|gateway timeout)|"
+                r"internal server error|bad gateway|service unavailable)\b", re.I),
+     "Upstream service returned a server error",
+     ["Check the upstream service's own logs for the failing request",
+      "Confirm the endpoint and payload it expects",
+      "Verify the service is healthy and not mid-deploy"]),
+    (re.compile(r"\b(?:lookup|request|call|query|fetch)\s+failed\b", re.I),
+     "A dependency call failed",
+     ["Check the target service is reachable and healthy",
+      "Inspect the error detail on the failing line",
+      "Confirm the request parameters are what the service expects"]),
+    (re.compile(r"\bfail(?:ing|ed)?\s+closed\b|\bfallback\s+(?:failed|exhausted)\b", re.I),
+     "Request was refused because a safety check could not complete",
+     ["Fix the underlying check that failed rather than the refusal itself",
+      "Confirm whether the refusal is genuine or a side effect of the failure"]),
+    (re.compile(r"\b(?:name|attribute)\s+'[^']+'\s+is not defined|NameError|AttributeError\b", re.I),
+     "Code error - an undefined name or attribute was referenced",
+     ["Fix the referenced name in the code path shown",
+      "Check whether that branch is ever exercised in tests"]),
 ]
 
 
@@ -248,4 +330,3 @@ def pick_additional_causes(message: str) -> list[str]:
     if re.search(r"retry", message, re.I):
         hints.append("Repeated retries indicate a persistent upstream problem")
     return list(dict.fromkeys(hints))
-

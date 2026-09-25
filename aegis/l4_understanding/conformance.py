@@ -65,17 +65,30 @@ class ConformanceEngine:
         for step in spec.steps:
             if step.template_id in present:
                 continue
-            if step.critical:
-                deviations.append(self._deviation(
-                    trace_id, spec, "missing_critical", step,
-                    severity="P2",
-                    observed="step never ran, no error raised"))
-            elif step.required:
+            if step.required and not step.critical:
                 deviations.append(self._deviation(
                     trace_id, spec, "missing_step", step,
                     severity="P3", observed="step absent"))
             # Optional steps absent: silence. Tolerance is a requirement,
             # not a kindness - noise here is why conformance tools get muted.
+
+        # Critical steps are judged as a PURPOSE FAMILY, not one by one. The
+        # same logical step ("process the caller's request") often mines into
+        # several template variants - different code paths word their line
+        # differently - and demanding every variant condemned every real
+        # conversation as hollow for missing the OTHER calls' variants. A run
+        # is hollow when NONE of its purpose family ran.
+        critical_steps = [s for s in spec.steps if s.critical]
+        purpose_ran = any(s.template_id in present for s in critical_steps)
+        if critical_steps and not purpose_ran:
+            family = ", ".join(s.label[:36] for s in critical_steps[:3])
+            deviations.append({
+                "trace_id": trace_id, "flow": spec.name,
+                "type": "purpose_never_ran", "step_id": "",
+                "expected": f"one of the purpose steps ({family}...)",
+                "observed": "no purpose step ran; no error raised",
+                "severity": "P2",
+            })
 
         duration = self._span(events)
         p95 = float(spec.expected_duration_s.get("p95") or 0.0)
@@ -87,9 +100,6 @@ class ConformanceEngine:
                 "observed": f"{duration:.0f}s", "severity": "P3",
             })
 
-        critical_steps = [s for s in spec.steps if s.critical]
-        missing_critical = [d for d in deviations if d["type"] == "missing_critical"]
-
         if errored:
             verdict, reason = "failed", (
                 f"{len(errored)} error event(s) in the trace")
@@ -98,13 +108,10 @@ class ConformanceEngine:
             verdict, reason = "unknown", (
                 "no critical steps are marked in the spec, so whether this run"
                 " achieved anything cannot be judged")
-        elif missing_critical:
+        elif not purpose_ran:
             verdict = "hollow"
-            missing_labels = ", ".join(
-                spec.step(d["step_id"]).label[:40] for d in missing_critical
-                if spec.step(d["step_id"]))
-            reason = (f"completed cleanly - no errors, normal teardown - but its"
-                      f" purpose step never ran ({missing_labels})")
+            reason = ("completed cleanly - no errors, normal teardown - but none"
+                      " of its purpose steps ever ran")
             evidence = [events[0].text_redacted.splitlines()[0][:160],
                         events[-1].text_redacted.splitlines()[0][:160]]
         elif slow:
@@ -131,10 +138,7 @@ class ConformanceEngine:
                         observed=0.0, baseline=1.0, ratio=0.0,
                         started_at=events[-1].ts if events else "",
                         severity="P2", trace_id=trace_id,
-                        template_id=deviation.get("step_id", ""),
-                        evidence=([f"flow '{spec.name}': {deviation['expected']}"
-                                   f" - observed: {deviation['observed']}"]
-                                  + (report.evidence or [])),
+                        evidence=report.evidence or [deviation["observed"]],
                     ))
         return report, signals
 

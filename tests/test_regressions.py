@@ -17,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import settings  # noqa: E402
 from app.core import llm, sources  # noqa: E402
 from app.core.parser import parse_log_line, unwrap_payload  # noqa: E402
+from app.core.baselines import Baselines, extract_duration  # noqa: E402
 from app.core.state import RuntimeState  # noqa: E402
+from app.store import Store  # noqa: E402
 
 
 # --- Bug 1: the agent attached to itself and invented a failure ----------------
@@ -59,38 +61,6 @@ def test_level_field_is_honoured():
     assert parsed["level"] == "ERROR"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_ansi_colour_codes_are_stripped():
     """Local dev servers emit colour; the escape bytes ended up inside the level."""
     parsed = parse_log_line("\x1b[32mINFO\x1b[0m ANSI coloured line")
@@ -126,54 +96,6 @@ def test_slow_client_does_not_block_broadcast():
     done = threading.Event()
     threading.Thread(target=lambda: (runtime.broadcast(), done.set()), daemon=True).start()
     assert done.wait(5), "broadcast must not block behind a slow client"
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
-
-
-# --- Bug: SSE backlog replayed on every reconnect -----------------------------
-
-
-
 
 
 # --- Bug: SSE backlog replayed on every reconnect -----------------------------
@@ -238,38 +160,6 @@ def test_pattern_mode_reports_no_confidence_score():
     assert snapshot["status"] == "failed"
     assert snapshot["confidence"] == 0, "a regex hit is an observation, not a diagnosis"
     assert snapshot["interpretation"] == "patterns"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_ungrounded_evidence_is_rejected():
@@ -354,6 +244,438 @@ def test_new_request_clears_previous_verdict():
     assert snapshot["possible_causes"] == []
 
 
+
+# --- Bug: multi-line tracebacks fragmented into unrelated events ---------------
+
+def test_traceback_is_one_event_not_many():
+    """A Python traceback became 6 events across 4 invented components (Embedding,
+    Other, Response), inflating failure counts and polluting the graph."""
+    runtime = RuntimeState()
+    for line in [
+        "10:00:01 ERROR Unhandled exception in request handler",
+        "Traceback (most recent call last):",
+        '  File "/app/pipeline.py", line 88, in embed',
+        "    return client.embed(payload)",
+        "TimeoutError: embedding service unreachable",
+        "10:00:02 INFO Request finished status=500",
+    ]:
+        runtime.ingest_line(line, source="test")
+
+    snapshot = runtime.snapshot()
+    assert snapshot["metrics"]["total_events"] == 2, "traceback must fold into its parent"
+    components = {lane["component"] for lane in snapshot["graph"]["lanes"]}
+    assert "Other" not in components, "stack frames must not invent components"
+
+
+def test_traceback_detail_is_preserved():
+    """Folding must not discard the trace - it is the most useful evidence there is."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 ERROR Unhandled exception", source="test")
+    runtime.ingest_line('  File "/app/pipeline.py", line 88, in embed', source="test")
+    runtime.ingest_line("TimeoutError: embedding service unreachable", source="test")
+
+    detail = runtime.snapshot()["log_lines"][-1].get("detail") or []
+    assert any("pipeline.py" in d for d in detail), "stack frame must be retained"
+    assert any("TimeoutError" in d for d in detail)
+
+
+def test_timestamped_line_is_never_a_continuation():
+    """A real entry must start a new event even when it follows a traceback."""
+    from app.core.parser import is_continuation
+    assert not is_continuation("2026-08-30 10:00:02 INFO Request finished")
+    assert not is_continuation("10:00:02 INFO Request finished")
+    assert not is_continuation("INFO Request received")
+    assert is_continuation('  File "/app/x.py", line 8, in f')
+    assert is_continuation("  at com.foo.Bar.run(Bar.java:42)")
+
+
+# --- Bugs found when attaching to a second source -----------------------------
+
+def test_success_line_is_never_marked_failed():
+    """Once the run failed, EVERY later node was stamped "failed" - so
+    "Authentication passed for user 4821" rendered as a failure in the graph."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 ERROR Unhandled exception in request handler", source="test")
+    runtime.ingest_line("10:00:02 INFO Authentication passed for user 4821", source="test")
+
+    for lane in runtime.snapshot()["graph"]["lanes"]:
+        for group in lane["branch_groups"]:
+            for node in group["nodes"]:
+                if "Authentication passed" in node["message"]:
+                    assert node["status"] != "failed", "a success line must not render as failed"
+
+
+def test_auth_success_does_not_trigger_auth_failure_cause():
+    """The cause regex matched the word "auth" anywhere, so "Authentication passed"
+    produced reason="Authentication or authorization issue"."""
+    from app.core.parser import infer_cause
+
+    assert infer_cause("INFO Authentication passed for user 4821") is None
+    assert infer_cause("ERROR 401 Unauthorized") is not None
+    assert infer_cause("ERROR Authentication failed") is not None
+
+
+def test_attaching_new_source_clears_previous_run():
+    """Attaching elsewhere kept the old timeline, graph and metrics, so one source's
+    failures were attributed to another."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 ERROR Connection timeout", source="port:9001")
+    assert runtime.snapshot()["metrics"]["total_events"] == 1
+
+    runtime.attach_file("/nonexistent/path.log")
+    snapshot = runtime.snapshot()
+    assert snapshot["metrics"]["total_events"] == 0, "stale run must be cleared"
+    assert snapshot["log_lines"] == []
+
+
+# --- Discovery: learn the pipeline from the source's own output ---------------
+
+def test_discovers_components_from_bracket_tags():
+    """Stages must come from the project's own vocabulary, not a hardcoded list."""
+    from app.core.learn import learn
+
+    etl = [
+        "02:14:03 INFO [extract] Pulled 12400 rows",
+        "02:14:09 INFO [validate] Row 8801 ok",
+        "02:14:09 WARN [deadletter] Routed row to dlq",
+        "02:14:10 INFO [transform] Normalised row",
+        "02:14:10 INFO [load] Upserted batch rows=500",
+    ] * 3
+    profile = learn(etl)
+    assert profile.components == ["extract", "validate", "deadletter", "transform", "load"], \
+        "components must appear in pipeline order"
+
+
+def test_discovers_from_json_component_field():
+    from app.core.learn import learn
+
+    lines = [
+        '{"level":"info","component":"gateway","message":"request in"}',
+        '{"level":"error","component":"billing","message":"card declined"}',
+    ] * 5
+    profile = learn(lines)
+    assert profile.line_format == "json"
+    assert profile.components == ["gateway", "billing"]
+
+
+def test_type_annotations_are_not_components():
+    """A naive bracket scan picks up [dict], [float], [field] from type hints."""
+    from app.core.learn import learn
+
+    profile = learn(["10:00 INFO [dict] x", "10:00 INFO [float] y", "10:00 INFO [api] real"] * 3)
+    assert profile.components == ["api"], "builtins must be filtered out"
+
+
+def test_application_format_beats_framework_banner():
+    """Uvicorn's startup banner outnumbered the app's own loguru lines, so the format
+    was detected as uvicorn and the real pipeline lines were treated as boilerplate."""
+    from app.core.learn import detect_format
+
+    lines = ["INFO:     Started server process [123]"] * 7 + [
+        "2026-08-28 16:00:18.807 | INFO | api:lifespan:44 - [api] Warming models",
+    ] * 6
+    line_format, _ = detect_format(lines)
+    assert line_format == "loguru", "the application's own format must win"
+
+
+def test_no_tags_reports_nothing_rather_than_guessing():
+    """With no component vocabulary, the honest answer is an empty list."""
+    from app.core.learn import learn
+
+    profile = learn(["16:04:11 INFO Warming up the retriever"] * 12)
+    assert profile.components == []
+    assert profile.confident is False
+    assert "no component tags" in profile.describe() or "format" in profile.describe()
+
+
+def test_auto_attach_never_steals_an_explicit_source():
+    """The UI polls /api/ports; refresh_ports() then auto-attached to a discovered
+    port and wiped the file the user had chosen - mid-run, mid-call."""
+    runtime = RuntimeState()
+    runtime.attach_file("/tmp/does-not-matter.log")
+    before = runtime.snapshot()["source"]["type"]
+    assert before == "file"
+
+    runtime.refresh_ports()
+    after = runtime.snapshot()["source"]["type"]
+    assert after == "file", "an explicit source must survive a background port scan"
+
+
+def test_failed_port_probe_stops_instead_of_flooding():
+    """A 404 raises HTTPError, whose `continue` skipped the for/else give-up branch -
+    so an app with no log endpoint was probed with 7 requests every 3 seconds forever,
+    flooding its console with 404s."""
+    import threading as _t
+    runtime = RuntimeState()
+    stop = _t.Event()
+
+    # Port 1 is never a log source; the probe must give up rather than loop.
+    runtime._trace_port_loop(1, stop, runtime._port_generation + 1)
+
+    # Reaching here at all means the loop terminated instead of spinning.
+    assert True
+
+
+def test_a_missing_path_is_never_remembered():
+    """Attaching to a path that does not exist overwrote the remembered source, so a
+    later restart came back watching nothing at all."""
+    runtime = RuntimeState()
+    session = runtime._SESSION_FILE
+    backup = session.read_text() if session.exists() else None
+    try:
+        runtime.attach_file("/nonexistent/path.log")
+        after = session.read_text() if session.exists() else ""
+        assert "/nonexistent/path.log" not in after, "a missing path must not be remembered"
+    finally:
+        if backup is not None:
+            session.write_text(backup)
+
+
+def test_port_click_prefers_the_apps_own_log_file():
+    """Clicking a port used to probe seven HTTP endpoints, printing seven 404s in the
+    console of any app that does not serve logs. The OS already knows which log file
+    the process has open - use that instead."""
+    from app.core import sources as _sources
+
+    original = _sources.best_log_file_for_pid
+    _sources.best_log_file_for_pid = lambda pid: "/tmp/pretend-app.log"
+    try:
+        runtime = RuntimeState()
+        runtime._snapshot.ports = [{"pid": 4242, "port": 6003, "process": "Python"}]
+        runtime.attach_port(6003)
+        source = runtime.snapshot()["source"]
+        assert source["type"] == "file", "must attach to the file, not probe HTTP"
+        assert source["path"] == "/tmp/pretend-app.log"
+    finally:
+        _sources.best_log_file_for_pid = original
+
+
+def test_config_values_are_not_failures():
+    """A startup banner reading "timeout=45.0s" was reported as "Connection timed out"
+    and the whole healthy boot was marked failed. A failure word in a config value,
+    or on an INFO line, is not a failure."""
+    from app.core.parser import infer_cause, infer_transition
+
+    healthy = [
+        "INFO [api] Gateway starting - orchestrator=http://localhost:6004 timeout=45.0s",
+        "INFO Config: request_timeout=30 retry_count=3",
+        "INFO [api] Gateway ready in 8ms - accepting calls",
+    ]
+    for line in healthy:
+        assert infer_cause(line) is None, f"config value flagged as a cause: {line}"
+        transition = infer_transition(line)
+        assert not (transition and transition.get("status") == "failed"), \
+            f"config value flagged as a failure: {line}"
+
+    # Real failures must still be detected.
+    for line in [
+        "ERROR [tts] Timeout after 5000ms calling Sarvam",
+        "ERROR [db] Connection refused: ws://127.0.0.1:8000",
+    ]:
+        assert infer_cause(line) is not None, f"real failure missed: {line}"
+
+
+def test_info_lines_never_produce_a_cause():
+    """The level gates the diagnosis: only ERROR/WARN lines describe a problem."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 INFO Connection timeout setting is 45s", source="test")
+    assert runtime.snapshot()["possible_causes"] == []
+
+
+def test_completion_line_does_not_erase_a_failure():
+    """A run that reached its end after failing was reported "completed successfully",
+    wiping the reason, causes and fixes - the panels rendered empty."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 INFO [api] Request received", source="test")
+    runtime.ingest_line("10:00:02 ERROR [db] 500 Internal Server Error from upstream", source="test")
+    runtime.ingest_line("10:00:03 INFO [api] Response sent", source="test")
+
+    snapshot = runtime.snapshot()
+    assert snapshot["status"] == "failed", "a completion line must not overwrite a failure"
+    assert snapshot["possible_causes"], "causes must survive to reach the UI"
+    assert snapshot["suggested_fixes"], "fixes must survive to reach the UI"
+
+
+def test_warning_does_not_downgrade_a_failure():
+    """A WARNING logged after an ERROR reset the whole run to "warning" and dropped
+    its diagnosis, because status was assigned rather than compared."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 ERROR [db] Connection refused: localhost:5432", source="test")
+    runtime.ingest_line("10:00:02 WARNING [api] Falling back to cache", source="test")
+
+    assert runtime.snapshot()["status"] == "failed"
+
+
+def test_upstream_5xx_is_diagnosed():
+    """An upstream 500 - one of the commonest real failures - matched no cause pattern,
+    so the run showed as failed with an empty Likely Causes panel."""
+    from app.core.parser import infer_cause
+
+    for line in [
+        "ERROR [identity] Lookup FAILED against http://localhost:6004/identity (500 Internal Server Error)",
+        "ERROR upstream returned 502 Bad Gateway",
+        "WARNING could not pre-synthesise filler: name 'fp' is not defined",
+    ]:
+        assert infer_cause(line) is not None, f"no cause found for: {line}"
+
+
+def test_infrastructure_is_not_offered_as_a_source():
+    """Postgres was listed as a clickable source. It listens AND writes a log file, so
+    clicking it "worked" - and filled the dashboard with 2600 lines of database noise
+    instead of the user's own application."""
+    ports = [
+        {"pid": 1, "port": 5432, "process": "postgres"},
+        {"pid": 2, "port": 6003, "process": "Python"},
+        {"pid": 3, "port": 7000, "process": "ControlCe"},
+    ]
+    offered = [p for p in ports if sources.is_plausible_source(p)]
+    assert [p["port"] for p in offered] == [6003], "only real app ports may be offered"
+
+
+def test_running_is_false_once_a_run_has_failed():
+    """Every ingested line set running=True, so a tailed file kept the run marked
+    "in progress" long after it failed - the headline read "Run in progress" beside
+    a FAILED badge."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 INFO [api] Request received", source="test")
+    assert runtime.snapshot()["running"] is True
+
+    runtime.ingest_line("10:00:02 ERROR [db] 500 Internal Server Error", source="test")
+    snapshot = runtime.snapshot()
+    assert snapshot["status"] == "failed"
+    assert snapshot["running"] is False, "a failed run is not in progress"
+
+
+def test_last_source_is_remembered_across_restarts():
+    """Restarting the agent left it watching nothing, so the dashboard came back
+    empty with "No logs yet" and the user had to re-attach to see anything."""
+    import tempfile, os
+    from pathlib import Path as _P
+
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
+        fh.write("10:00:01 INFO [api] Request received\n")
+        log_path = fh.name
+
+    runtime = RuntimeState()
+    session = runtime._SESSION_FILE
+    backup = session.read_text() if session.exists() else None
+    try:
+        runtime.attach_file(log_path)
+        assert session.exists(), "attaching must remember the source"
+
+        # A fresh instance stands in for a restart.
+        revived = RuntimeState()
+        assert revived.restore_last_source() is True
+        assert revived.snapshot()["source"]["type"] == "file"
+    finally:
+        os.unlink(log_path)
+        if backup is not None:
+            session.write_text(backup)
+        elif session.exists():
+            session.unlink()
+
+
+def test_a_new_run_clears_the_previous_verdict():
+    """A successful call that followed a failed one still reported the failure: the
+    reset only ran for a stage literally named "request", so a voice gateway logging
+    "CALL START" never began a new run and inherited the old verdict forever."""
+    runtime = RuntimeState()
+    runtime.ingest_line("12:18:41 INFO [api] CALL START call=aaa from=111", source="test")
+    runtime.ingest_line("12:18:41 ERROR [identity] Lookup FAILED - connection refused", source="test")
+    assert runtime.snapshot()["status"] == "failed"
+
+    # A new call begins. Its verdict must be its own.
+    runtime.ingest_line("13:26:47 INFO [api] CALL START call=bbb from=222", source="test")
+    runtime.ingest_line("13:26:47 INFO [identity] Resolved 222 - allowed=True", source="test")
+
+    snapshot = runtime.snapshot()
+    assert snapshot["status"] != "failed", "a new run must not inherit the last failure"
+    assert snapshot["metrics"]["failures"] == 0
+    assert snapshot["possible_causes"] == []
+
+
+def test_model_context_is_scoped_to_the_latest_run():
+    """Handed 200 lines spanning five calls, the model described an old failure while
+    the newest call had succeeded. Telling it to focus was not enough - the context
+    itself has to be cut."""
+    from app.core.llm import _latest_run
+
+    logs = [
+        {"message": "[api] CALL START call=aaa"},
+        {"message": "[identity] Lookup FAILED"},
+        {"message": "[api] CALL END call=aaa"},
+        {"message": "[api] CALL START call=bbb"},
+        {"message": "[identity] Resolved - allowed=True"},
+    ]
+    latest = _latest_run(logs)
+    assert len(latest) == 2, "context must start at the most recent run boundary"
+    assert "CALL START call=bbb" in latest[0]["message"]
+
+
+def test_backfilled_history_is_interpreted():
+    """Interpretation was only requested from ingest_line, so a file that had stopped
+    growing never triggered a model pass - the brief showed the pattern template
+    forever, however long the user waited."""
+    import tempfile, os
+
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
+        fh.write("10:00:01 INFO [api] CALL START call=aaa\n")
+        fh.write("10:00:02 ERROR [db] Connection refused\n")
+        path = fh.name
+
+    runtime = RuntimeState()
+    requested = []
+    runtime._request_interpretation = lambda: requested.append(True)
+    try:
+        runtime.attach_file(path)
+        import time as _t
+        _t.sleep(1.0)
+        assert requested, "attaching to an existing file must request interpretation"
+    finally:
+        os.unlink(path)
+
+
+def test_fallback_summary_is_not_a_log_dump():
+    """The template pasted a whole raw ERROR line into its sentence, producing the
+    wall of text it was supposed to spare the reader."""
+    runtime = RuntimeState()
+    runtime.ingest_line("12:18:41 INFO [api] CALL START call=aaa from=919095797973", source="test")
+    runtime.ingest_line(
+        "12:18:41 ERROR [identity] Lookup FAILED against http://localhost:6004/identity "
+        "(ConnectError: All connection attempts failed) - failing closed",
+        source="test")
+
+    summary = runtime.snapshot()["summary"]
+    assert "ConnectError" not in summary, "the summary must not quote a raw log line"
+    assert len(summary) < 160, "a fallback summary should be a sentence, not a dump"
+
+
+def test_dashboard_javascript_has_no_shadowing_or_tdz_faults():
+    """Two JS faults threw inside render(), aborting it and leaving the whole
+    dashboard blank - which looked exactly like "the agent is not reading my logs":
+
+      - a local `const badge = getElementById(...)` shadowed the badge() helper, so
+        `pills.map(badge)` called a DOM element
+      - `title` was used one block before its `const`, a temporal-dead-zone error
+
+    Neither is visible without executing the page, so this test executes it.
+    """
+    import re as _re
+    from pathlib import Path as _P
+
+    html = (_P(__file__).resolve().parent.parent / "app" / "web" / "index.html").read_text()
+    script = html.split("<script>")[1].split("</script>")[0]
+
+    # A local named `badge` anywhere would shadow the helper for its whole function.
+    assert not _re.search(r"\bconst badge\s*=", script), \
+        "a local `badge` shadows the badge() helper used by pills.map(badge)"
+
+    # `title` must be declared before the block that interpolates it.
+    decl = script.find("const title =")
+    use = script.find("escapeHtml(title)")
+    assert decl != -1 and use != -1 and decl < use, \
+        "`title` is used before its declaration (temporal dead zone)"
+
 # --- Config -------------------------------------------------------------------
 
 def test_llm_unavailable_without_key():
@@ -361,6 +683,114 @@ def test_llm_unavailable_without_key():
     if not settings.openai_api_key:
         assert llm.is_available() is False
         assert llm.status()["available"] is False
+
+
+# --- Bug 46: a config value was measured as if it were a duration -------------
+
+def test_settings_are_not_measurements():
+    """A startup banner's "timeout=45.0s" was read as a 45-second operation, which
+    poisoned the baseline it landed in. Same bug shape as v1's cause matcher reading
+    that line as an outage."""
+    assert extract_duration("[orch] Client ready timeout=45.0s retries=3") is None
+    assert extract_duration("[cache] ttl=300s max=1000") is None
+    # A real measurement on a line that also carries settings still counts.
+    assert extract_duration("[tts] Synthesised 60 chars in 1136ms") == (
+        "synthesised chars", 1136.0
+    )
+
+
+def test_version_strings_are_not_seconds():
+    """"model=bulbul:v3" nearly parsed as a 3-second operation - the seconds pattern
+    needs a delimiter, not just a trailing s."""
+    assert extract_duration("[tts] model=bulbul:v3 speaker=rohan") is None
+    assert extract_duration("[api] CALL END call=82050189 - 16s, hangup=NORMAL") == (
+        "call end", 16000.0
+    )
+
+
+def test_operation_name_excludes_logger_scaffolding():
+    """Every tts line began "INFO voice.tts:", so every distinct operation collapsed
+    into one bucket named after the logger and 34 false spikes were reported."""
+    op, ms = extract_duration("INFO voice.tts: [tts] Synthesised 60 chars in 1136ms")
+    assert "info" not in op and "voice" not in op, op
+    assert op == "synthesised chars"
+    assert ms == 1136.0
+
+
+def test_spike_is_measured_against_history_not_itself():
+    """Adding the sample before comparing let a spike shift the baseline it was being
+    judged against, so large outliers under-reported."""
+    baselines = Baselines()
+    for _ in range(12):
+        assert baselines.observe("tts", "[tts] done in 100ms") is None
+    finding = baselines.observe("tts", "[tts] done in 900ms")
+    assert finding is not None
+    assert finding["median_ms"] == 100.0, "compared against a baseline it had shifted"
+    assert finding["ratio"] == 9.0
+
+
+def test_no_verdict_without_enough_history():
+    """Two samples is an anecdote. Reporting "3x slower than usual" off them reads as
+    authoritative and is not."""
+    baselines = Baselines()
+    for _ in range(3):
+        baselines.observe("api", "[api] ready in 10ms")
+    assert baselines.observe("api", "[api] ready in 5000ms") is None
+    assert not baselines.summary()[0]["ready"]
+
+
+def test_baselines_survive_a_restart():
+    """History held only in RAM is lost when the window closes, so "is this normal?"
+    could never be answered on a fresh start."""
+    import tempfile, os
+
+    path = os.path.join(tempfile.mkdtemp(), "history.db")
+    store = Store(path)
+    first = Baselines(store, source="svc")
+    for _ in range(12):
+        first.observe("orch", "[orch] /chat returned in 800ms")
+    store.close()
+
+    store2 = Store(path)
+    second = Baselines(store2, source="svc")
+    assert second.summary(), "no history recovered after restart"
+    assert second.summary()[0]["ready"], "recovered history was not usable"
+    finding = second.observe("orch", "[orch] /chat returned in 6946ms")
+    assert finding is not None, "restart lost the baseline needed to spot the spike"
+    assert finding["ratio"] > 8
+    store2.close()
+
+
+def test_store_failure_never_stops_ingest():
+    """Reading logs is the job; history is an enhancement. A broken database must not
+    take the agent down with it."""
+
+    class BrokenStore:
+        def known_operations(self, source):
+            return []
+
+        def samples(self, *a):
+            return []
+
+        def record_duration(self, *a, **k):
+            raise RuntimeError("disk full")
+
+    baselines = Baselines(BrokenStore(), source="svc")
+    for _ in range(12):
+        baselines.observe("tts", "[tts] done in 100ms")
+    finding = baselines.observe("tts", "[tts] done in 900ms")
+    assert finding is not None, "a store error swallowed a real finding"
+
+
+def test_absence_is_reported_for_components_that_stopped():
+    """Nothing fires when a step simply stops happening - no error, no threshold."""
+    baselines = Baselines()
+    for _ in range(12):
+        baselines.observe("tts", "[tts] done in 100ms")
+    assert baselines.absences({"tts", "api"}) == []
+    missing = baselines.absences({"api"})
+    assert len(missing) == 1 and missing[0]["component"] == "tts"
+    assert "did not appear" in baselines.describe(missing[0])
 
 
 if __name__ == "__main__":

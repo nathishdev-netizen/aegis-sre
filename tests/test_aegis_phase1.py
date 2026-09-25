@@ -102,6 +102,35 @@ def test_generic_trace_id_outranks_app_call_id():
     event = linker.link(_event("trace_id=11112222aaaa call=abc12345-def0 step ok"))
     assert event.trace_id == "11112222aaaa"
 
+def test_closers_are_generic_not_one_projects_vocabulary():
+    """The closer regex said "CALL END" - the reference project's word. Another
+    project saying "ORDER END" never closed a session, sessions piled up, and
+    inference refused for the rest of the file (2 inferred, 40 none on an
+    82-line log where ~40 were inferable)."""
+    linker = TraceLinker()
+    linker.link(_event("ORDER START request_id=req-00010001"))
+    linker.link(_event("ORDER END request_id=req-00010001 - total 3s"))
+    linker.link(_event("ORDER START request_id=req-00020002"))
+    event = linker.link(_event("[inventory] reserve ok for sku A2 in 12ms"))
+    assert event.correlation_basis == "inferred", \
+        "first order never closed, so two sessions were open"
+    assert event.trace_id == "req-00020002"
+
+
+def test_sub_unit_end_does_not_close_the_session():
+    """Making closers fully generic overshot: the reference service logs
+    "TURN END call=..." after every conversational turn, and any-END closed
+    the whole call mid-conversation - inferred coverage fell from 173 to 135.
+    A session opened by "CALL START" is only closed by ITS noun's END."""
+    linker = TraceLinker()
+    linker.link(_event("[api] CALL START call=abc12345-def0"))
+    linker.link(_event("[api] TURN END call=abc12345-def0 - 950ms"))
+    event = linker.link(_event("[tts] Synthesised 60 chars in 1136ms"))
+    assert event.correlation_basis == "inferred", "TURN END closed the call"
+    linker.link(_event("[api] CALL END call=abc12345-def0 - 16s"))
+    after = linker.link(_event("[filler] cache tidy"))
+    assert after.correlation_basis == "none"
+
 
 if __name__ == "__main__":
     failures = 0

@@ -171,6 +171,20 @@ def test_no_precedents_means_a_clean_prompt():
     assert "PRECEDENTS (past incidents" not in captured["prompt"]
 
 
+def test_a_new_sessions_incident_1_does_not_erase_last_sessions():
+    """Session counters restart at INC-1. Keyed on the bare id, today's INC-1
+    overwrote yesterday's precedent - found when the live dashboard showed no
+    precedents for an incident that had one an hour earlier."""
+    memory = _memory()
+    yesterday = dict(LOOKUP_A); yesterday["opened_at"] = "09:00:00"
+    today = dict(UNRELATED); today["id"] = "INC-1"; today["opened_at"] = "15:00:00"
+    memory.remember(yesterday)
+    memory.remember(today)
+    matches = memory.similar(LOOKUP_B)
+    assert matches and matches[0]["id"] == "INC-1", "the precedent was erased"
+    assert "09:00:00" in matches[0]["key"]
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
