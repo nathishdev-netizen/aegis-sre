@@ -30,7 +30,7 @@ PROVIDERS = {
     "groq": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
         "key_env": "GROQ_API_KEY",
-        "default_model": "llama-3.3-70b-versatile",
+        "default_model": "openai/gpt-oss-120b",
     },
     "openai": {
         "url": "https://api.openai.com/v1/chat/completions",
@@ -41,9 +41,12 @@ PROVIDERS = {
 
 # Task -> (provider, model). Overridable per task from the environment:
 #   AEGIS_MODEL_EXPLAIN_INCIDENT="openai:gpt-4o-mini"
+# Model ids the Groq free tier actually serves. llama-3.3-70b-versatile was
+# retired from it and now 404s as "does not exist or you do not have access",
+# which reads like a permissions problem rather than a stale id.
 ROUTES = {
-    "explain_incident": ("groq", "llama-3.3-70b-versatile"),
-    "answer_question": ("groq", "llama-3.3-70b-versatile"),
+    "explain_incident": ("groq", "openai/gpt-oss-120b"),
+    "answer_question": ("groq", "openai/gpt-oss-120b"),
 }
 
 
@@ -80,9 +83,14 @@ def _route_for(task: str) -> tuple[str, str]:
 
 def _http_transport(url: str, headers: dict[str, str], body: dict[str, Any],
                     timeout: float) -> dict[str, Any]:
+    # Groq sits behind Cloudflare, which refuses urllib's default
+    # "Python-urllib/3.x" User-Agent with a bare "error code: 1010" - a 403
+    # that looks exactly like a bad key and is not one. Identify ourselves.
     request = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", **headers}, method="POST",
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "aegis/1.0 (+log-intelligence)", **headers},
+        method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))

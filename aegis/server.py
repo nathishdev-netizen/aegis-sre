@@ -63,6 +63,9 @@ class AegisApp:
         self.router = ModelRouter(budget=Budget(max_calls=10, min_interval_s=1.0))
         self.explainer = Explainer(self.router)
         self.hypotheses: dict[str, dict] = {}
+        # The one label no code can infer: did the proposed fix work?
+        # Without it every precedent reads "outcome: not recorded".
+        self.outcomes: dict[str, str] = {}
         self.registry = ProviderRegistry()
         # Provider polling is opt-in per source: pulling history costs money
         # and quota, so it never starts on its own.
@@ -459,8 +462,6 @@ class AegisApp:
         for incident in incidents:
             incident["hypothesis"] = self.hypotheses.get(incident["id"])
             incident["precedents"] = self.pipeline.memory.similar(incident, top=2)
-            incident["outcome"] = self.outcomes.get(incident["id"], "")
-            incident["outcome"] = self.outcomes.get(incident["id"], "")
             incident["outcome"] = self.outcomes.get(incident["id"], "")
 
         purpose_marked = bool(spec and any(s.critical for s in spec.steps))
