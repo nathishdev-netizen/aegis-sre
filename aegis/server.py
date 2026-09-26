@@ -838,13 +838,23 @@ class AegisApp:
         only when the code or the behaviour has actually changed."""
         if self.pipeline is None:
             return {"ok": False, "detail": "no source attached"}
+        code = self._load_code()
+        if not code:
+            # Without a code analysis, build_fact_sheet has nothing to describe -
+            # the brief that comes back says "there is nothing" for every section,
+            # which reads exactly like a broken feature rather than a missing step.
+            # A brief this ungrounded is worse than none, so refuse to spend the
+            # model call and say what is actually needed instead.
+            return {"ok": False,
+                    "detail": "no code analysis yet - click Analyze on Flow & spec "
+                              "first, then Generate brief"}
         from aegis.l4_understanding.comprehension import (
             ProjectComprehension, build_fact_sheet)
         with self._lock:
             operations = [b for b in
                           self.pipeline.detect._latency.summary() if b["ready"]]
             templates = self.pipeline.store.templates(limit=20)
-        facts = build_fact_sheet(self._load_code(), operations, templates)
+        facts = build_fact_sheet(code, operations, templates)
         comprehension = ProjectComprehension(
             AEGIS_HOME / "projects" / self.project)
         return comprehension.generate(facts, self.router, force=force)
