@@ -194,6 +194,55 @@ def test_mapper_finds_the_raising_line():
                for l in locations)
 
 
+def test_mapper_finds_a_message_split_across_two_source_lines():
+    """A real failure against paideia-chatbot: the logger call splits a long
+    message into two adjacent string literals -
+        logger.warning(
+            "[orchestrator] OUT OF SCOPE REFUSAL - question graded out of scope, "
+            "research pipeline skipped entirely"
+        )
+    - which Python concatenates with no separator, but which the evidence line
+    (as actually logged) reports as one continuous sentence. The mapper used
+    to check each source line alone and never found it."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = Path(tmpdir) / "orchestrator.py"
+        app.write_text(
+            'def out_of_scope():\n'
+            '    logger.warning(\n'
+            '        "[orchestrator] OUT OF SCOPE REFUSAL - question graded out of scope, "\n'
+            '        "research pipeline skipped entirely"\n'
+            '    )\n'
+        )
+        locations = TraceToCodeMapper(tmpdir).locate([
+            "[orchestrator] OUT OF SCOPE REFUSAL - question graded out of scope, "
+            "research pipeline skipped entirely"
+        ])
+        assert any(l.file == "orchestrator.py" and l.line == 3 for l in locations), \
+            "a message split across two adjacent string literals was not found"
+
+
+def test_mapper_ignores_an_interpolated_exception_repr():
+    """A second real failure: logger.warning(f"connection lost ({exc!r}) --
+    reconnecting") logs "connection lost (TimeoutError()) -- reconnecting" at
+    runtime - "TimeoutError()" exists nowhere in the source, which says
+    "{exc!r}". A fragment built from the logged text used to search for the
+    runtime value itself and never find the real call site."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Path(tmpdir) / "db.py"
+        db.write_text(
+            'def reconnect(exc):\n'
+            '    logger.warning(f"[chatbot_db] connection lost ({exc!r}) -- '
+            'reconnecting and retrying once")\n'
+        )
+        locations = TraceToCodeMapper(tmpdir).locate([
+            "[chatbot_db] connection lost (TimeoutError()) -- reconnecting and retrying once"
+        ])
+        assert any(l.file == "db.py" and l.line == 2 for l in locations), \
+            "an interpolated exception repr blocked mapping to the real logger call"
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

@@ -26,6 +26,18 @@ class Location:
     fragment: str
 
 
+def _normalize_for_match(text: str) -> str:
+    """Strip quote characters and collapse whitespace, lowercased.
+
+    Adjacent string literals in source ("a" "b") concatenate with no separator
+    at all - the closing quote of one touches the opening quote of the next -
+    so comparing raw text (even joined with a space) never lines up with a
+    fragment that spans the boundary. Stripping quotes and whitespace from
+    both the source and the fragment before comparing is what makes them equal.
+    """
+    return re.sub(r"\s+", "", text.replace('"', "").replace("'", "")).lower()
+
+
 def _fragments(evidence_line: str) -> list[str]:
     """The parts of a log line likely to appear verbatim in source code.
 
@@ -37,6 +49,15 @@ def _fragments(evidence_line: str) -> list[str]:
     text = re.sub(r"<[A-Z]+>", " ", text)                       # redaction marks
     text = re.sub(r"\b[0-9a-f]{8}-[0-9a-f-]{8,}\b", " ", text, flags=re.I)
     text = re.sub(r"\b\w+=[^\s]+", " ", text)                    # key=value
+    # A repr() of a runtime object - {exc!r} in an f-string becomes
+    # "(TimeoutError())" or "(ValueError('bad id'))" in the logged line, and
+    # that exact text exists nowhere in the source: the source says "{exc!r}",
+    # not the exception's actual class name, so deleting it must not leave the
+    # words on either side touching - "connection lost (X) -- retrying" and
+    # "connection lost -- retrying" are different strings, and the source still
+    # has "({exc!r})" sitting between "lost" and "--". Treated as a split point,
+    # like the { } and [ ] below, so each side is searched on its own.
+    text = re.sub(r"\([A-Z]\w*\([^()]*\)\)", "|", text)
     text = re.sub(r"\b\d+(?:\.\d+)?\b", " ", text)               # numbers
     text = re.sub(r"https?://\S+", " ", text)
     pieces = re.split(r"[|:\[\]{}\"']+", text)
@@ -84,9 +105,24 @@ class TraceToCodeMapper:
                 content = path.read_text(errors="replace")
             except OSError:
                 continue
-            for number, source_line in enumerate(content.splitlines(), 1):
+            lines = content.splitlines()
+            for number, source_line in enumerate(lines, 1):
+                # A long log message is often split across two physical source
+                # lines as adjacent string literals ("...part one, "\n"part
+                # two"), which Python concatenates with NO separator at all -
+                # the closing quote of one butts directly against the opening
+                # quote of the next. A fragment spanning both halves can never
+                # match either line alone, or even the two lines joined with a
+                # space: stripping quote characters and collapsing whitespace
+                # from both sides is what makes "scope, " + "research" line up
+                # with the fragment "scope, research" the same way Python's own
+                # concatenation does.
+                next_line = lines[number] if number < len(lines) else ""
+                joined = _normalize_for_match(source_line + next_line)
                 for fragment in wanted:
-                    if fragment.lower() in source_line.lower():
+                    normalized_fragment = _normalize_for_match(fragment)
+                    if fragment.lower() in source_line.lower() or \
+                       normalized_fragment in joined:
                         key = (str(path), number)
                         if key not in seen:
                             seen.add(key)
