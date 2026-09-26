@@ -1426,6 +1426,19 @@
           && /\b(ended|completed|finished|hung up|closed)\b/i.test(state.summary);
         text = finished ? 'Last run finished' : 'Run in progress';
         sub = state.summary || '';
+      } else if (state.outcome && state.outcome.verdict === 'hollow') {
+        // The whole point of the outcome layer: a run with zero errors and a clean
+        // hangup can still have achieved nothing. Every check above this one only
+        // asks "did it error" - this is the one that asks "did it work", and a
+        // green "Everything looks healthy" directly under a hollow verdict is the
+        // exact failure this layer exists to prevent.
+        cls = 'warn'; icon = '●';
+        text = 'Completed, but achieved nothing';
+        sub = state.outcome.reason || state.summary || '';
+      } else if (state.outcome && state.outcome.verdict === 'degraded') {
+        cls = 'warn'; icon = '●';
+        text = 'Completed, but abnormally';
+        sub = state.outcome.reason || state.summary || '';
       } else {
         cls = 'ok'; icon = '●';
         text = 'Everything looks healthy';

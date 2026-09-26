@@ -6,6 +6,7 @@ import re
 import time
 import threading
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from queue import Empty, Full, Queue
 from typing import Any
@@ -116,6 +117,8 @@ class Snapshot:
     # Did the run just finished actually achieve anything - separate from whether it
     # errored. Empty until the model has judged the most recently completed run.
     outcome: dict[str, Any] = field(default_factory=dict)
+    # Past runs' verdicts, most recent last - the "Runs" tab's own history view.
+    verdicts: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _stage_list() -> list[StageState]:
@@ -226,6 +229,43 @@ class RuntimeState:
             "ready": len(ready),
             "learning": len(operations) - len(ready),
         }
+
+    def _publish_verdicts_locked(self) -> None:
+        """Put past runs' outcomes on the snapshot for the Runs tab.
+
+        Reshapes Store rows into what that tab's own rendering already expects
+        (verdict, reason, opened_at, duration_s, events) - written here rather
+        than pattern-matched from log lines, since it IS the history already on
+        disk from every _finish_run_locked() call.
+        """
+        if self._store is None:
+            return
+        try:
+            rows = self._store.recent_runs(self._baselines.source, limit=30)
+        except Exception:
+            return
+        verdicts = []
+        for row in reversed(rows):  # oldest first, matching the tab's own order
+            if not row.get("verdict"):
+                continue  # a run still in flight has no verdict yet
+            duration_s = 0.0
+            try:
+                started = datetime.fromisoformat(row["started_at"])
+                ended = datetime.fromisoformat(row["ended_at"])
+                duration_s = round((ended - started).total_seconds(), 1)
+            except (ValueError, TypeError):
+                # Log-line timestamps ("11:31:24") aren't ISO and can't be
+                # subtracted safely - a missing duration beats a wrong one.
+                pass
+            verdicts.append({
+                "trace_id": str(row["id"]),
+                "verdict": row["verdict"],
+                "reason": row.get("reason") or "",
+                "opened_at": row.get("started_at") or "",
+                "duration_s": duration_s,
+                "events": row.get("events") or 0,
+            })
+        self._snapshot.verdicts = verdicts
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -777,6 +817,7 @@ class RuntimeState:
                 if previous_drifts.get(key) != drift:
                     self._findings.append(drift)
             self._findings = self._findings[-20:]
+            self._publish_verdicts_locked()
         except Exception:
             # A run's outcome not being recorded is a loss of history, not of
             # ingestion - the watched file keeps being read regardless.
@@ -1436,6 +1477,9 @@ class RuntimeState:
                             events=events,
                             errors=errors,
                         )
+                        with self._lock:
+                            self._publish_verdicts_locked()
+                        self.broadcast()
                     except Exception:
                         pass
             except Exception:
