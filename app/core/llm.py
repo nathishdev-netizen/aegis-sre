@@ -244,6 +244,102 @@ def interpret_run(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+OUTCOME_SYSTEM = """You judge whether ONE run actually achieved what it exists to do - not
+whether it errored, but whether anything real happened.
+
+A run can complete with zero errors and a clean hangup and still have accomplished
+nothing: a caller who spoke to nobody, a request that returned 200 with an empty
+answer, a job that ran every step and produced no output. That verdict - clean logs,
+hollow outcome - is the one every error-based check misses, and it is the reason this
+judgement exists separately from "did it error".
+
+First, work out from the run's own opening lines and the components it touched what
+this kind of run is FOR - what a caller/request/job like this one exists to accomplish.
+Then check whether the logs show that actually happening, not just that steps ran.
+
+Verdicts:
+- "achieved": it did what it set out to do.
+- "failed": it errored, and the logs say so.
+- "hollow": it completed (or ended) cleanly, but achieved nothing - the purpose was
+  never met even though nothing crashed. Requires citing the specific evidence that
+  shows nothing was achieved (e.g. "no speech captured", "response body was empty",
+  "no output written") - a hollow verdict with no such citation is not trustworthy
+  enough to state; use "unknown" instead.
+- "degraded": it achieved its purpose, but abnormally - much slower than the run's own
+  earlier steps suggest is normal, retried repeatedly before succeeding, or completed
+  with a symptom that would concern the person who built this.
+- "unknown": the logs do not show enough to say either way. Prefer this over guessing.
+
+Ground every claim in the log lines actually given. Never invent what "normal" looks
+like for this system beyond what the run's own logs show.
+
+Return JSON only:
+{
+  "verdict": "achieved" | "failed" | "hollow" | "degraded" | "unknown",
+  "purpose": "one sentence: what this run appears to exist to accomplish",
+  "reason": "1-3 sentences: why this verdict, in plain language, citing what happened",
+  "confidence": 0-100,
+  "evidence": ["exact log lines that support this verdict, copied verbatim"]
+}"""
+
+
+def interpret_outcome(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """Judge whether a just-finished run achieved anything. Returns None without a model.
+
+    Separate from interpret_run(): that call explains what happened narratively; this
+    one answers a different question - not "what happened" but "did it work" - which
+    is exactly the question a clean-looking, purposeless run answers wrong if you only
+    check for errors.
+    """
+    if not snapshot.get("log_lines"):
+        return None
+
+    raw = _chat(
+        [
+            {"role": "system", "content": OUTCOME_SYSTEM},
+            {"role": "user", "content": _run_context(snapshot)},
+        ],
+        max_tokens=500,
+    )
+    if raw is None:
+        return None
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    verdict = data.get("verdict")
+    if verdict not in {"achieved", "failed", "hollow", "degraded", "unknown"}:
+        verdict = "unknown"
+
+    evidence = [str(e) for e in data.get("evidence", []) if str(e).strip()]
+
+    # The plan's one hard rule: "hollow" is the verdict no error check computes, which
+    # makes it the one most tempting to over-assert. Require it to point at the actual
+    # lines showing nothing was achieved, verified against this run's real logs -
+    # exactly the same grounding answer_question() already applies to "yes"/"no".
+    corpus = " ".join(
+        str(item.get("message", "")) + " " + " ".join(item.get("detail") or [])
+        for item in snapshot.get("log_lines", [])
+    ).lower()
+    if verdict == "hollow":
+        grounded = [e for e in evidence if corpus and _appears_in(e, corpus)]
+        if not grounded:
+            verdict = "unknown"
+        else:
+            evidence = grounded
+
+    return {
+        "verdict": verdict,
+        "purpose": str(data.get("purpose", "")).strip(),
+        "reason": str(data.get("reason", "")).strip(),
+        "confidence": max(0, min(100, int(data.get("confidence", 0) or 0))),
+        "evidence": evidence,
+        "source": "llm",
+    }
+
+
 ASK_SYSTEM = """You answer a developer's question about ONE specific run, using only its logs.
 
 FIRST, before anything else: check whether the thing the question asks about appears in

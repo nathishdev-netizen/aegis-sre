@@ -793,6 +793,151 @@ def test_absence_is_reported_for_components_that_stopped():
     assert "did not appear" in baselines.describe(missing[0])
 
 
+def test_drift_needs_both_halves_of_history():
+    """Two samples cannot show a trend - reporting one anyway would be a guess
+    dressed up as a measurement."""
+    from app.core.baselines import Baseline
+    b = Baseline(component="tts", operation="synthesise")
+    b.add(100.0)
+    b.add(300.0)
+    assert b.drift() is None, "too little history to call it a trend"
+
+
+def test_drift_fires_on_a_real_trend_no_single_run_would_trip():
+    """Every run in this history is individually unremarkable - none is 3x the
+    previous one - yet the operation has genuinely gotten much slower."""
+    from app.core.baselines import Baseline
+    b = Baseline(component="orch", operation="chat")
+    for _ in range(20):
+        b.add(800.0)
+    for _ in range(20):
+        b.add(2400.0)
+    result = b.drift()
+    assert result is not None, "a real 3x trend across 40 runs was missed"
+    assert result["ratio"] == 3.0
+
+
+# --- Outcome verdicts: a clean run is not the same claim as a useful one -------
+
+def _fake_outcome_client(payload: dict) -> object:
+    class FakeMessage:
+        content = json.dumps(payload)
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    return type("R", (), {"choices": [type("C", (), {"message": FakeMessage})]})
+    return FakeClient()
+
+
+def test_hollow_verdict_without_evidence_is_downgraded():
+    """'hollow' is the verdict no error check computes, which makes it the one most
+    tempting for a model to assert without real support. It must cite lines that
+    actually appear in this run's own logs, or it does not stand."""
+    snapshot = {
+        "log_lines": [
+            {"message": "CALL START call=1"},
+            {"message": "CALL END - 5s, hangup_cause=NORMAL_CLEARING"},
+        ],
+        "timeline": [], "stages": [], "metrics": {"total_events": 2}, "source": {},
+    }
+    original = llm._client
+    llm._client = lambda: _fake_outcome_client({
+        "verdict": "hollow",
+        "purpose": "handle a call",
+        "reason": "nothing was said",
+        "confidence": 95,
+        "evidence": ["ERROR the caller never spoke a word"],  # never in the logs
+    })
+    try:
+        result = llm.interpret_outcome(snapshot)
+        assert result["verdict"] == "unknown", "an ungrounded hollow verdict must not stand"
+    finally:
+        llm._client = original
+
+
+def test_hollow_verdict_with_real_evidence_is_accepted():
+    """The guard must not reject a hollow verdict whose evidence genuinely is
+    in this run's logs, just because it is the rarer, more serious claim."""
+    snapshot = {
+        "log_lines": [
+            {"message": "CALL START call=1"},
+            {"message": "TURN SKIPPED - Plivo captured no speech, re-prompting"},
+            {"message": "CALL END - 18s, hangup_cause=NORMAL_CLEARING"},
+        ],
+        "timeline": [], "stages": [], "metrics": {"total_events": 3}, "source": {},
+    }
+    original = llm._client
+    llm._client = lambda: _fake_outcome_client({
+        "verdict": "hollow",
+        "purpose": "handle a call",
+        "reason": "no speech was captured",
+        "confidence": 90,
+        "evidence": ["TURN SKIPPED - Plivo captured no speech, re-prompting"],
+    })
+    try:
+        result = llm.interpret_outcome(snapshot)
+        assert result["verdict"] == "hollow", "real evidence must not be rejected"
+    finally:
+        llm._client = original
+
+
+def test_outcome_verdict_outside_the_known_set_becomes_unknown():
+    """A model returning something off-schema must degrade, not propagate a verdict
+    nothing downstream knows how to render."""
+    snapshot = {
+        "log_lines": [{"message": "CALL START call=1"}],
+        "timeline": [], "stages": [], "metrics": {"total_events": 1}, "source": {},
+    }
+    original = llm._client
+    llm._client = lambda: _fake_outcome_client({
+        "verdict": "sort-of-worked", "purpose": "", "reason": "", "confidence": 50, "evidence": [],
+    })
+    try:
+        result = llm.interpret_outcome(snapshot)
+        assert result["verdict"] == "unknown"
+    finally:
+        llm._client = original
+
+
+def test_outcome_judgement_runs_after_a_completed_run():
+    """A run that finishes must trigger an outcome judgement, not just a status
+    update - that judgement is the whole point of the verdict layer."""
+    rs = RuntimeState()
+    calls = []
+    original_request = rs._request_outcome_judgement
+    original_available = llm.is_available
+    rs._request_outcome_judgement = lambda *a, **kw: calls.append(a)
+    llm.is_available = lambda: True
+    try:
+        rs.ingest_line("[api] CALL START call=1")
+        rs.ingest_line("[api] Execution completed successfully.")
+    finally:
+        rs._request_outcome_judgement = original_request
+        llm.is_available = original_available
+    assert len(calls) == 1, "completion did not trigger an outcome judgement"
+
+
+def test_no_outcome_judgement_without_a_model():
+    """Without a configured model, ingestion must not spawn a call that can only
+    return None - matching interpret_run's own no-model behaviour."""
+    rs = RuntimeState()
+    calls = []
+    original_request = rs._request_outcome_judgement
+    original_available = llm.is_available
+    rs._request_outcome_judgement = lambda *a, **kw: calls.append(a)
+    llm.is_available = lambda: False
+    try:
+        rs.ingest_line("[api] CALL START call=1")
+        rs.ingest_line("[api] Execution completed successfully.")
+    finally:
+        rs._request_outcome_judgement = original_request
+        llm.is_available = original_available
+    assert calls == [], "an outcome judgement was requested with no model configured"
+
+
 if __name__ == "__main__":
     import sys
 

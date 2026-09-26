@@ -113,6 +113,9 @@ class Snapshot:
     profile: dict[str, Any] = field(default_factory=dict)
     # How this run compares to the same operations' own measured history.
     baselines: dict[str, Any] = field(default_factory=dict)
+    # Did the run just finished actually achieve anything - separate from whether it
+    # errored. Empty until the model has judged the most recently completed run.
+    outcome: dict[str, Any] = field(default_factory=dict)
 
 
 def _stage_list() -> list[StageState]:
@@ -731,21 +734,33 @@ class RuntimeState:
         run N when a service is killed mid-call) - either way, run N is over and
         whatever it did or didn't do is now fixed, so this is the one place both
         paths lead to.
+
+        A run is real whether or not a Store exists to persist it - persistence is
+        an enhancement (see Store's own docstring), so the outcome judgement and the
+        baseline checks below must not be skipped just because self._store is None.
+        Only the run_id-keyed history write is conditional on having one.
         """
-        if self._run_id is None:
-            self._run_components = set()
+        if not self._run_components and self._run_id is None:
             return
+        run_id = self._run_id
+        events = self._event_counter
+        errors = self._snapshot.metrics.get("failures", 0)
         try:
-            if self._store is not None:
+            if run_id is not None and self._store is not None:
                 self._store.finish_run(
-                    self._run_id,
+                    run_id,
                     ended_at=ended_at or now_iso(),
                     verdict=self._snapshot.status,
                     reason=self._snapshot.reason,
                     evidence=list(self._snapshot.evidence),
-                    events=self._event_counter,
-                    errors=self._snapshot.metrics.get("failures", 0),
+                    events=events,
+                    errors=errors,
                 )
+            if llm.is_available():
+                # A clean-looking run can still have achieved nothing - the
+                # judgement pattern-matched fields above cannot see. Off-thread,
+                # like every other model call, so it never holds up ingestion.
+                self._request_outcome_judgement(run_id, self._store, events, errors)
             for absence in self._baselines.absences(self._run_components):
                 self._findings.append(absence)
             # Drift is a property of history already on disk, not of this run's
@@ -1127,10 +1142,6 @@ class RuntimeState:
         except Exception:
             finding = None
         with self._lock:
-            # Recorded every line, not just ones with a duration - absence asks
-            # "did this component show up at all", which a component with no
-            # measured line would otherwise never answer.
-            self._run_components.add(component)
             if finding:
                 self._findings.append(finding)
                 self._findings = self._findings[-20:]
@@ -1225,6 +1236,11 @@ class RuntimeState:
                         self._run_id = None
                 else:
                     self._run_id = None
+
+            # After any reset above, not before: a run-start line's own component
+            # belongs to the run it just began, not the one being closed out by the
+            # _finish_run_locked() call two lines up.
+            self._run_components.add(component)
 
             if transition:
                 if False:
@@ -1384,6 +1400,46 @@ class RuntimeState:
                 # run once more so the brief reflects them.
                 if stale:
                     self._request_interpretation()
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _request_outcome_judgement(
+        self, run_id: int | None, store: Store | None, events: int, errors: int
+    ) -> None:
+        """Ask the model whether the run that just finished achieved anything.
+
+        Off the ingest path, like _request_interpretation - and keyed to the run_id
+        and counts captured at completion, not read from self later, since by the
+        time the model answers a new run may already be in flight and self._run_id
+        will point at it. events/errors are re-sent because finish_run() overwrites
+        the whole row rather than merging - passing stale zeros would erase the
+        counts the first finish_run() call (in _finish_run_locked) already recorded.
+        """
+        def run() -> None:
+            try:
+                snapshot = self.snapshot()
+                result = llm.interpret_outcome(snapshot)
+                if not result:
+                    return
+                with self._lock:
+                    self._snapshot.outcome = result
+                    self._snapshot.updated_at = now_iso()
+                self.broadcast()
+                if store is not None and run_id is not None:
+                    try:
+                        store.finish_run(
+                            run_id,
+                            ended_at=now_iso(),
+                            verdict=result["verdict"],
+                            reason=result["reason"],
+                            evidence=result["evidence"],
+                            events=events,
+                            errors=errors,
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         threading.Thread(target=run, daemon=True).start()
 
