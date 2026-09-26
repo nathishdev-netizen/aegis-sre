@@ -20,6 +20,7 @@ from app.core.parser import parse_log_line, unwrap_payload  # noqa: E402
 from app.core.baselines import Baselines, extract_duration  # noqa: E402
 from app.core.state import RuntimeState  # noqa: E402
 from app.store import Store  # noqa: E402
+from app.core import audit  # noqa: E402
 
 
 # --- Bug 1: the agent attached to itself and invented a failure ----------------
@@ -936,6 +937,129 @@ def test_no_outcome_judgement_without_a_model():
         rs._request_outcome_judgement = original_request
         llm.is_available = original_available
     assert calls == [], "an outcome judgement was requested with no model configured"
+
+
+# --- Audit reports: rollups of what happened over a time window ---------------
+
+def _insert_run(store, source, hours_ago, verdict, reason="test", events=5):
+    from datetime import datetime, timedelta, timezone
+    conn = store._connect()
+    ts = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat(timespec="seconds")
+    conn.execute(
+        "INSERT INTO runs (source, started_at, ended_at, verdict, reason, evidence,"
+        " events, errors, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (source, ts, ts, verdict, reason, "[]", events, 0, ts))
+    conn.commit()
+    store._release(conn)
+
+
+def _insert_duration(store, source, hours_ago, component, operation, value_ms):
+    from datetime import datetime, timedelta, timezone
+    conn = store._connect()
+    ts = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat(timespec="seconds")
+    conn.execute(
+        "INSERT INTO durations (source, component, operation, value_ms, observed_at,"
+        " recorded_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (source, component, operation, value_ms, ts, ts))
+    conn.commit()
+    store._release(conn)
+
+
+def test_audit_report_excludes_runs_outside_the_window():
+    """A run from 30 hours ago must not count toward a 24-hour report - the
+    entire point of a windowed report is that it is NOT all-time history."""
+    store = Store(path=":memory:")
+    _insert_run(store, "svc", 1, "achieved")
+    _insert_run(store, "svc", 30, "achieved")
+    report = audit.generate(store, "svc", "24h")
+    assert report.total_runs == 1, "a run outside the window was counted"
+
+
+def test_audit_report_counts_verdicts_correctly():
+    store = Store(path=":memory:")
+    _insert_run(store, "svc", 1, "achieved")
+    _insert_run(store, "svc", 2, "hollow", "no speech captured")
+    _insert_run(store, "svc", 3, "achieved")
+    _insert_run(store, "svc", 5, "failed", "connection refused")
+    report = audit.generate(store, "svc", "24h")
+    assert report.total_runs == 4
+    assert report.verdict_counts == {"achieved": 2, "hollow": 1, "failed": 1}
+    assert len(report.notable_runs) == 2, "hollow and failed must both surface as notable"
+
+
+def test_audit_report_migrates_a_pre_recorded_at_database():
+    """A database created before recorded_at existed must not crash the report -
+    it should just correctly exclude rows it cannot place in time."""
+    import sqlite3
+    import tempfile
+    import os
+    tmpdir = tempfile.mkdtemp()
+    old_db = os.path.join(tmpdir, "old.db")
+    conn = sqlite3.connect(old_db)
+    conn.execute("CREATE TABLE runs (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL,"
+                 " started_at TEXT, ended_at TEXT, label TEXT, verdict TEXT, reason TEXT,"
+                 " evidence TEXT, events INTEGER DEFAULT 0, errors INTEGER DEFAULT 0)")
+    conn.execute("CREATE TABLE durations (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL,"
+                 " component TEXT NOT NULL, operation TEXT NOT NULL, value_ms REAL NOT NULL,"
+                 " observed_at TEXT)")
+    conn.execute("INSERT INTO runs (source, started_at, verdict) VALUES ('svc', '11:00:00', 'achieved')")
+    conn.commit()
+    conn.close()
+
+    store = Store(path=old_db)
+    report = audit.generate(store, "svc", "24h")
+    assert report.total_runs == 0, "a pre-migration row with no recorded_at must be excluded, not crash"
+    store.close()
+
+
+def test_spike_reported_once_per_operation_not_once_per_repeat():
+    """A sustained level shift (a drift) must not ALSO appear as many separate
+    spikes - one entry per operation, the worst instance, not one per repeat."""
+    store = Store(path=":memory:")
+    for h in range(23, 12, -1):
+        _insert_duration(store, "svc", h, "orch", "chat", 800.0)
+    for h in range(11, 0, -1):
+        _insert_duration(store, "svc", h, "orch", "chat", 2400.0)
+    report = audit.generate(store, "svc", "24h")
+    matching = [s for s in report.spikes if s["component"] == "orch"]
+    assert len(matching) == 1, "a sustained shift produced more than one spike entry"
+
+
+def test_audit_report_drift_uses_only_the_windows_own_samples():
+    """A 3x drift entirely within the window must be found even with zero runs -
+    drift is a property of the durations already on disk, not of run outcomes."""
+    store = Store(path=":memory:")
+    for h in range(23, 12, -1):
+        _insert_duration(store, "svc", h, "orch", "chat", 800.0)
+    for h in range(11, 0, -1):
+        _insert_duration(store, "svc", h, "orch", "chat", 2400.0)
+    report = audit.generate(store, "svc", "24h")
+    assert report.total_runs == 0
+    assert len(report.drifts) == 1
+    assert report.drifts[0]["ratio"] == 3.0
+    assert "trending" in report.summary, "a drift finding with no runs must still appear in the summary"
+
+
+def test_audit_report_named_windows_produce_different_totals():
+    store = Store(path=":memory:")
+    _insert_run(store, "svc", 1, "achieved")
+    _insert_run(store, "svc", 30, "achieved")   # inside week/month, outside 24h
+    _insert_run(store, "svc", 24 * 10, "achieved")  # inside month, outside week
+    day = audit.generate(store, "svc", "24h")
+    week = audit.generate(store, "svc", "week")
+    month = audit.generate(store, "svc", "month")
+    assert day.total_runs == 1
+    assert week.total_runs == 2
+    assert month.total_runs == 3
+
+
+def test_audit_report_with_no_store_is_not_an_error():
+    """A source that has never been attached still deserves a report, not a crash
+    or a 500 - it just says there is nothing yet."""
+    rs = RuntimeState()
+    result = rs.audit_report("24h")
+    assert result["total_runs"] == 0
+    assert "summary" in result
 
 
 if __name__ == "__main__":

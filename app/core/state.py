@@ -271,6 +271,21 @@ class RuntimeState:
         with self._lock:
             return json.loads(json.dumps(asdict(self._snapshot)))
 
+    def audit_report(self, window: str = "24h") -> dict[str, Any]:
+        """A rollup of the current source's history over a named window.
+
+        No model call, no ingest-path cost - every figure comes from rows
+        already in the store. Returns an empty-shaped report when there is no
+        store yet (nothing has been attached), never an error.
+        """
+        from app.core.audit import generate
+
+        if self._store is None:
+            from app.core.audit import AuditReport
+            return AuditReport(window=window, since="", until="", total_runs=0,
+                              summary="No source attached yet.").as_dict()
+        return generate(self._store, self._baselines.source, window).as_dict()
+
     def reset(self) -> dict[str, Any]:
         with self._lock:
             if self._demo_timer is not None:

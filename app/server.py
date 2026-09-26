@@ -148,6 +148,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             write_json(self, HTTPStatus.OK, {"ports": runtime.refresh_ports()})
             return
 
+        if self.path == "/api/audit" or self.path.startswith("/api/audit?"):
+            _, _, query = self.path.partition("?")
+            window = "24h"
+            for pair in query.split("&"):
+                key, _, value = pair.partition("=")
+                if key == "window" and value:
+                    window = value
+            write_json(self, HTTPStatus.OK, {"report": runtime.audit_report(window)})
+            return
+
         if self.path == "/events":
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")

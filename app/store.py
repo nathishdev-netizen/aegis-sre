@@ -19,12 +19,17 @@ import json
 import os
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 DEFAULT_PATH = Path(os.path.expanduser("~/.loganalyst/history.db"))
 
-SCHEMA = """
+# Split from the indexes below: a database created before recorded_at existed has
+# the tables already, via CREATE TABLE IF NOT EXISTS, which does not add a missing
+# column - _migrate() must run and add it BEFORE any index on that column is
+# created, or CREATE INDEX itself fails with "no such column".
+TABLES = """
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     source      TEXT NOT NULL,
@@ -35,7 +40,12 @@ CREATE TABLE IF NOT EXISTS runs (
     reason      TEXT,
     evidence    TEXT,
     events      INTEGER DEFAULT 0,
-    errors      INTEGER DEFAULT 0
+    errors      INTEGER DEFAULT 0,
+    -- Always this machine's own wall clock, in ISO 8601 (sortable, always has a
+    -- date). started_at/ended_at are often the log line's OWN stated time - useful
+    -- for display, sometimes a bare "11:31:24" with no date, useless for filtering
+    -- "the last 24 hours". Every time-windowed query in this file uses this column.
+    recorded_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS durations (
@@ -44,20 +54,38 @@ CREATE TABLE IF NOT EXISTS durations (
     component   TEXT NOT NULL,
     operation   TEXT NOT NULL,
     value_ms    REAL NOT NULL,
-    observed_at TEXT
+    observed_at TEXT,
+    -- Same reasoning as runs.recorded_at: observed_at is the log line's own stated
+    -- time, not reliably sortable or dateable. Time-windowed baseline queries use
+    -- this column instead.
+    recorded_at TEXT
 );
+"""
 
+INDEXES = """
 -- Baselines are read per (source, component, operation) on every duration observed,
 -- so this index is what keeps observe() cheap as history grows.
 CREATE INDEX IF NOT EXISTS durations_key
     ON durations (source, component, operation, id);
 
 CREATE INDEX IF NOT EXISTS runs_source ON runs (source, id);
+CREATE INDEX IF NOT EXISTS runs_recorded_at ON runs (source, recorded_at);
+CREATE INDEX IF NOT EXISTS durations_recorded_at ON durations (source, recorded_at);
 """
 
 # Enough history to compare against, bounded so a long-running watch does not grow
 # without limit and so a baseline tracks current behaviour rather than last month's.
 KEEP_PER_OPERATION = 200
+
+
+def _wall_clock() -> str:
+    """This machine's own real time, UTC, ISO 8601 - always sortable, always dated.
+
+    Deliberately not the log line's own timestamp (see recorded_at's comment in
+    SCHEMA): a value written here must be safe to filter "the last 24 hours" by,
+    which a bare "11:31:24" pulled from someone else's log format is not.
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class Store:
@@ -79,7 +107,9 @@ class Store:
         self._lock = threading.Lock()
         conn = self._connect()
         try:
-            conn.executescript(SCHEMA)
+            conn.executescript(TABLES)
+            self._migrate(conn)
+            conn.executescript(INDEXES)
         finally:
             self._release(conn)
         # One writer thread owns every duration INSERT, so ingestion never
@@ -89,6 +119,19 @@ class Store:
         self._writer_stop = threading.Event()
         self._writer = threading.Thread(target=self._writer_loop, daemon=True)
         self._writer.start()
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Add columns a database created before recorded_at existed is missing.
+
+        CREATE TABLE IF NOT EXISTS never adds a column to a table that already
+        exists, so a user's existing ~/.loganalyst/history.db needs this to gain
+        recorded_at rather than silently having every audit-report query find none.
+        """
+        for table, column in (("runs", "recorded_at"), ("durations", "recorded_at")):
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+        conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
         # An in-memory database exists only as long as its connection, so it cannot be
@@ -133,7 +176,7 @@ class Store:
         """
         try:
             self._queue.put_nowait(
-                (source, component, operation, float(value_ms), when))
+                (source, component, operation, float(value_ms), when, _wall_clock()))
         except Exception:
             pass  # a full queue costs history, never ingestion
 
@@ -156,7 +199,8 @@ class Store:
                     try:
                         conn.executemany(
                             "INSERT INTO durations (source, component, operation,"
-                            " value_ms, observed_at) VALUES (?, ?, ?, ?, ?)", batch)
+                            " value_ms, observed_at, recorded_at)"
+                            " VALUES (?, ?, ?, ?, ?, ?)", batch)
                         conn.commit()
                     finally:
                         self._release(conn)
@@ -235,8 +279,9 @@ class Store:
             conn = self._connect()
             try:
                 cursor = conn.execute(
-                    "INSERT INTO runs (source, started_at, label) VALUES (?, ?, ?)",
-                    (source, started_at, label),
+                    "INSERT INTO runs (source, started_at, label, recorded_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    (source, started_at, label, _wall_clock()),
                 )
                 conn.commit()
                 return int(cursor.lastrowid or 0)
@@ -264,7 +309,7 @@ class Store:
             try:
                 conn.execute(
                     "UPDATE runs SET ended_at = ?, verdict = ?, reason = ?, evidence = ?,"
-                    " events = ?, errors = ? WHERE id = ?",
+                    " events = ?, errors = ?, recorded_at = ? WHERE id = ?",
                     (
                         ended_at,
                         verdict,
@@ -272,6 +317,7 @@ class Store:
                         json.dumps(evidence or []),
                         int(events),
                         int(errors),
+                        _wall_clock(),
                         run_id,
                     ),
                 )
@@ -314,6 +360,47 @@ class Store:
             finally:
                 self._release(conn)
         return {row["verdict"]: row["n"] for row in rows}
+
+    def runs_since(self, source: str, since_iso: str) -> list[dict[str, Any]]:
+        """Every run recorded at or after since_iso, oldest first.
+
+        Filters on recorded_at, not started_at - the one column guaranteed to be
+        this machine's own real, dated, sortable time regardless of what the
+        source's own log format happens to write.
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM runs WHERE source = ? AND recorded_at >= ?"
+                    " ORDER BY id ASC",
+                    (source, since_iso),
+                ).fetchall()
+            finally:
+                self._release(conn)
+        runs = []
+        for row in rows:
+            run = dict(row)
+            try:
+                run["evidence"] = json.loads(run.get("evidence") or "[]")
+            except (ValueError, TypeError):
+                run["evidence"] = []
+            runs.append(run)
+        return runs
+
+    def durations_since(self, source: str, since_iso: str) -> list[dict[str, Any]]:
+        """Every duration measurement recorded at or after since_iso."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    "SELECT component, operation, value_ms, recorded_at FROM durations"
+                    " WHERE source = ? AND recorded_at >= ? ORDER BY id ASC",
+                    (source, since_iso),
+                ).fetchall()
+            finally:
+                self._release(conn)
+        return [dict(row) for row in rows]
 
     def close(self) -> None:
         self.flush_durations()
