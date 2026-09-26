@@ -74,6 +74,15 @@ def write_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> N
     handler.wfile.write(raw)
 
 
+def _query_window(path: str) -> str:
+    _, _, query = path.partition("?")
+    for pair in query.split("&"):
+        key, _, value = pair.partition("=")
+        if key == "window" and value:
+            return value
+    return "24h"
+
+
 class RequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -149,13 +158,21 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/audit" or self.path.startswith("/api/audit?"):
-            _, _, query = self.path.partition("?")
-            window = "24h"
-            for pair in query.split("&"):
-                key, _, value = pair.partition("=")
-                if key == "window" and value:
-                    window = value
-            write_json(self, HTTPStatus.OK, {"report": runtime.audit_report(window)})
+            write_json(self, HTTPStatus.OK, {"report": runtime.audit_report(_query_window(self.path))})
+            return
+
+        if self.path == "/api/audit/download" or self.path.startswith("/api/audit/download?"):
+            from app.core.audit import render_html
+            window = _query_window(self.path)
+            report = runtime.audit_report_object(window)
+            body = render_html(report, runtime.source_label()).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="audit-report-{window}.html"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         if self.path == "/events":

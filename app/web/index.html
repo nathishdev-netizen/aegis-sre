@@ -825,16 +825,14 @@
           <div class="card" id="auditCard" style="margin-top:12px">
             <div class="row" style="justify-content:space-between;align-items:center">
               <div class="section-title" style="margin:0">Audit report</div>
-              <div class="row" id="auditWindowPicker" style="gap:6px">
-                <button class="btn ghost" data-window="24h" style="padding:4px 10px;font-size:12px">24h</button>
-                <button class="btn ghost" data-window="week" style="padding:4px 10px;font-size:12px">Week</button>
-                <button class="btn ghost" data-window="month" style="padding:4px 10px;font-size:12px">Month</button>
+              <div class="row" style="gap:6px">
+                <a class="btn ghost" href="/api/audit/download?window=24h" style="padding:4px 10px;font-size:12px">Download 24h</a>
+                <a class="btn ghost" href="/api/audit/download?window=week" style="padding:4px 10px;font-size:12px">Download week</a>
+                <a class="btn ghost" href="/api/audit/download?window=month" style="padding:4px 10px;font-size:12px">Download month</a>
               </div>
             </div>
-            <div class="why" id="auditSummary" style="margin-top:8px">Loading…</div>
-            <div class="row" id="auditChips" style="margin-top:8px;flex-wrap:wrap;gap:6px"></div>
-            <div id="auditNotable" style="margin-top:10px"></div>
-            <div id="auditFindings" style="margin-top:10px"></div>
+            <div class="hint" style="margin-top:6px">A detailed report of runs, verdicts and
+              timing over the chosen window, as an HTML file you can open or share.</div>
           </div>
 
           <div class="grid2" style="margin-top:22px">
@@ -1700,81 +1698,6 @@
         }
       }
     }
-    // -- Audit report: a rollup over a time window, not a per-run verdict -----
-    let auditWindow = '24h';
-
-    function renderAuditReport(report) {
-      const summaryEl = document.getElementById('auditSummary');
-      const chipsEl = document.getElementById('auditChips');
-      const notableEl = document.getElementById('auditNotable');
-      const findingsEl = document.getElementById('auditFindings');
-      if (!summaryEl) return;
-
-      summaryEl.textContent = report.summary || '';
-
-      const counts = report.verdict_counts || {};
-      chipsEl.innerHTML = Object.keys(counts).length
-        ? Object.entries(counts).map(([v, n]) =>
-            '<span class="tag v-' + escapeHtml(v) + '">' + n + ' ' + escapeHtml(v) + '</span>'
-          ).join('')
-        : '<span class="hint">No completed runs in this window.</span>';
-
-      const notable = report.notable_runs || [];
-      notableEl.innerHTML = notable.length
-        ? '<div class="section-title" style="margin-bottom:6px">Worth a look</div>' +
-          notable.map((r) =>
-            '<div class="why" style="margin-bottom:4px">' +
-            '<span class="tag v-' + escapeHtml(r.verdict) + '">' + escapeHtml(r.verdict) + '</span> ' +
-            escapeHtml(r.reason || '') + '</div>'
-          ).join('')
-        : '';
-
-      const drifts = report.drifts || [];
-      const spikes = report.spikes || [];
-      let findingsHtml = '';
-      if (drifts.length) {
-        findingsHtml += '<div class="section-title" style="margin-bottom:6px">Trending</div>' +
-          drifts.map((d) =>
-            '<div class="hint">' + escapeHtml(d.component) + ' ' + escapeHtml(d.operation) +
-            ': ' + d.earlier_median_ms + 'ms → ' + d.recent_median_ms + 'ms (' + d.ratio + 'x)</div>'
-          ).join('');
-      }
-      if (spikes.length) {
-        findingsHtml += '<div class="section-title" style="margin:8px 0 6px">Spikes</div>' +
-          spikes.map((s) =>
-            '<div class="hint">' + escapeHtml(s.component) + ' ' + escapeHtml(s.operation) +
-            ': ' + s.value_ms + 'ms vs usual ' + s.median_ms + 'ms (' + s.ratio + 'x)</div>'
-          ).join('');
-      }
-      findingsEl.innerHTML = findingsHtml;
-    }
-
-    async function loadAuditReport(window_) {
-      auditWindow = window_ || auditWindow;
-      document.querySelectorAll('#auditWindowPicker [data-window]').forEach((btn) => {
-        btn.style.opacity = btn.getAttribute('data-window') === auditWindow ? '1' : '.55';
-      });
-      try {
-        const reply = await fetch('/api/audit?window=' + encodeURIComponent(auditWindow));
-        const payload = await reply.json();
-        renderAuditReport(payload.report || {});
-      } catch (err) {
-        const summaryEl = document.getElementById('auditSummary');
-        if (summaryEl) summaryEl.textContent = 'Could not load the audit report.';
-      }
-    }
-
-    document.getElementById('auditWindowPicker').addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-window]');
-      if (!btn) return;
-      loadAuditReport(btn.getAttribute('data-window'));
-    });
-    loadAuditReport('24h');
-    // A rollup, not a per-line view - it only meaningfully changes when a run
-    // completes, so a slow periodic refresh is enough; the SSE state push (one
-    // per log line) would be far too often for what this actually needs.
-    setInterval(() => loadAuditReport(), 30000);
-
     async function refreshPorts() {
       await fetch('/api/ports/refresh', { method: 'POST' });
       // The Aegis suggestions are cached for polling; an explicit Refresh

@@ -1062,6 +1062,51 @@ def test_audit_report_with_no_store_is_not_an_error():
     assert "summary" in result
 
 
+def test_downloadable_report_includes_every_runs_evidence():
+    """A downloaded report exists to be detailed - it must show each run's actual
+    evidence lines, not just its verdict, or it is no more useful than the summary."""
+    store = Store(path=":memory:")
+    _insert_run(store, "svc", 1, "hollow", "no speech captured")
+    conn = store._connect()
+    conn.execute("UPDATE runs SET evidence = ? WHERE id = 1",
+                 ('["TURN SKIPPED - Plivo captured no speech, re-prompting"]',))
+    conn.commit()
+    store._release(conn)
+    report = audit.generate(store, "svc", "24h")
+    out = audit.render_html(report, "svc")
+    assert "TURN SKIPPED - Plivo captured no speech" in out
+    assert "HOLLOW" in out.upper()
+
+
+def test_downloadable_report_lists_every_run_not_just_notable_ones():
+    """The 'All runs' section must include achieved runs too - a detailed report
+    is not detailed if it silently drops the runs that went fine."""
+    store = Store(path=":memory:")
+    _insert_run(store, "svc", 1, "achieved", "booked a demo")
+    _insert_run(store, "svc", 2, "hollow", "no speech captured")
+    report = audit.generate(store, "svc", "24h")
+    assert len(report.all_runs) == 2
+    out = audit.render_html(report, "svc")
+    assert "booked a demo" in out
+    assert "no speech captured" in out
+
+
+def test_report_html_escapes_evidence_content():
+    """Evidence lines come from real logs and can contain characters that would
+    otherwise break the HTML or inject markup - they must render as text."""
+    store = Store(path=":memory:")
+    _insert_run(store, "svc", 1, "failed", "error")
+    conn = store._connect()
+    conn.execute("UPDATE runs SET evidence = ? WHERE id = 1",
+                 ('["<script>alert(1)</script>"]',))
+    conn.commit()
+    store._release(conn)
+    report = audit.generate(store, "svc", "24h")
+    out = audit.render_html(report, "svc")
+    assert "<script>alert(1)</script>" not in out
+    assert "&lt;script&gt;" in out
+
+
 if __name__ == "__main__":
     import sys
 

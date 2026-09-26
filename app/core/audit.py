@@ -9,6 +9,7 @@ never costs a model call and never invents a number it did not measure.
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -30,6 +31,7 @@ class AuditReport:
     total_runs: int
     verdict_counts: dict[str, int] = field(default_factory=dict)
     notable_runs: list[dict[str, Any]] = field(default_factory=list)
+    all_runs: list[dict[str, Any]] = field(default_factory=list)
     drifts: list[dict[str, Any]] = field(default_factory=list)
     spikes: list[dict[str, Any]] = field(default_factory=list)
     summary: str = ""
@@ -42,6 +44,7 @@ class AuditReport:
             "total_runs": self.total_runs,
             "verdict_counts": self.verdict_counts,
             "notable_runs": self.notable_runs,
+            "all_runs": self.all_runs,
             "drifts": self.drifts,
             "spikes": self.spikes,
             "summary": self.summary,
@@ -199,21 +202,28 @@ def generate(store: Store, source: str, window: str = "24h") -> AuditReport:
 
     verdict_counts: dict[str, int] = {}
     notable_runs = []
+    all_runs = []
     for run in runs:
         verdict = run.get("verdict")
+        entry = {
+            "trace_id": str(run["id"]),
+            "verdict": verdict or "in-progress",
+            "reason": run.get("reason") or "",
+            "opened_at": run.get("started_at") or "",
+            "ended_at": run.get("ended_at") or "",
+            "events": run.get("events") or 0,
+            "errors": run.get("errors") or 0,
+            "evidence": run.get("evidence") or [],
+        }
+        all_runs.append(entry)
         if not verdict:
             continue
         verdict_counts[verdict] = verdict_counts.get(verdict, 0) + 1
         if verdict in _NOTABLE_VERDICTS:
-            notable_runs.append({
-                "trace_id": str(run["id"]),
-                "verdict": verdict,
-                "reason": run.get("reason") or "",
-                "opened_at": run.get("started_at") or "",
-                "events": run.get("events") or 0,
-            })
+            notable_runs.append(entry)
     # Most recent first - a report is read for what to look at now.
-    notable_runs.sort(key=lambda r: r["trace_id"], reverse=True)
+    notable_runs.sort(key=lambda r: int(r["trace_id"]), reverse=True)
+    all_runs.sort(key=lambda r: int(r["trace_id"]), reverse=True)
 
     report = AuditReport(
         window=window,
@@ -221,9 +231,143 @@ def generate(store: Store, source: str, window: str = "24h") -> AuditReport:
         until=until_iso,
         total_runs=len(runs),
         verdict_counts=verdict_counts,
-        notable_runs=notable_runs[:20],
+        notable_runs=notable_runs,
+        all_runs=all_runs,
         drifts=_drifts_in_window(durations),
         spikes=_spikes_in_window(durations),
     )
     report.summary = _summarize(report)
     return report
+
+
+_WINDOW_LABELS = {"24h": "the last 24 hours", "week": "the last week", "month": "the last month"}
+
+_VERDICT_COLORS = {
+    "achieved": "#2fd48f", "hollow": "#f5b544", "failed": "#ff6b6b",
+    "degraded": "#f5b544", "unknown": "#8a8f98", "in-progress": "#8a8f98",
+}
+
+
+def _esc(value: Any) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def _verdict_badge(verdict: str) -> str:
+    color = _VERDICT_COLORS.get(verdict, "#8a8f98")
+    return (f'<span style="display:inline-block;padding:2px 8px;border-radius:6px;'
+            f'font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;'
+            f'background:{color}22;color:{color}">{_esc(verdict)}</span>')
+
+
+def render_html(report: AuditReport, source: str) -> str:
+    """A self-contained, detailed HTML report - every run, every finding, every
+    piece of evidence actually cited, not just the counts. Meant to be
+    downloaded and opened or shared, not glanced at inline.
+    """
+    window_label = _WINDOW_LABELS.get(report.window, f"the last {report.window}")
+    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    verdict_rows = "".join(
+        f'<tr><td>{_verdict_badge(v)}</td><td style="text-align:right">{n}</td></tr>'
+        for v, n in sorted(report.verdict_counts.items(), key=lambda kv: -kv[1])
+    ) or '<tr><td colspan="2" style="color:#8a8f98">No completed runs in this window.</td></tr>'
+
+    def run_row(run: dict[str, Any]) -> str:
+        evidence_html = ""
+        if run.get("evidence"):
+            items = "".join(f"<li>{_esc(e)}</li>" for e in run["evidence"])
+            evidence_html = f'<ul style="margin:6px 0 0;padding-left:18px;color:#555">{items}</ul>'
+        return (
+            '<div style="border:1px solid #e3e3e3;border-radius:8px;padding:12px 14px;'
+            'margin-bottom:10px">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center">'
+            f'{_verdict_badge(run["verdict"])}'
+            f'<span style="color:#8a8f98;font-size:12px">#{_esc(run["trace_id"])} '
+            f'&middot; opened {_esc(run["opened_at"] or "unknown")} '
+            f'&middot; {_esc(run["events"])} event(s)'
+            f'{" &middot; " + str(run["errors"]) + " error(s)" if run["errors"] else ""}</span>'
+            f'</div>'
+            f'<div style="margin-top:8px">{_esc(run["reason"]) or "<span style=color:#8a8f98>No reason recorded.</span>"}</div>'
+            f'{evidence_html}'
+            '</div>'
+        )
+
+    notable_html = "".join(run_row(r) for r in report.notable_runs) or \
+        '<p style="color:#8a8f98">Nothing notable in this window.</p>'
+    all_runs_html = "".join(run_row(r) for r in report.all_runs) or \
+        '<p style="color:#8a8f98">No runs recorded in this window.</p>'
+
+    def drift_row(d: dict[str, Any]) -> str:
+        direction = "slower" if d["ratio"] > 1 else "faster"
+        return (f'<tr><td>{_esc(d["component"])} &middot; {_esc(d["operation"])}</td>'
+                f'<td style="text-align:right">{d["earlier_median_ms"]}ms &rarr; {d["recent_median_ms"]}ms</td>'
+                f'<td style="text-align:right">{d["ratio"]}x {direction}</td></tr>')
+
+    def spike_row(s: dict[str, Any]) -> str:
+        return (f'<tr><td>{_esc(s["component"])} &middot; {_esc(s["operation"])}</td>'
+                f'<td style="text-align:right">{s["value_ms"]}ms vs usual {s["median_ms"]}ms</td>'
+                f'<td style="text-align:right">{s["ratio"]}x</td></tr>')
+
+    drift_rows = "".join(drift_row(d) for d in report.drifts) or \
+        '<tr><td colspan="3" style="color:#8a8f98">No trends found in this window.</td></tr>'
+    spike_rows = "".join(spike_row(s) for s in report.spikes) or \
+        '<tr><td colspan="3" style="color:#8a8f98">No spikes found in this window.</td></tr>'
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Audit report - {_esc(source)}</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          color: #1a1a1a; max-width: 880px; margin: 40px auto; padding: 0 20px;
+          line-height: 1.5; }}
+  h1 {{ font-size: 22px; margin-bottom: 4px; }}
+  h2 {{ font-size: 15px; text-transform: uppercase; letter-spacing: .06em;
+        color: #555; margin-top: 36px; border-bottom: 1px solid #e3e3e3;
+        padding-bottom: 6px; }}
+  .meta {{ color: #8a8f98; font-size: 13px; }}
+  .summary {{ background: #f7f7f8; border-radius: 8px; padding: 14px 16px;
+              margin-top: 16px; font-size: 15px; }}
+  table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+  th {{ text-align: left; font-size: 11px; text-transform: uppercase; color: #8a8f98;
+        padding: 6px 8px; border-bottom: 1px solid #e3e3e3; }}
+  td {{ padding: 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }}
+  .footer {{ margin-top: 40px; color: #8a8f98; font-size: 12px;
+             border-top: 1px solid #e3e3e3; padding-top: 12px; }}
+</style>
+</head>
+<body>
+  <h1>Audit report</h1>
+  <div class="meta">{_esc(source)} &middot; {_esc(window_label)}
+    ({_esc(report.since)} &rarr; {_esc(report.until)}) &middot; generated {_esc(generated_at)}</div>
+
+  <div class="summary">{_esc(report.summary)}</div>
+
+  <h2>Verdicts</h2>
+  <table><tbody>{verdict_rows}</tbody></table>
+
+  <h2>Worth a look ({len(report.notable_runs)})</h2>
+  {notable_html}
+
+  <h2>Trending operations</h2>
+  <table>
+    <thead><tr><th>Operation</th><th style="text-align:right">Earlier &rarr; recent</th><th style="text-align:right">Change</th></tr></thead>
+    <tbody>{drift_rows}</tbody>
+  </table>
+
+  <h2>Spikes</h2>
+  <table>
+    <thead><tr><th>Operation</th><th style="text-align:right">Value vs usual</th><th style="text-align:right">Ratio</th></tr></thead>
+    <tbody>{spike_rows}</tbody>
+  </table>
+
+  <h2>All runs ({report.total_runs})</h2>
+  {all_runs_html}
+
+  <div class="footer">Generated locally from {_esc(source)}'s own history. No model call
+    was made to produce this report - every figure is a count or ratio over
+    measurements already recorded.</div>
+</body>
+</html>
+"""

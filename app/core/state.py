@@ -271,6 +271,16 @@ class RuntimeState:
         with self._lock:
             return json.loads(json.dumps(asdict(self._snapshot)))
 
+    def audit_report_object(self, window: str = "24h") -> Any:
+        """The AuditReport itself, for callers that render it (e.g. as HTML)
+        rather than serialise it to JSON. See audit_report() for the JSON form."""
+        from app.core.audit import generate, AuditReport
+
+        if self._store is None:
+            return AuditReport(window=window, since="", until="", total_runs=0,
+                              summary="No source attached yet.")
+        return generate(self._store, self._baselines.source, window)
+
     def audit_report(self, window: str = "24h") -> dict[str, Any]:
         """A rollup of the current source's history over a named window.
 
@@ -278,13 +288,16 @@ class RuntimeState:
         already in the store. Returns an empty-shaped report when there is no
         store yet (nothing has been attached), never an error.
         """
-        from app.core.audit import generate
+        return self.audit_report_object(window).as_dict()
 
-        if self._store is None:
-            from app.core.audit import AuditReport
-            return AuditReport(window=window, since="", until="", total_runs=0,
-                              summary="No source attached yet.").as_dict()
-        return generate(self._store, self._baselines.source, window).as_dict()
+    def source_label(self) -> str:
+        """A short, human name for the current source - used to title a
+        downloaded report. Falls back to the baseline key when the source
+        has no friendlier label (e.g. a bare "port:8020")."""
+        with self._lock:
+            source = self._snapshot.source or {}
+        return (source.get("path") or source.get("label")
+                or self._baselines.source or "unknown source")
 
     def reset(self) -> dict[str, Any]:
         with self._lock:
