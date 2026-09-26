@@ -2804,7 +2804,13 @@
 
   var AEGIS_PANELS = ["aegisRunsPanel", "aegisIncidentsPanel",
                       "aegisImprovePanel", "aegisSpecPanel", "dataPanel"];
-  var aegisWasAttached = false;
+  // null = "not checked yet this page load" - distinct from false, so the FIRST
+  // poll after a fresh load never counts as "just attached" even when something
+  // was already attached before the page opened. Without this distinction, every
+  // page load while a source is attached looked identical to a fresh attach and
+  // silently redirected away from wherever the person actually navigated to -
+  // most visibly, off the Sources page the instant they tried to use a button on it.
+  var aegisWasAttached = null;
 
   function setAegisAttached(on) {
     AEGIS_PANELS.forEach(function (id) {
@@ -2851,8 +2857,12 @@
           return;
         }
         setAegisAttached(true);
-        // Landing: attaching from the Sources view carries you to Overview.
-        if (!aegisWasAttached &&
+        // Landing: attaching from the Sources view carries you to Overview - but
+        // only on a REAL transition from not-attached to attached (aegisWasAttached
+        // === false, set above), never on the first poll of a fresh page load
+        // (aegisWasAttached === null), which cannot tell "just attached" apart
+        // from "was already attached before this page opened".
+        if (aegisWasAttached === false &&
             (location.hash === "#/settings" || location.hash === "")) {
           location.hash = "#/overview";
         }
