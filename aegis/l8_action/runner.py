@@ -18,7 +18,36 @@ from pathlib import Path
 TIMEOUT_S = 60
 # A repo bigger than this is not copied; the run is skipped and SAID to be
 # skipped - a silent skip would let an unexecuted reproducer look verified.
-MAX_REPO_BYTES = 50 * 1024 * 1024
+# A real multi-service repo's actual SOURCE routinely lands in the tens of
+# megabytes once dependency trees, VCS metadata and embedded databases are
+# excluded (see SKIP_DIR_NAMES/SKIP_DIR_SUFFIXES below) - incidental files
+# that happen to sit in the repo (exported trace JSON, screenshots) can push
+# a genuinely small codebase a few MB past a tighter limit for no reason
+# related to whether the reproducer can run.
+MAX_REPO_BYTES = 150 * 1024 * 1024
+
+# Directory names never worth copying into a sandbox meant to run one Python
+# (or similar) reproducer script - dependency trees, build output, VCS
+# metadata, and embedded database storage. A real project's SurrealDB/
+# RocksDB/LevelDB data directory is routinely gigabytes and irrelevant to
+# whether a code fix makes a test pass; without this, a repo whose actual
+# source is a few megabytes gets rejected outright by a size check that
+# counted the database next to it. Both the size estimate below and the
+# real copytree() call use this SAME list - previously they used different
+# exclusions, so a repo that would have copied FINE (copytree already
+# skipped .venv/node_modules) was rejected by a size check that did not.
+SKIP_DIR_NAMES = {
+    ".git", "node_modules", ".venv", "venv", "__pycache__", ".codegraph",
+    "dist", "build", ".tox", ".mypy_cache", ".pytest_cache",
+}
+# Directories identified by a suffix rather than an exact name - a database
+# engine's own storage directory (SurrealDB, RocksDB and others commonly use
+# a ".db" directory, not a single file) rather than a project convention.
+SKIP_DIR_SUFFIXES = (".db",)
+
+
+def _is_skippable_dir(path: Path) -> bool:
+    return path.name in SKIP_DIR_NAMES or path.name.endswith(SKIP_DIR_SUFFIXES)
 # How far from the diagnosed line a candidate match may sit and still be
 # treated as "the one meant". Wide enough to survive a few lines of drift
 # between when the incident was diagnosed and when the patch is written;
@@ -238,10 +267,18 @@ class TestRunner:
         self.hint_line = hint_line
 
     def _repo_size(self) -> int:
+        # os.walk (not Path.rglob) because dirnames can be pruned IN PLACE -
+        # rglob still descends into a skipped 3GB database directory just to
+        # discard each file one at a time, which alone took several seconds
+        # against a real project's SurrealDB storage.
         total = 0
-        for path in self.repo.rglob("*"):
-            if path.is_file() and ".git" not in path.parts:
-                total += path.stat().st_size
+        for dirpath, dirnames, filenames in os.walk(self.repo):
+            dirnames[:] = [d for d in dirnames if not _is_skippable_dir(Path(d))]
+            for name in filenames:
+                try:
+                    total += (Path(dirpath) / name).stat().st_size
+                except OSError:
+                    continue
                 if total > MAX_REPO_BYTES:
                     return total
         return total
@@ -276,8 +313,9 @@ class TestRunner:
             # repo it indexes, so this is the common case, not an edge one.
             shutil.copytree(self.repo, work,
                             ignore=shutil.ignore_patterns(
-                                ".git", "node_modules", ".venv", "__pycache__",
-                                ".codegraph", "*.sock", "*.pid", ".DS_Store"),
+                                *SKIP_DIR_NAMES,
+                                *("*" + suffix for suffix in SKIP_DIR_SUFFIXES),
+                                "*.sock", "*.pid", ".DS_Store"),
                             ignore_dangling_symlinks=True)
             if patch_text:
                 patch_bin = shutil.which("patch")

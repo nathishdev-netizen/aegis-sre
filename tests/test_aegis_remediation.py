@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from aegis.l8_action.gate import AutonomyGate  # noqa: E402
 from aegis.l8_action.mapper import TraceToCodeMapper  # noqa: E402
 from aegis.l8_action.remediate import RemediationAgent  # noqa: E402
+from aegis.l8_action.runner import TestRunner, MAX_REPO_BYTES  # noqa: E402
 
 SAMPLE_APP = Path(__file__).resolve().parent / "fixtures" / "sample_app"
 
@@ -241,6 +242,51 @@ def test_mapper_ignores_an_interpolated_exception_repr():
         ])
         assert any(l.file == "db.py" and l.line == 2 for l in locations), \
             "an interpolated exception repr blocked mapping to the real logger call"
+
+
+def test_repo_size_excludes_an_embedded_database_directory():
+    """A real project's SurrealDB/RocksDB-style storage directory (a *.db
+    directory holding gigabytes of wal/manifest/sstables files, not source)
+    must not count toward the sandbox copy limit - it was pushing a project
+    whose actual code is a few megabytes past the limit entirely, and
+    Propose fix never even reached the reproducer step."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        (repo / "app.py").write_text("def handler():\n    return 1\n")
+        db_dir = repo / "services" / "ingest" / "data" / "project.db"
+        db_dir.mkdir(parents=True)
+        # One file well past MAX_REPO_BYTES on its own - if the size check
+        # does not exclude the .db directory, this alone fails the repo.
+        (db_dir / "vlog").write_bytes(b"0" * (MAX_REPO_BYTES + 1024))
+
+        size = TestRunner(repo)._repo_size()
+        assert size < MAX_REPO_BYTES, \
+            f"embedded database directory was counted toward the repo size ({size} bytes)"
+
+
+def test_repo_size_and_copy_use_the_same_exclusions():
+    """The size PRE-CHECK and the actual copytree() call used to have two
+    separate, drifted exclusion lists - a repo that would have copied fine
+    (copytree already skipped .venv/node_modules) was rejected by a size
+    check that counted them anyway. Both must exclude the same things."""
+    from aegis.l8_action.runner import SKIP_DIR_NAMES, SKIP_DIR_SUFFIXES
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        (repo / "app.py").write_text("def handler():\n    return 1\n")
+        for name in SKIP_DIR_NAMES:
+            bulky = repo / name
+            bulky.mkdir(exist_ok=True)
+            (bulky / "big.bin").write_bytes(b"0" * (MAX_REPO_BYTES // 4))
+        for suffix in SKIP_DIR_SUFFIXES:
+            bulky = repo / f"data{suffix}"
+            bulky.mkdir(exist_ok=True)
+            (bulky / "big.bin").write_bytes(b"0" * (MAX_REPO_BYTES // 4))
+
+        size = TestRunner(repo)._repo_size()
+        assert size < 1024, \
+            f"a skip-listed directory was still counted toward the repo size ({size} bytes)"
 
 
 if __name__ == "__main__":
