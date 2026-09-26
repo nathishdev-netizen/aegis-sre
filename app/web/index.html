@@ -741,6 +741,7 @@
         <span class="nav-badge" id="navRunsBadge" hidden></span></a>
       <a class="nav-item" data-view="incidents" href="#/incidents"><span class="ic">◆</span>Incidents
         <span class="nav-badge bad" id="navIncBadge" hidden></span></a>
+      <a class="nav-item" data-view="audit"     href="#/audit"><span class="ic">⬇</span>Audit</a>
       <a class="nav-item" data-view="settings"  href="#/settings"><span class="ic">⚙</span>Settings
         <span class="nav-badge" id="navConnBadge" hidden></span></a>
     </nav>
@@ -822,19 +823,6 @@
           <div class="card" id="overviewQuality" hidden style="margin-top:12px"></div>
     <div class="card" id="depBanner" hidden style="margin-top:12px"></div>
 
-          <div class="card" id="auditCard" style="margin-top:12px">
-            <div class="row" style="justify-content:space-between;align-items:center">
-              <div class="section-title" style="margin:0">Audit report</div>
-              <div class="row" style="gap:6px">
-                <a class="btn ghost" href="/api/audit/download?window=24h" style="padding:4px 10px;font-size:12px">Download 24h</a>
-                <a class="btn ghost" href="/api/audit/download?window=week" style="padding:4px 10px;font-size:12px">Download week</a>
-                <a class="btn ghost" href="/api/audit/download?window=month" style="padding:4px 10px;font-size:12px">Download month</a>
-              </div>
-            </div>
-            <div class="hint" style="margin-top:6px">A detailed report of runs, verdicts and
-              timing over the chosen window, as an HTML file you can open or share.</div>
-          </div>
-
           <div class="grid2" style="margin-top:22px">
             <div>
               <div class="section-title">Why it happened</div>
@@ -893,6 +881,23 @@
         <div id="aegisIncidentsPanel" hidden><div id="aegisIncidents"></div></div>
         <div class="empty" data-aegis-empty hidden>No source attached.
           <a href="#/settings">Choose one</a> — grouped incidents appear here, not forty alerts.</div>
+      </div>
+
+      <!-- ============ AUDIT ============ -->
+      <div class="view" data-view-panel="audit" hidden>
+        <div class="section-title">Audit report</div>
+        <div class="lede">A detailed record of runs, verdicts and timing over a time window -
+          every notable run's evidence, drift and spikes, not just a count. Downloads as a
+          standalone HTML file you can open or share.</div>
+        <div class="card">
+          <div class="row" style="gap:10px;flex-wrap:wrap">
+            <a class="btn primary" href="/api/audit/download?window=24h">Download last 24 hours</a>
+            <a class="btn primary" href="/api/audit/download?window=week">Download last week</a>
+            <a class="btn primary" href="/api/audit/download?window=month">Download last month</a>
+          </div>
+        </div>
+        <div class="empty" data-aegis-empty hidden>No source attached.
+          <a href="#/settings">Choose one</a> — a report needs history to report on.</div>
       </div>
 
       <!-- ============ ACTIVITY ============ -->
@@ -3345,17 +3350,17 @@
 /* --- app-shell router: hash-based views, back-button friendly --- */
 (function () {
   "use strict";
-  var VIEWS = ["now", "overview", "runs", "incidents", "activity", "flow",
+  var VIEWS = ["now", "overview", "runs", "incidents", "audit", "activity", "flow",
                "data", "improve", "settings", "connectors"];
   var TITLES = { now: "Now", overview: "Detail", runs: "Run verdicts", incidents: "Incidents",
-                 activity: "Activity", flow: "Flow & spec", data: "Learned data",
+                 audit: "Audit", activity: "Activity", flow: "Flow & spec", data: "Learned data",
                  improve: "Improve", settings: "Settings", connectors: "Connectors" };
   // Four top-level tabs; the rest live as sub-tabs under one of them, so the
   // rail stays short without anything becoming unreachable.
   var PARENT = { now: "now", overview: "overview", activity: "overview",
                  flow: "overview", data: "overview", improve: "overview",
-                 runs: "runs", incidents: "incidents", settings: "settings",
-                 connectors: "settings" };
+                 runs: "runs", incidents: "incidents", audit: "audit",
+                 settings: "settings", connectors: "settings" };
 
   function savedView() {
     try { return localStorage.getItem("liq.view") || ""; } catch (err) { return ""; }
