@@ -64,7 +64,10 @@ class Store:
     """Runs, durations and verdicts on disk.
 
     Every method is safe to call from the ingest thread and the HTTP threads at once:
-    SQLite connections are not shareable across threads, so each thread gets its own.
+    each call opens its own short-lived connection under a shared lock, so no thread
+    can be left holding a stale one across a gap - which was the earlier design and
+    the actual cause of a "database is locked" error that had nothing to do with
+    genuine concurrency (see _connect's comment).
     """
 
     def __init__(self, path: Path | str | None = None) -> None:
@@ -72,11 +75,13 @@ class Store:
         # ":memory:" is how tests get isolation without touching the user's real history.
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._local = threading.local()
         self._memory_conn: sqlite3.Connection | None = None
         self._lock = threading.Lock()
-        with self._connect() as conn:
+        conn = self._connect()
+        try:
             conn.executescript(SCHEMA)
+        finally:
+            self._release(conn)
         # One writer thread owns every duration INSERT, so ingestion never
         # waits on the disk or on another connection's lock.
         import queue as _queue
@@ -87,22 +92,31 @@ class Store:
 
     def _connect(self) -> sqlite3.Connection:
         # An in-memory database exists only as long as its connection, so it cannot be
-        # per-thread; serialise it instead. On-disk gets a connection per thread.
+        # per-thread; serialise it instead. On-disk opens a fresh connection per call.
         if str(self.path) == ":memory:":
             if self._memory_conn is None:
                 self._memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
                 self._memory_conn.row_factory = sqlite3.Row
             return self._memory_conn
 
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(self.path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            # Readers must not block the ingest thread's writes; a stalled dashboard
-            # request froze v1's pipeline once already.
-            conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn = conn
+        # A connection cached for a thread's lifetime can end up pinned to a stale WAL
+        # snapshot across a long gap between calls (an in-flight LLM interpretation
+        # call left the ingest thread idle for several seconds once, and its next
+        # write then collided with the writer thread's connection and hit SQLite's
+        # busy timeout even though nothing else was actually still using the file).
+        # A short-lived connection per call never lives long enough to go stale.
+        conn = sqlite3.connect(self.path, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        # Readers must not block the ingest thread's writes; a stalled dashboard
+        # request froze v1's pipeline once already.
+        conn.execute("PRAGMA journal_mode=WAL")
         return conn
+
+    def _release(self, conn: sqlite3.Connection) -> None:
+        """Close a connection from _connect() - except the shared in-memory one,
+        which must outlive any single call since it IS the whole database."""
+        if conn is not self._memory_conn:
+            conn.close()
 
     # -- durations ---------------------------------------------------------------
 
@@ -139,10 +153,13 @@ class Store:
             try:
                 with self._lock:
                     conn = self._connect()
-                    conn.executemany(
-                        "INSERT INTO durations (source, component, operation,"
-                        " value_ms, observed_at) VALUES (?, ?, ?, ?, ?)", batch)
-                    conn.commit()
+                    try:
+                        conn.executemany(
+                            "INSERT INTO durations (source, component, operation,"
+                            " value_ms, observed_at) VALUES (?, ?, ?, ?, ?)", batch)
+                        conn.commit()
+                    finally:
+                        self._release(conn)
             except Exception:
                 pass  # the measurements are lost; the product is not
 
@@ -162,23 +179,29 @@ class Store:
         """
         with self._lock:
             conn = self._connect()
-            rows = conn.execute(
-                "SELECT value_ms FROM durations"
-                " WHERE source = ? AND component = ? AND operation = ?"
-                " ORDER BY id DESC LIMIT ?",
-                (source, component, operation, KEEP_PER_OPERATION),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT value_ms FROM durations"
+                    " WHERE source = ? AND component = ? AND operation = ?"
+                    " ORDER BY id DESC LIMIT ?",
+                    (source, component, operation, KEEP_PER_OPERATION),
+                ).fetchall()
+            finally:
+                self._release(conn)
         return [row["value_ms"] for row in reversed(rows)]
 
     def known_operations(self, source: str) -> list[tuple[str, str, int]]:
         """Every (component, operation) seen for a source, with how many samples."""
         with self._lock:
             conn = self._connect()
-            rows = conn.execute(
-                "SELECT component, operation, COUNT(*) AS n FROM durations"
-                " WHERE source = ? GROUP BY component, operation",
-                (source,),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT component, operation, COUNT(*) AS n FROM durations"
+                    " WHERE source = ? GROUP BY component, operation",
+                    (source,),
+                ).fetchall()
+            finally:
+                self._release(conn)
         return [(r["component"], r["operation"], r["n"]) for r in rows]
 
     def prune(self, source: str) -> int:
@@ -189,30 +212,36 @@ class Store:
         """
         with self._lock:
             conn = self._connect()
-            cursor = conn.execute(
-                "DELETE FROM durations WHERE id IN ("
-                "  SELECT id FROM ("
-                "    SELECT id, ROW_NUMBER() OVER ("
-                "      PARTITION BY component, operation ORDER BY id DESC"
-                "    ) AS rank FROM durations WHERE source = ?"
-                "  ) WHERE rank > ?"
-                ")",
-                (source, KEEP_PER_OPERATION),
-            )
-            conn.commit()
-            return cursor.rowcount
+            try:
+                cursor = conn.execute(
+                    "DELETE FROM durations WHERE id IN ("
+                    "  SELECT id FROM ("
+                    "    SELECT id, ROW_NUMBER() OVER ("
+                    "      PARTITION BY component, operation ORDER BY id DESC"
+                    "    ) AS rank FROM durations WHERE source = ?"
+                    "  ) WHERE rank > ?"
+                    ")",
+                    (source, KEEP_PER_OPERATION),
+                )
+                conn.commit()
+                return cursor.rowcount
+            finally:
+                self._release(conn)
 
     # -- runs --------------------------------------------------------------------
 
     def start_run(self, source: str, started_at: str = "", label: str = "") -> int:
         with self._lock:
             conn = self._connect()
-            cursor = conn.execute(
-                "INSERT INTO runs (source, started_at, label) VALUES (?, ?, ?)",
-                (source, started_at, label),
-            )
-            conn.commit()
-            return int(cursor.lastrowid or 0)
+            try:
+                cursor = conn.execute(
+                    "INSERT INTO runs (source, started_at, label) VALUES (?, ?, ?)",
+                    (source, started_at, label),
+                )
+                conn.commit()
+                return int(cursor.lastrowid or 0)
+            finally:
+                self._release(conn)
 
     def finish_run(
         self,
@@ -232,28 +261,34 @@ class Store:
         """
         with self._lock:
             conn = self._connect()
-            conn.execute(
-                "UPDATE runs SET ended_at = ?, verdict = ?, reason = ?, evidence = ?,"
-                " events = ?, errors = ? WHERE id = ?",
-                (
-                    ended_at,
-                    verdict,
-                    reason,
-                    json.dumps(evidence or []),
-                    int(events),
-                    int(errors),
-                    run_id,
-                ),
-            )
-            conn.commit()
+            try:
+                conn.execute(
+                    "UPDATE runs SET ended_at = ?, verdict = ?, reason = ?, evidence = ?,"
+                    " events = ?, errors = ? WHERE id = ?",
+                    (
+                        ended_at,
+                        verdict,
+                        reason,
+                        json.dumps(evidence or []),
+                        int(events),
+                        int(errors),
+                        run_id,
+                    ),
+                )
+                conn.commit()
+            finally:
+                self._release(conn)
 
     def recent_runs(self, source: str, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:
             conn = self._connect()
-            rows = conn.execute(
-                "SELECT * FROM runs WHERE source = ? ORDER BY id DESC LIMIT ?",
-                (source, limit),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM runs WHERE source = ? ORDER BY id DESC LIMIT ?",
+                    (source, limit),
+                ).fetchall()
+            finally:
+                self._release(conn)
         runs = []
         for row in rows:
             run = dict(row)
@@ -269,22 +304,21 @@ class Store:
         """How past runs turned out - the history a single verdict is read against."""
         with self._lock:
             conn = self._connect()
-            rows = conn.execute(
-                "SELECT verdict, COUNT(*) AS n FROM runs"
-                " WHERE source = ? AND verdict IS NOT NULL AND verdict != ''"
-                " GROUP BY verdict",
-                (source,),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT verdict, COUNT(*) AS n FROM runs"
+                    " WHERE source = ? AND verdict IS NOT NULL AND verdict != ''"
+                    " GROUP BY verdict",
+                    (source,),
+                ).fetchall()
+            finally:
+                self._release(conn)
         return {row["verdict"]: row["n"] for row in rows}
 
     def close(self) -> None:
         self.flush_durations()
         self._writer_stop.set()
         self._writer.join(timeout=2.0)
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            conn.close()
-            self._local.conn = None
         if self._memory_conn is not None:
             self._memory_conn.close()
             self._memory_conn = None

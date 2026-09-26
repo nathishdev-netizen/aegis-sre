@@ -32,6 +32,14 @@ SPIKE_RATIO = 3.0
 # average away a regression against last month's good behaviour.
 MAX_SAMPLES = 200
 
+# Drift needs enough samples on BOTH sides of the split to say anything - below this,
+# "the second half is slower" is just noise from a small sample, not a trend.
+MIN_SAMPLES_PER_HALF = 10
+
+# How far the halves have to separate before it is worth mentioning rather than
+# ordinary run-to-run variance.
+DRIFT_RATIO = 1.5
+
 
 # Durations as real loggers write them. Ordered longest-match first so
 # "after 5000ms" is not read as a bare number.
@@ -162,6 +170,35 @@ class Baseline:
         ordered = sorted(self.samples)
         return ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
 
+    def drift(self) -> dict[str, Any] | None:
+        """Has this operation gotten slower over its own recorded history?
+
+        Splits the kept samples in half and compares medians - the shape a fixed
+        threshold cannot see, because both halves can be individually unremarkable
+        while the trend between them is not. Oldest-first storage means the split is
+        chronological even though nothing here reads a timestamp.
+        """
+        n = len(self.samples)
+        half = n // 2
+        if half < MIN_SAMPLES_PER_HALF:
+            return None
+        earlier = statistics.median(self.samples[:half])
+        recent = statistics.median(self.samples[half:])
+        if earlier <= 0:
+            return None
+        ratio = recent / earlier
+        if ratio < DRIFT_RATIO and ratio > 1 / DRIFT_RATIO:
+            return None
+        return {
+            "kind": "drift",
+            "component": self.component,
+            "operation": self.operation,
+            "earlier_median_ms": round(earlier, 1),
+            "recent_median_ms": round(recent, 1),
+            "ratio": round(ratio, 1),
+            "samples": n,
+        }
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "component": self.component,
@@ -190,6 +227,11 @@ class Baselines:
         self._observed = 0
         if store is not None:
             self._load()
+
+    @property
+    def source(self) -> str:
+        """The store key this instance's history is scoped to."""
+        return self._source
 
     def _load(self) -> None:
         """Rehydrate baselines learned in previous sessions."""
@@ -270,6 +312,19 @@ class Baselines:
                 })
         return missing
 
+    def drifts(self) -> list[dict[str, Any]]:
+        """Operations whose own history shows a trend, slower or faster.
+
+        Unlike a spike, this needs no new observation to report - it is a property of
+        history already on disk, so it can be checked any time, not just on ingest.
+        """
+        found = []
+        for baseline in self._by_key.values():
+            result = baseline.drift()
+            if result:
+                found.append(result)
+        return found
+
     def summary(self) -> list[dict[str, Any]]:
         """Every baseline, slowest first - the useful order when scanning."""
         return sorted(
@@ -284,6 +339,15 @@ class Baselines:
             return (
                 f"{finding['component']} usually runs at this point "
                 f"({finding['samples']} previous runs) but did not appear."
+            )
+        if finding.get("kind") == "drift":
+            direction = "slower" if finding["ratio"] > 1 else "faster"
+            return (
+                f"{finding['component']} has gotten {finding['ratio']}x {direction} "
+                f"over its last {finding['samples']} runs - "
+                f"{finding['earlier_median_ms']:.0f}ms to "
+                f"{finding['recent_median_ms']:.0f}ms - no single run tripped a "
+                "threshold, but the trend is real."
             )
         return (
             f"{finding['component']} took {finding['value_ms']:.0f}ms - "

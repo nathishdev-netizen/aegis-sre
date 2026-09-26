@@ -142,6 +142,13 @@ class RuntimeState:
         self._store: Store | None = None
         self._baselines = Baselines()
         self._findings: list[dict[str, Any]] = []
+        # Scoped to the CURRENT run (between is_run_start and completion), not the
+        # whole watched session - absence has to ask "did this run's components show
+        # up", and a set spanning every run ever seen would never be empty enough to
+        # notice one missing.
+        self._run_id: int | None = None
+        self._run_started_at: str = ""
+        self._run_components: set[str] = set()
         self._snapshot = self._fresh_snapshot()
 
     def _use_baselines_for(self, source_key: str) -> None:
@@ -716,12 +723,60 @@ class RuntimeState:
         self.broadcast()
         return self.snapshot()
 
+    def _finish_run_locked(self, ended_at: str = "") -> None:
+        """Close out the run in flight, if any, and check what it never logged.
+
+        Called both when a run genuinely completes and when a fresh one is about to
+        start (is_run_start fires for run N+1 without a matching completion line for
+        run N when a service is killed mid-call) - either way, run N is over and
+        whatever it did or didn't do is now fixed, so this is the one place both
+        paths lead to.
+        """
+        if self._run_id is None:
+            self._run_components = set()
+            return
+        try:
+            if self._store is not None:
+                self._store.finish_run(
+                    self._run_id,
+                    ended_at=ended_at or now_iso(),
+                    verdict=self._snapshot.status,
+                    reason=self._snapshot.reason,
+                    evidence=list(self._snapshot.evidence),
+                    events=self._event_counter,
+                    errors=self._snapshot.metrics.get("failures", 0),
+                )
+            for absence in self._baselines.absences(self._run_components):
+                self._findings.append(absence)
+            # Drift is a property of history already on disk, not of this run's
+            # lines - checked once per completed run rather than per line, since
+            # nothing about it changes between one line and the next. Skipped when
+            # unchanged from last time so a slow-drifting operation does not repeat
+            # itself into every other finding's spot across the next several runs.
+            previous_drifts = {
+                (f["component"], f["operation"]): f
+                for f in self._findings if f.get("kind") == "drift"
+            }
+            for drift in self._baselines.drifts():
+                key = (drift["component"], drift["operation"])
+                if previous_drifts.get(key) != drift:
+                    self._findings.append(drift)
+            self._findings = self._findings[-20:]
+        except Exception:
+            # A run's outcome not being recorded is a loss of history, not of
+            # ingestion - the watched file keeps being read regardless.
+            pass
+        finally:
+            self._run_id = None
+            self._run_components = set()
+
     def _clear_run_locked(self) -> None:
         """Drop the previous source's run so a new attachment starts clean.
 
         Attaching elsewhere while keeping the old timeline, graph and metrics makes
         the UI attribute one source's failures to another.
         """
+        self._finish_run_locked()
         fresh = self._fresh_snapshot()
         self._raw_for_learning = []
         keep_ports = self._snapshot.ports
@@ -1071,8 +1126,12 @@ class RuntimeState:
             finding = self._baselines.observe(component, parsed["message"], parsed["timestamp"])
         except Exception:
             finding = None
-        if finding:
-            with self._lock:
+        with self._lock:
+            # Recorded every line, not just ones with a duration - absence asks
+            # "did this component show up at all", which a component with no
+            # measured line would otherwise never answer.
+            self._run_components.add(component)
+            if finding:
                 self._findings.append(finding)
                 self._findings = self._findings[-20:]
         transition = infer_transition(parsed["message"])
@@ -1143,6 +1202,7 @@ class RuntimeState:
             # followed a failed one kept reporting the failure, because the reset only
             # ran for a stage named "request" and only when status was already terminal.
             if is_run_start(parsed["message"]):
+                self._finish_run_locked()
                 self._snapshot.status = "running"
                 self._snapshot.reason = "Run in progress."
                 self._snapshot.possible_causes = []
@@ -1155,6 +1215,16 @@ class RuntimeState:
                 self._snapshot.metrics["failures"] = 0
                 self._snapshot.metrics["retries"] = 0
                 self._snapshot.metrics["skipped"] = 0
+                self._run_components = set()
+                self._run_started_at = parsed["timestamp"] or now_iso()
+                if self._store is not None:
+                    try:
+                        self._run_id = self._store.start_run(
+                            self._baselines.source, self._run_started_at)
+                    except Exception:
+                        self._run_id = None
+                else:
+                    self._run_id = None
 
             if transition:
                 if False:
@@ -1228,6 +1298,7 @@ class RuntimeState:
                     # it did not succeed. Leaving the success text made the brief say
                     # "completed successfully" directly above the failure that caused it.
                     self._snapshot.reason = "The run reached its end, but a step failed."
+                self._finish_run_locked(ended_at=parsed["timestamp"])
 
             # A node describes the line that produced it. Stamping every node with the
             # run's overall status marked "Authentication passed" as failed once any
