@@ -63,9 +63,13 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 3000
 
-    # LLM interpretation
+    # LLM interpretation - talks to any OpenAI-compatible chat completions API.
+    # Default (base_url=None) is real OpenAI; pointing base_url at another
+    # provider (Groq, etc.) and matching model/key is the whole swap - no code
+    # change, since the openai SDK accepts any compatible endpoint.
     openai_api_key: str | None = None
     model: str = "gpt-4o-mini"
+    llm_base_url: str | None = None
     llm_enabled: bool = True
 
     # Ingestion / interpretation limits
@@ -97,8 +101,13 @@ def load_settings() -> Settings:
     return Settings(
         host=os.environ.get("LOG_AGENT_HOST", "127.0.0.1"),
         port=_get_int("LOG_AGENT_PORT", 3000),
-        openai_api_key=os.environ.get("OPENAI_API_KEY") or None,
+        # LOG_AGENT_LLM_API_KEY takes precedence so a temporary alternate
+        # provider (e.g. Groq) never requires touching OPENAI_API_KEY, which
+        # stays untouched and ready the moment the real key is restored.
+        openai_api_key=os.environ.get("LOG_AGENT_LLM_API_KEY")
+                       or os.environ.get("OPENAI_API_KEY") or None,
         model=os.environ.get("LOG_AGENT_MODEL", "gpt-4o-mini"),
+        llm_base_url=os.environ.get("LOG_AGENT_LLM_BASE_URL") or None,
         llm_enabled=_get_bool("LOG_AGENT_LLM", True),
         max_log_lines=_get_int("LOG_AGENT_MAX_LOG_LINES", 200),
         max_timeline=_get_int("LOG_AGENT_MAX_TIMELINE", 60),

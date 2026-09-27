@@ -24,7 +24,13 @@ _LAST_ERROR: str | None = None
 
 
 def _client() -> Any | None:
-    """Return an OpenAI client, or None when the SDK or API key is unavailable."""
+    """Return an OpenAI-compatible client, or None when unavailable.
+
+    base_url is the entire swap between providers: unset, this is real OpenAI;
+    pointed at Groq's (or any other OpenAI-compatible) endpoint with a matching
+    key and model, every call below is unchanged. Nothing here knows or cares
+    which provider it is talking to.
+    """
     if not settings.llm_available:
         return None
     try:
@@ -32,7 +38,10 @@ def _client() -> Any | None:
     except ImportError:
         return None
     try:
-        return OpenAI(api_key=settings.openai_api_key)
+        kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
+        if settings.llm_base_url:
+            kwargs["base_url"] = settings.llm_base_url
+        return OpenAI(**kwargs)
     except Exception:
         return None
 
@@ -53,7 +62,8 @@ def status() -> dict[str, Any]:
         return {
             "mode": "patterns",
             "available": False,
-            "detail": "No OPENAI_API_KEY set - showing pattern matches only, not reasoning. Add it to .env",
+            "detail": "No API key set (OPENAI_API_KEY or LOG_AGENT_LLM_API_KEY) - "
+                     "showing pattern matches only, not reasoning. Add one to .env",
         }
     try:
         import openai  # noqa: F401
@@ -134,12 +144,13 @@ def _chat(messages: list[dict[str, str]], *, max_tokens: int = 700) -> str | Non
         # behaving as though no key were configured.
         global _LAST_ERROR
         text = str(exc)
+        provider = "the configured provider" if settings.llm_base_url else "OpenAI"
         if "insufficient_quota" in text or "no credits remaining" in text:
-            _LAST_ERROR = "OpenAI account has no credits remaining - add credits to re-enable AI answers"
+            _LAST_ERROR = f"{provider} account has no credits remaining - add credits to re-enable AI answers"
         elif "rate_limit" in text.lower() or "429" in text:
-            _LAST_ERROR = "OpenAI rate limit hit - retrying shortly"
+            _LAST_ERROR = f"{provider} rate limit hit - retrying shortly"
         elif "invalid_api_key" in text or "Incorrect API key" in text:
-            _LAST_ERROR = "OPENAI_API_KEY is not valid"
+            _LAST_ERROR = "the configured API key is not valid"
         else:
             _LAST_ERROR = f"{exc.__class__.__name__}: {text[:120]}"
         return None
