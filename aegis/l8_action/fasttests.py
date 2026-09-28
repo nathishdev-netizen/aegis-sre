@@ -119,3 +119,88 @@ def timing_command(command: tuple[str, ...]) -> tuple[str, ...]:
 def fast_command(command: tuple[str, ...], nodes: list[str]) -> tuple[str, ...]:
     """Run exactly these test ids - no -k expression to mis-parse."""
     return command + tuple(nodes)
+
+
+# -- relevance ---------------------------------------------------------------
+#
+# Cheapness is not the point; RELEVANCE is. Selecting purely by duration
+# happily includes test_graph_tools and test_observability when the patch
+# touched the orchestrator - 45 tests that pass whatever that patch did, which
+# is false comfort, not a check. The question worth answering is "which tests
+# would catch this if the patch were wrong", and only then "can we afford
+# them".
+#
+# Module-level imports answer it without adding anything to the user's repo.
+# pytest-cov would give line-level precision, but it has to RUN the full suite
+# under coverage to build that map - the exact cost this exists to avoid - and
+# it would mean installing a plugin into a project for Aegis's benefit.
+
+
+def _module_names(repo: Path, changed: list[str]) -> set[str]:
+    """Import names a changed file could be reached by.
+
+    services/chatbot/agents/orchestrator.py yields {"orchestrator",
+    "agents.orchestrator", "agents"} - the spellings a test would actually
+    write, since a monorepo service is its own import root.
+    """
+    names: set[str] = set()
+    for rel in changed:
+        parts = Path(rel).with_suffix("").parts
+        if not parts:
+            continue
+        names.add(parts[-1])
+        for i in range(len(parts) - 1, -1, -1):
+            tail = ".".join(parts[i:])
+            if tail:
+                names.add(tail)
+            if len(parts) - i > 3:
+                break
+        if len(parts) > 1:
+            names.add(parts[-2])
+    return {n for n in names if n not in ("__init__", "tests", "test")}
+
+
+def relevant_files(suite_dir: Path, repo: Path, changed: list[str]) -> list[str]:
+    """Test files that import something the patch touched.
+
+    Read from the test source, not guessed. A file that never mentions the
+    changed module cannot fail because of it, so running it proves nothing
+    about this patch.
+    """
+    if not changed:
+        return []
+    names = _module_names(repo, changed)
+    if not names:
+        return []
+    hits = []
+    for path in sorted(suite_dir.rglob("test_*.py")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        if any(re.search(rf"\b{re.escape(n)}\b", text) for n in names):
+            # Relative to the suite dir, because that is how pytest spells node
+            # ids and therefore how the timings are keyed: "tests/test_x.py::..."
+            hits.append(str(path.relative_to(suite_dir)))
+    return hits
+
+
+def select(durations: dict[str, float], suite_dir: Path, repo: Path,
+           changed: list[str], limit: float = FAST_S) -> tuple[list[str], str]:
+    """The tests to run for THIS patch, and one line saying how they were chosen.
+
+    Relevance first, cost second - in that order, because a cheap irrelevant
+    test is worse than useless: it passes whatever the patch did and reads as
+    verification.
+    """
+    files = relevant_files(suite_dir, repo, changed)
+    if not files:
+        return [], "no test file mentions the code this patch changed"
+    chosen = sorted(
+        node for node, seconds in durations.items()
+        if seconds < limit and any(node.startswith(f) for f in files))
+    if not chosen:
+        return [], (f"{len(files)} test file(s) exercise this code, but none of "
+                    "their tests are quick enough to run for free")
+    return chosen, (f"{len(chosen)} test(s) from {len(files)} file(s) that "
+                    "exercise the changed code")

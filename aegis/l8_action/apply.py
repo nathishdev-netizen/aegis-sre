@@ -372,20 +372,25 @@ class PatchApplier:
                     "(free) or run the whole suite deliberately.",
                     files=targets, suite=name)
             timings = fasttests.load(self.repo, suite_dir)
+            reason = "no timings for this suite yet"
             if timings:
-                fast_nodes = fasttests.fast_nodes(timings)
+                # RELEVANCE first, cost second. Selecting on cheapness alone
+                # ran test_graph_tools and test_observability against a patch to
+                # the orchestrator - 45 tests that pass whatever it did, which
+                # reads as verification and is not.
+                fast_nodes, reason = fasttests.select(
+                    timings, suite_dir, self.repo, targets)
             if not fast_nodes:
                 _restore(backup, self.repo, targets)
                 shutil.rmtree(backup, ignore_errors=True)
                 return ApplyResult(
                     False, False,
-                    "no timings for this suite yet, so Aegis cannot tell which "
-                    "of your tests are free to run. Run the full suite once "
-                    "(the other button) and it will remember - after that the "
-                    "fast check takes seconds.",
+                    f"cannot pick the tests for this patch: {reason}. Run the "
+                    "full suite once and Aegis will remember how long each "
+                    "test takes - after that this check takes seconds.",
                     files=targets, suite=name)
             command = fasttests.fast_command(command, fast_nodes)
-            name = f"{name} - {len(fast_nodes)} fast tests"
+            name = f"{name} - {len(fast_nodes)} tests for the changed code"
         # Was the suite green BEFORE the patch? A project whose tests were
         # already failing would otherwise have every fix reverted and be
         # told, wrongly, that the fix broke them. Measured, not assumed:

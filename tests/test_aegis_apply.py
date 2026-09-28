@@ -399,6 +399,68 @@ def test_fast_mode_says_so_rather_than_running_nothing():
     assert not (repo / "SPENT").exists(), "it ran the costly suite anyway"
 
 
+def test_only_tests_that_touch_the_changed_code_are_selected():
+    """Cheapness is not the point; relevance is. Selecting purely on duration
+    ran test_graph_tools, test_observability and test_vector_tools against a
+    patch to the ORCHESTRATOR - 45 tests that pass whatever that patch did,
+    which reads as verification and is not. Relevance first, cost second."""
+    from aegis.l8_action import fasttests
+
+    repo = Path(tempfile.mkdtemp(prefix="aegis-rel-test-"))
+    suite = repo / "tests"
+    suite.mkdir(parents=True)
+    (repo / "orchestrator.py").write_text("def route():\n    return 'x'\n")
+    (suite / "test_orchestrator.py").write_text(
+        "from orchestrator import route\ndef test_r():\n    assert route()\n")
+    (suite / "test_unrelated.py").write_text(
+        "def test_u():\n    assert True\n")
+
+    durations = {
+        "tests/test_orchestrator.py::test_r": 0.01,
+        "tests/test_unrelated.py::test_u": 0.01,   # just as cheap
+    }
+    nodes, why = fasttests.select(durations, repo, repo, ["orchestrator.py"])
+    assert nodes == ["tests/test_orchestrator.py::test_r"], nodes
+    assert "exercise the changed code" in why, why
+
+
+def test_no_relevant_test_says_so_instead_of_passing_on_zero():
+    """A patch no test mentions cannot be verified by the project's tests.
+    Reporting success on an empty selection would be the worst outcome here -
+    green because nothing ran."""
+    from aegis.l8_action import fasttests
+
+    repo = Path(tempfile.mkdtemp(prefix="aegis-rel-none-"))
+    suite = repo / "tests"
+    suite.mkdir(parents=True)
+    (suite / "test_unrelated.py").write_text("def test_u():\n    assert True\n")
+
+    nodes, why = fasttests.select(
+        {"tests/test_unrelated.py::test_u": 0.01}, repo, repo,
+        ["some/other/module.py"])
+    assert nodes == []
+    assert "no test file mentions" in why, why
+
+
+def test_a_relevant_but_expensive_test_is_not_silently_dropped():
+    """Relevant AND affordable is the goal. When the relevant tests all cost
+    money, that is worth saying - not quietly returning a smaller green run."""
+    from aegis.l8_action import fasttests
+
+    repo = Path(tempfile.mkdtemp(prefix="aegis-rel-slow-"))
+    suite = repo / "tests"
+    suite.mkdir(parents=True)
+    (repo / "orchestrator.py").write_text("def route():\n    return 'x'\n")
+    (suite / "test_orchestrator.py").write_text(
+        "from orchestrator import route\ndef test_r():\n    assert route()\n")
+
+    nodes, why = fasttests.select(
+        {"tests/test_orchestrator.py::test_r": 30.0}, repo, repo,
+        ["orchestrator.py"])
+    assert nodes == []
+    assert "quick enough" in why, why
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
