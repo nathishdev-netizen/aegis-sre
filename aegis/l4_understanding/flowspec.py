@@ -143,6 +143,33 @@ def _label(event: Event) -> str:
     return head[:70]
 
 
+# Placeholders in a source format string ({name}, %s, {}) and the values that
+# replaced them in the logged line are the parts that CANNOT match, so both
+# sides are reduced to their fixed words before comparing.
+_FORMAT_HOLE = re.compile(r"\{[^}]*\}|%[sdrfi]|%\([^)]*\)[sdrfi]")
+
+
+def _words(text: str) -> set[str]:
+    without_holes = _FORMAT_HOLE.sub(" ", text or "")
+    return {w for w in re.findall(r"[A-Za-z][\w/.-]*", without_holes.lower())
+            if len(w) > 1}
+
+
+def _overlap(logged: str, statement: str) -> float:
+    """How much of a source log statement appears in a logged line, 0..1.
+
+    Used to walk backwards from a line in a log file to the logging call that
+    wrote it. Scored against the STATEMENT's own words (not the union) so a
+    long runtime line carrying ids and values is not penalised for the extra
+    words the format string never contained - the question is "is all of this
+    statement present here", not "are these two strings alike".
+    """
+    wanted = _words(statement)
+    if not wanted:
+        return 0.0
+    return len(wanted & _words(logged)) / len(wanted)
+
+
 class FlowMiner:
     """Derive a FlowSpec from assembled traces. Deterministic; no model."""
 

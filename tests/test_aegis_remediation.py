@@ -211,6 +211,24 @@ def test_a_traceback_frame_beats_searching_for_its_text():
         "a traceback frame naming the repo's own file was not mapped"
 
 
+def test_overlap_walks_a_logged_line_back_to_its_format_string():
+    """_overlap went missing in the repo recovery while two callers still
+    imported it (server.get_code_for, remediate._code_context). Live, that
+    surfaced as `tool failed: ImportError: cannot import name '_overlap'`
+    inside an Investigate run, which the model then reported as the
+    INCIDENT's cause - a broken tool presented as a diagnosis."""
+    from aegis.l4_understanding.flowspec import _overlap
+
+    logged = "[orchestrator] Step 4: generate request_id=abc123"
+    statement = 'f"[orchestrator] Step {n}: {name} request_id={rid}"'
+    assert _overlap(logged, statement) >= 0.6, "the real call site was not matched"
+
+    unrelated = 'f"[vector_tools] Hybrid search returned {n} candidates"'
+    assert _overlap(logged, unrelated) < 0.5, "an unrelated statement matched"
+
+    assert _overlap("anything", "") == 0.0, "an empty statement must not match"
+
+
 def test_a_reproducer_that_asserts_the_bug_is_named_as_such():
     """The model wrote this against paideia-chatbot: it catches the ValueError
     the bug raises and prints SUCCESS, so it exits 0 WHILE the bug is present
