@@ -104,8 +104,6 @@ def _tolerant_apply(work: Path, patch_text: str, *,
         if current_file is None or not minus:
             minus, plus = [], []
             return None
-        if len(plus) < len(minus):
-            return "hunk removes more lines than it adds - not a fix this tolerant applier can place safely"
         try:
             lines = current_file.read_text(errors="replace").splitlines(keepends=True)
         except OSError:
@@ -113,11 +111,29 @@ def _tolerant_apply(work: Path, patch_text: str, *,
         file_matches_hint = bool(
             near_line and near_file
             and current_file.name == Path(near_file).name)
-        # Match every removed line to its unique target FIRST, before any
-        # write - so a later ambiguous line does not leave the file half
-        # patched from the lines already matched.
+        # A multi-line removal is almost always one contiguous block, and as a
+        # BLOCK it is far more identifiable than its lines are separately: a
+        # real hunk here removed a five-line raise whose closing ")" alone
+        # matched 124 places in the file, so line-by-line matching refused a
+        # patch whose block occurs exactly once. Try the block first; fall
+        # back to per-line matching when it is not contiguous.
         targets: list[int] = []
-        for old_line in minus:
+        stripped = [m.strip() for m in minus]
+        if len(minus) > 1:
+            starts = [
+                i for i in range(len(lines) - len(minus) + 1)
+                if all(lines[i + off].strip() == stripped[off]
+                       for off in range(len(minus)))
+            ]
+            if len(starts) != 1 and file_matches_hint:
+                near = [i for i in starts
+                        if abs((i + 1) - near_line) <= PROXIMITY_LINES]
+                if len(near) == 1:
+                    starts = near
+            if len(starts) == 1:
+                targets = list(range(starts[0], starts[0] + len(minus)))
+
+        for old_line in (minus if not targets else []):
             wanted = old_line.strip()
             hits = [i for i, line in enumerate(lines)
                     if line.strip().startswith(wanted) or wanted in line]
@@ -130,18 +146,39 @@ def _tolerant_apply(work: Path, patch_text: str, *,
                 return f"{len(hits)} matches for {wanted[:40]!r} - not unique"
             targets.append(hits[0])
         # Pair each removed line with its replacement 1:1; any extra "+"
-        # lines beyond that are new lines inserted after the last match.
+        # lines beyond that are new lines inserted after the last match, and
+        # any removed line left over is a DELETION - the shape of a fix that
+        # takes a wrong guard out. Rejecting those outright meant the patch
+        # was never applied at all, and the run then reported "the patch did
+        # not make the reproducer pass" - true, but only because the
+        # reproducer had been re-run against untouched code.
         replacements = list(zip(targets, plus[:len(minus)]))
         extra = plus[len(minus):]
+        deletions = targets[len(plus):]
+        # Reusing the TARGET's indentation is right for a one-line fix, where
+        # the model often writes the line with no leading whitespace at all.
+        # It is wrong for a multi-line block: each replacement line would
+        # inherit the indent of whatever line it happened to land on, which
+        # for a block spanning several nesting levels produces text that is
+        # not valid Python - the reproducer then dies on a syntax error
+        # (exit 2) and the run reports the patch as not fixing anything. When
+        # the patch carries its own indentation, that indentation IS the fix.
+        block_replace = len(replacements) > 1
         for index, new_line in replacements:
-            indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
-            lines[index] = indent + new_line.strip() + "\n"
+            if block_replace and new_line[:1] in (" ", "\t"):
+                lines[index] = new_line.rstrip("\n") + "\n"
+            else:
+                indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+                lines[index] = indent + new_line.strip() + "\n"
         if extra and replacements:
             last_index = replacements[-1][0]
             indent = lines[last_index][: len(lines[last_index]) - len(lines[last_index].lstrip())]
             insert_at = last_index + 1
             for offset, new_line in enumerate(extra):
                 lines.insert(insert_at + offset, indent + new_line.strip() + "\n")
+        # Highest index first, so earlier deletions do not shift later ones.
+        for index in sorted(deletions, reverse=True):
+            del lines[index]
         current_file.write_text("".join(lines))
         minus, plus = [], []
         return None

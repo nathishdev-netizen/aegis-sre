@@ -211,6 +211,100 @@ def test_a_traceback_frame_beats_searching_for_its_text():
         "a traceback frame naming the repo's own file was not mapped"
 
 
+def _apply(tmpdir, before: str, patch: str, **kw):
+    """Write `before` into a repo copy, apply `patch`, return (ok, detail, text)."""
+    from aegis.l8_action.runner import _tolerant_apply
+    root = Path(tmpdir)
+    target = root / "svc" / "mod.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(before)
+    ok, detail = _tolerant_apply(root, patch, **kw)
+    return ok, detail, target.read_text()
+
+
+def test_a_patch_that_only_deletes_lines_is_applied():
+    """The applier refused any hunk removing more lines than it added, so a
+    fix whose whole point is taking a wrong guard OUT never got applied - and
+    the run then reported "the patch did not make the reproducer pass", which
+    was true only because the reproducer had been re-run against untouched
+    code. Seen live on paideia-chatbot: an 11-remove / 9-add hunk."""
+    import tempfile
+    before = (
+        "def f(req):\n"
+        "    if not req.lead:\n"
+        "        raise ValueError('nope')\n"
+        "    return req.lead\n"
+    )
+    patch = (
+        "--- a/svc/mod.py\n+++ b/svc/mod.py\n@@\n"
+        "-    if not req.lead:\n"
+        "-        raise ValueError('nope')\n"
+        "     return req.lead\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        ok, detail, text = _apply(tmp, before, patch)
+    assert ok, f"a deletion-only hunk was refused: {detail}"
+    assert "raise ValueError" not in text, "the guard was not removed"
+    assert "return req.lead" in text, "the surviving line was lost"
+
+
+def test_a_replaced_block_keeps_the_patchs_own_indentation():
+    """Reusing each TARGET line's indent is right for a one-line fix but wrong
+    for a block: every line inherits the indent of whatever it landed on, and
+    a block spanning nesting levels comes out as invalid Python. The
+    reproducer then dies on a SyntaxError (exit 2) and the patch is blamed."""
+    import tempfile
+    before = (
+        "def f(req):\n"
+        "    if not req.lead:\n"
+        "        raise ValueError('nope')\n"
+        "    if req.lead:\n"
+        "        return req.lead\n"
+        "    return req.session\n"
+    )
+    patch = (
+        "--- a/svc/mod.py\n+++ b/svc/mod.py\n@@\n"
+        "-    if not req.lead:\n"
+        "-        raise ValueError('nope')\n"
+        "-    if req.lead:\n"
+        "-        return req.lead\n"
+        "+    if req.lead:\n"
+        "+        return req.lead\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        ok, detail, text = _apply(tmp, before, patch)
+    assert ok, f"block replacement refused: {detail}"
+    compile(text, "mod.py", "exec")  # raises SyntaxError if indentation broke
+    assert "raise ValueError" not in text
+
+
+def test_a_removed_block_is_matched_whole_not_line_by_line():
+    """A five-line raise was refused because its closing ")" alone matched 124
+    places in the file. As a contiguous BLOCK it occurs exactly once."""
+    import tempfile
+    before = (
+        "def a():\n"
+        "    g(\n"
+        "        1\n"
+        "    )\n"
+        "def b():\n"
+        "    h(\n"
+        "        2\n"
+        "    )\n"
+    )
+    patch = (
+        "--- a/svc/mod.py\n+++ b/svc/mod.py\n@@\n"
+        "-    h(\n"
+        "-        2\n"
+        "-    )\n"
+        "+    pass\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        ok, detail, text = _apply(tmp, before, patch)
+    assert ok, f"an unambiguous block was refused: {detail}"
+    assert "h(" not in text and "g(" in text, "the wrong block was replaced"
+
+
 def test_the_prompts_carry_no_stray_format_placeholders():
     """Both prompts go through str.format(), so any brace in their PROSE is a
     placeholder. Writing an f-string example into the guidance - `f"lead:{x}"`
