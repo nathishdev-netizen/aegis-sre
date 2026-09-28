@@ -326,6 +326,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                 write_json(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Missing port"})
                 return
             snapshot = runtime.attach_port(port)
+            # Aegis follows v1's source, and the port picker is how the UI
+            # attaches - so telling Aegis only from /api/attach left it
+            # silently detached for every user who picked a port instead of
+            # typing a path. Same call, same place, as the file route.
+            path = (((snapshot or {}).get("source") or {}).get("path")) or ""
+            app = _aegis()
+            if app is not None and path:
+                try:
+                    app.attach(path, body.get("project") or None)
+                except Exception:
+                    pass
             write_json(self, HTTPStatus.OK, {"ok": True, "state": snapshot})
             return
 

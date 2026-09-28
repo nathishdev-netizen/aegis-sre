@@ -498,6 +498,59 @@ def test_port_click_prefers_the_apps_own_log_file():
         _sources.best_log_file_for_pid = original
 
 
+def test_picking_a_port_attaches_aegis_too_not_just_v1():
+    """Aegis follows v1's source, and it was told only from /api/attach. The UI
+    attaches by PORT, so every user who clicked a port left Aegis detached -
+    watching nothing, with no incidents and no error to explain why. Drives the
+    real do_POST route, because a test that re-implements the route body would
+    have passed against the broken version too."""
+    import io
+    import app.server as server
+
+    told = []
+
+    class _FakeAegis:
+        def attach(self, path, project=None):
+            told.append((path, project))
+
+    class _FakeRuntime:
+        def attach_port(self, port):
+            return {"source": {"type": "file", "path": "/tmp/picked.log",
+                               "attached": True, "via_port": port}}
+
+    class _Handler(server.RequestHandler):
+        def __init__(self):  # no socket, no server
+            self.path = "/api/trace-port"
+            self.headers = {"Content-Length": str(len(_BODY))}
+            self.rfile = io.BytesIO(_BODY)
+            self.wfile = io.BytesIO()
+            self.sent = []
+
+        def send_response(self, *a, **k):
+            self.sent.append(a)
+
+        def send_header(self, *a, **k):
+            pass
+
+        def end_headers(self):
+            pass
+
+        def log_message(self, *a, **k):
+            pass
+
+    _BODY = b'{"port": 8030}'
+    original_aegis, original_runtime = server._aegis, server.runtime
+    server._aegis = lambda: _FakeAegis()
+    server.runtime = _FakeRuntime()
+    try:
+        _Handler().do_POST()
+    finally:
+        server._aegis, server.runtime = original_aegis, original_runtime
+
+    assert told == [("/tmp/picked.log", None)], (
+        f"picking a port did not tell Aegis its source: {told}")
+
+
 def test_config_values_are_not_failures():
     """A startup banner reading "timeout=45.0s" was reported as "Connection timed out"
     and the whole healthy boot was marked failed. A failure word in a config value,
