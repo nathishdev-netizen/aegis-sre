@@ -45,7 +45,13 @@ def strip_ansi(text: str) -> str:
 # each physical line as its own event inflates metrics and invents components.
 CONTINUATION_PATTERNS = (
     re.compile(r"^\s*Traceback \(most recent call last\):"),
-    re.compile(r'^\s+File "[^"]+", line \d+'),
+    # Loguru marks the frame that actually raised with "> " in the leading
+    # column, so that line has no indentation to match on and used to break
+    # off into an event of its own - carrying the one frame naming the raise
+    # site away from the error it belongs to. The mapper then had only the
+    # except/logger lines to work with and proposed a fix to the handler
+    # that CAUGHT the failure rather than the code that caused it.
+    re.compile(r'^\s*>?\s*File "[^"]+", line \d+'),
     re.compile(r"^\s*(?:at|Caused by:|\.\.\.)\s+\S"),      # Java / JVM frames
     re.compile(r"^\s*\w+(?:\.\w+)*(?:Error|Exception)\b.*"),  # trailing exception type
     re.compile(r"^\s{2,}\S"),                                  # any indented continuation

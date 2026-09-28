@@ -248,6 +248,31 @@ def test_new_request_clears_previous_verdict():
 
 # --- Bug: multi-line tracebacks fragmented into unrelated events ---------------
 
+def test_loguru_marks_the_raising_frame_and_it_still_belongs_to_the_error():
+    """Loguru writes the frame that actually RAISED with a "> " marker in the
+    leading column, so it has no indentation to match on and became an event
+    of its own - taking the one frame naming the raise site away from the
+    error. Propose fix then saw only the except/logger lines and patched the
+    handler that CAUGHT the failure instead of the code that caused it."""
+    runtime = RuntimeState()
+    for line in [
+        "10:00:01 ERROR [api] Unhandled error while answering",
+        "Traceback (most recent call last):",
+        '  File "/app/api.py", line 347, in chat_sync',
+        '> File "/app/agents/orchestrator.py", line 1910, in _route',
+        "    raise ValueError('dispatch unavailable')",
+        "ValueError: dispatch unavailable",
+    ]:
+        runtime.ingest_line(line, source="test")
+
+    events = runtime.snapshot()["log_lines"]
+    error = [e for e in events if e.get("level") == "ERROR"]
+    assert len(error) == 1, f"the traceback split into {len(error)} error events"
+    detail = "\n".join(error[0].get("detail") or [])
+    assert "orchestrator.py" in detail, \
+        "the marked frame naming the raise site was not kept with its error"
+
+
 def test_traceback_is_one_event_not_many():
     """A Python traceback became 6 events across 4 invented components (Embedding,
     Other, Response), inflating failure counts and polluting the graph."""
