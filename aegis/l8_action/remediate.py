@@ -61,6 +61,10 @@ Write ONE self-contained Python test script:
   plainly and let the bug's own exception fail the script; where the bug
   returns a wrong VALUE rather than raising, assert the value the diagnosis
   says it should have returned.
+- never invent the exception type or message. Use the one the EVIDENCE shows,
+  verbatim. A test written against NotImplementedError when the code raises
+  ValueError fails before the patch AND after it, for a reason that has nothing
+  to do with the bug - and it looks exactly like a patch that did not work.
 - assert only what the EXCERPTS literally show. Never infer a return format
   by symmetry with a neighbouring line: if one branch returns a prefixed
   value like "lead:" + x and the branch you are testing returns x plainly,
@@ -404,6 +408,25 @@ class RemediationAgent:
         # self.runner.hint was already set (and self-healed if the first
         # guess could not even import) by the smoke test above - resetting
         # it here would silently throw that fallback away.
+        # Before running it: an inverted reproducer is wrong by its SHAPE, and
+        # the exit code cannot tell you. Checked only when it passed before the
+        # fix, this was missed whenever the inversion also failed - here, a test
+        # asserting the bug raises NotImplementedError against a bug that raises
+        # ValueError fails before AND after, so it took the normal path, got a
+        # patch, and surfaced as the generic "the patch did not make the
+        # reproducer pass". That sends the reader looking at a patch when the
+        # test was backwards.
+        if _asserts_the_bug(reproducer):
+            return self._bundle(Proposal(
+                incident_id, "stopped",
+                "the reproducer asserts the BUG instead of the fixed "
+                "behaviour - it catches the error and treats catching it as "
+                "success, so it can only pass while the bug is present. The "
+                "diagnosis may well be right; the test is backwards. Not "
+                "patching on it.",
+                reproducer=reproducer,
+                locations=[l.__dict__ for l in locations]))
+
         before = self.runner.run(self.TEST_FILENAME, reproducer)
         if not before.executed:
             return self._bundle(Proposal(

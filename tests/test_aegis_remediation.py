@@ -386,6 +386,33 @@ def test_overlap_walks_a_logged_line_back_to_its_format_string():
     assert _overlap("anything", "") == 0.0, "an empty statement must not match"
 
 
+def test_an_inverted_reproducer_is_caught_even_when_it_also_fails():
+    """The real miss. The inversion check ran only when the reproducer PASSED
+    before the fix, on the reasoning that passing-before is how inversion shows
+    up. It is not the only way: this reproducer asserted the bug raises
+    NotImplementedError while the code raises ValueError, so it failed before
+    the patch AND after it. That satisfied "before failed", took the normal
+    path, and surfaced as:
+
+        BLOCKED - the patch did not make the reproducer pass
+
+    which sends the reader to inspect a patch when the test was backwards. An
+    inverted reproducer is wrong by its SHAPE, so it is checked on content,
+    before anything is run."""
+    inverted_and_failing = (
+        "from agents.orchestrator import route\n"
+        "try:\n"
+        "    route({'needs_both_grade': 'yes'})\n"
+        "except NotImplementedError:\n"
+        "    # Expected behaviour after the bug is fixed\n"
+        "    print('PASS')\n"
+        "else:\n"
+        "    assert False, 'expected NotImplementedError'\n")
+    assert _asserts_the_bug(inverted_and_failing), (
+        "an inverted reproducer went undetected because a comment line sat "
+        "between the except and its success path")
+
+
 def test_a_reproducer_that_asserts_the_bug_is_named_as_such():
     """The model wrote this against paideia-chatbot: it catches the ValueError
     the bug raises and prints SUCCESS, so it exits 0 WHILE the bug is present
