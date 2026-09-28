@@ -271,9 +271,33 @@ class RuntimeState:
             })
         self._snapshot.verdicts = verdicts
 
+    # How many log lines the WIRE carries. The snapshot keeps
+    # settings.max_log_lines (200) because the interpreter reads back over
+    # them; the browser only ever renders the recent ones. Sending all 200 made
+    # every frame 103KB, of which 67KB was log_lines - and broadcast() fires on
+    # every ingested line, so a chatbot writing steadily pushed ~620KB/s of
+    # almost identical data and the page re-rendered continuously. It looked
+    # like the UI was stuck in a loop.
+    WIRE_LOG_LINES = 60
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return json.loads(json.dumps(asdict(self._snapshot)))
+
+    def wire_snapshot(self) -> dict[str, Any]:
+        """snapshot() trimmed for the browser.
+
+        NOT the same as snapshot(): internal callers need the full 200 lines
+        because llm.py takes the last llm_log_window (60) of the LATEST RUN,
+        and trimming before that filter would silently starve it on a busy log.
+        Only the wire is trimmed, and only log_lines, which the UI renders
+        recent-first anyway.
+        """
+        payload = self.snapshot()
+        lines = payload.get("log_lines") or []
+        if len(lines) > self.WIRE_LOG_LINES:
+            payload["log_lines"] = lines[-self.WIRE_LOG_LINES:]
+        return payload
 
     def audit_report_object(self, window: str = "24h") -> Any:
         """The AuditReport itself, for callers that render it (e.g. as HTML)
@@ -1563,6 +1587,37 @@ class RuntimeState:
                 payload = queue.get()
                 if payload is _SHUTDOWN:
                     return
+                # Coalesce a burst into its newest frame. broadcast() fires on
+                # every state change, which means every ingested log line, and
+                # each frame is the WHOLE snapshot including the timeline -
+                # ~60KB. A chatbot writing 14 lines a second pushed ~850KB/s
+                # and the browser called render() on every one, so the page
+                # never settled: it looked like the UI was stuck in a loop.
+                # This is live state, so the newest frame supersedes the rest -
+                # dropping the ones in between loses nothing.
+                dropped = 0
+                while True:
+                    try:
+                        newer = queue.get_nowait()
+                    except Empty:
+                        break
+                    if newer is _SHUTDOWN:
+                        return
+                    payload = newer
+                    dropped += 1
+                # A small settle window turns "14 renders a second" into one:
+                # without it the very next line starts another frame before the
+                # browser has finished the last.
+                if dropped:
+                    time.sleep(0.12)
+                    while True:
+                        try:
+                            newer = queue.get_nowait()
+                        except Empty:
+                            break
+                        if newer is _SHUTDOWN:
+                            return
+                        payload = newer
                 try:
                     handler.send_sse("state", payload)
                 except Exception:
@@ -1590,7 +1645,7 @@ class RuntimeState:
         returned in 0.05s. Each client now drains its own queue on its own thread, so
         a stalled reader only ever costs that reader.
         """
-        payload = json.dumps({"type": "state", "state": self.snapshot()})
+        payload = json.dumps({"type": "state", "state": self.wire_snapshot()})
         with self._lock:
             queues = list(self._client_queues.values())
 

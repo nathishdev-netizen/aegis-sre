@@ -551,6 +551,60 @@ def test_picking_a_port_attaches_aegis_too_not_just_v1():
         f"picking a port did not tell Aegis its source: {told}")
 
 
+def test_the_wire_does_not_ship_the_whole_log_every_frame():
+    """The UI looked stuck in a loop. broadcast() fires on every state change -
+    which means every ingested log line - and each frame was the WHOLE snapshot
+    at ~103KB, of which 67KB was all 200 log_lines re-sent verbatim. A chatbot
+    writing ~14 lines a second pushed ~850KB/s and the browser called render()
+    on each one, so the page never settled.
+
+    wire_snapshot() trims log_lines for the browser only. snapshot() must stay
+    complete: llm.py takes the last llm_log_window of the LATEST RUN, so
+    trimming before that filter would silently starve it on a busy log."""
+    runtime = RuntimeState()
+    for i in range(200):
+        runtime._snapshot.log_lines.append(
+            {"timestamp": "10:00:00", "level": "INFO", "status": "info",
+             "message": f"[api] line {i} with enough text to be realistic",
+             "source": "test"})
+
+    full = runtime.snapshot()
+    wire = runtime.wire_snapshot()
+    assert len(full["log_lines"]) == 200, "the internal snapshot was trimmed"
+    assert len(wire["log_lines"]) == runtime.WIRE_LOG_LINES
+    assert len(json.dumps(wire)) < len(json.dumps(full)), "the wire got no smaller"
+    # The newest lines are the ones the UI renders - trimming must keep the END.
+    assert wire["log_lines"][-1] == full["log_lines"][-1]
+
+
+def test_a_burst_of_log_lines_coalesces_into_one_frame():
+    """Fourteen frames a second is fourteen renders a second. This is LIVE
+    state, so the newest frame supersedes the ones behind it and dropping them
+    loses nothing - what the user sees is the latest either way."""
+    runtime = RuntimeState()
+    sent = []
+
+    class _Handler:
+        def send_sse(self, event, payload):
+            sent.append(payload)
+
+    handler = _Handler()
+    runtime.subscribe(handler)
+    try:
+        for i in range(20):
+            runtime._snapshot.log_lines.append(
+                {"timestamp": "10:00:00", "level": "INFO", "status": "info",
+                 "message": f"burst {i}", "source": "test"})
+            runtime.broadcast()
+        time.sleep(1.0)
+    finally:
+        runtime.unsubscribe(handler)
+    assert sent, "nothing was delivered at all"
+    assert len(sent) < 20, f"no coalescing: {len(sent)} frames for 20 changes"
+    # Whatever survived must be the NEWEST state, not a stale frame.
+    assert "burst 19" in sent[-1], "the last frame was not the latest state"
+
+
 def test_config_values_are_not_failures():
     """A startup banner reading "timeout=45.0s" was reported as "Connection timed out"
     and the whole healthy boot was marked failed. A failure word in a config value,

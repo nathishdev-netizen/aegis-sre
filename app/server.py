@@ -183,7 +183,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             runtime.subscribe(self)
             try:
-                self.send_sse("state", json.dumps({"type": "state", "state": runtime.snapshot()}))
+                self.send_sse("state", json.dumps({"type": "state", "state": runtime.wire_snapshot()}))
                 while True:
                     time.sleep(15)
                     self.send_sse("ping", json.dumps({"ok": True}))
