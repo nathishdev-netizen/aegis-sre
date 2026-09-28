@@ -293,6 +293,36 @@ def test_skipping_the_suite_says_so_rather_than_implying_all_is_well():
     assert "NOT run" in result.detail, result.detail
 
 
+def test_the_reproducer_runs_from_the_services_import_root():
+    """The real failure: the free check wrote aegis_reproducer.py to the REPO
+    ROOT and ran it there, so a monorepo service's reproducer died on
+    "ModuleNotFoundError: No module named 'agents.orchestrator'" and a perfectly
+    good patch was reverted for it.
+
+    A service is its own import root. T2's sandbox already knew this - the fix
+    was to reuse _import_root and _interpreter_for rather than re-derive the
+    paths, which is how the bug got in."""
+    from aegis.l8_action.apply import verify_with_reproducer
+    from aegis.l8_action.runner import _import_root
+
+    repo = _monorepo()
+    hint = "services/chatbot/agents/orchestrator.py"
+    root = _import_root(repo, hint)
+    assert root == repo / "services" / "chatbot", root
+
+    # Imports by the package name that only resolves FROM the service dir.
+    passed, output = verify_with_reproducer(
+        repo,
+        "from agents.orchestrator import route\n"
+        "assert route() == 'hi', 'wrong answer'\n",
+        hint)
+    assert passed, output
+    assert "ModuleNotFoundError" not in output, output
+    # Cleaned up from the import root, not just the repo root.
+    assert not (root / "aegis_reproducer.py").exists()
+    assert not (repo / "aegis_reproducer.py").exists()
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

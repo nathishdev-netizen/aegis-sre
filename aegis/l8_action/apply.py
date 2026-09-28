@@ -29,7 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from aegis.l8_action.runner import _interpreter_for, _tolerant_apply
+from aegis.l8_action.runner import (
+    _import_root, _interpreter_for, _tolerant_apply)
 
 TEST_TIMEOUT_S = 900
 
@@ -181,38 +182,51 @@ def find_suite(repo: Path, near: list[str] | None = None,
 
 
 def verify_with_reproducer(repo: Path, reproducer: str,
-                          python: str | None = None) -> tuple[bool, str]:
+                          hint: str = "") -> tuple[bool, str]:
     """Run Aegis's OWN reproducer against the real repo.
 
     This is the cheap verification, and for a paid suite it is the only honest
     one. The project's suite is the broader check, but on a real project it can
-    cost real money: paideia's 136 tests are 5 files of live LLM and SurrealDB
-    calls, and apply() runs the suite TWICE (baseline, then patched), so one
-    click was ~18 minutes and ~124 LLM-backed tests. A tool that quietly spends
-    the user's API budget to verify its own work is not one they can leave on.
+    cost real money: paideia's 136 tests are five files of live LLM and
+    SurrealDB calls, and apply() runs the suite TWICE (baseline, then patched),
+    so one click was ~18 minutes and ~124 LLM-backed tests. A tool that quietly
+    spends the user's API budget to verify its own work is not one they can
+    leave on.
 
-    The reproducer costs nothing: it is a few lines Aegis already wrote, it
-    already failed before the patch and passed after IN THE SANDBOX, and
-    re-running it here proves the patch landed correctly in the real tree -
-    which is the specific thing a sandbox proof does not cover.
+    The reproducer costs nothing: Aegis already wrote it, it already failed
+    before the patch and passed after IN THE SANDBOX, and re-running it here
+    proves the patch landed correctly in the real tree - which is the specific
+    thing a sandbox proof does not cover.
+
+    Runs it exactly the way T2's sandbox does, via _import_root and
+    _interpreter_for. Writing it to the repo root instead failed with
+    "ModuleNotFoundError: No module named 'agents.orchestrator'": a monorepo
+    service is its own import root, so the reproducer has to run from
+    services/chatbot, not the repo. Reusing those two functions rather than
+    re-deriving the paths is the point - they already carry the reasoning,
+    including that PYTHONPATH must name ONLY the import root because paideia's
+    top-level agents/ shadows the service's.
 
     What it does NOT prove is that everything else still works. Callers must
     say so plainly rather than let silence read as approval.
     """
     if not reproducer.strip():
         return False, "no reproducer to run"
-    target = repo / "aegis_reproducer.py"
+    root = _import_root(repo, hint)
+    target = root / "aegis_reproducer.py"
     existed = target.exists()
     previous = target.read_text() if existed else ""
     try:
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(reproducer)
-        exe = python or _interpreter_for(repo, "")
         try:
             completed = subprocess.run(
-                [exe, str(target)], cwd=repo, text=True, capture_output=True,
-                timeout=120,
+                [_interpreter_for(repo, hint), target.name],
+                cwd=root, text=True, capture_output=True, timeout=120,
                 env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                     "HOME": os.environ.get("HOME", str(repo))},
+                     "HOME": os.environ.get("HOME", str(repo)),
+                     "PYTHONPATH": str(root),
+                     "PYTHONDONTWRITEBYTECODE": "1"},
             )
         except subprocess.TimeoutExpired:
             return False, "the reproducer did not finish within 120s"
@@ -277,7 +291,11 @@ class PatchApplier:
             # Running the project's own suite is what can cost money; proving
             # the patch does what it claimed does not.
             if reproducer.strip():
-                passed, output = verify_with_reproducer(self.repo, reproducer)
+                # The patched file IS the hint: it tells _import_root which
+                # directory this code expects to be imported from, which for a
+                # monorepo service is the service, not the repo.
+                passed, output = verify_with_reproducer(
+                    self.repo, reproducer, targets[0] if targets else "")
                 if not passed:
                     _restore(backup, self.repo, targets)
                     shutil.rmtree(backup, ignore_errors=True)
