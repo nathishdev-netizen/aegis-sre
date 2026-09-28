@@ -319,6 +319,23 @@ class PatchApplier:
                                "verify before you commit",
                                files=targets, backup_path=str(backup))
 
+        # The reproducer runs FIRST on every checked route, not only when the
+        # suite is skipped. It is the one check that proves THIS patch fixed
+        # THIS bug in the real tree, it costs nothing, and a patch that fails
+        # it should never reach the slower checks at all.
+        if reproducer.strip():
+            passed, output = verify_with_reproducer(
+                self.repo, reproducer, targets[0] if targets else "")
+            if not passed:
+                _restore(backup, self.repo, targets)
+                shutil.rmtree(backup, ignore_errors=True)
+                return ApplyResult(
+                    False, True,
+                    "REVERTED - the patch applied but its own reproducer still "
+                    "fails against your repo, so it did not actually fix this. "
+                    "Your files are exactly as they were.",
+                    files=targets, suite="reproducer", suite_output=output)
+
         found = find_suite(self.repo, targets)
         if found is None:
             # No suite is not permission to keep an unverified change: say so
@@ -420,7 +437,8 @@ class PatchApplier:
         if passed:
             return ApplyResult(
                 True, False,
-                f"applied - your {name} suite still passes",
+                f"applied - its reproducer passes against your repo, and "
+                f"your {name} suite still passes",
                 files=targets, suite=name, suite_output=output,
                 backup_path=str(backup))
 

@@ -2125,23 +2125,23 @@
               // project it can be live LLM and database calls, run TWICE
               // (baseline, then patched), so it is spend the user authorises
               // rather than a default they discover afterwards.
-              '<button class="btn primary" data-aegis-apply="' +
+              // TWO routes, not three. The reproducer-only option proved the
+              // patch landed and nothing else, which is too weak to be a
+              // default a person clicks without reading - so it is folded into
+              // the checked route: reproducer FIRST, then the tests measured
+              // cheap. The second route is the same thing plus the tests that
+              // cost money, which stays a deliberate choice.
+              '<button class="btn primary" data-aegis-apply-fast="' +
               aegisEsc(inc.id) + '"' +
               (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
-              (aegisApplyBusy[inc.id] ? "applying\u2026"
-                 : "Let Aegis apply it \u00b7 checks with its own test") +
-              "</button>" +
-              '<button class="btn" data-aegis-apply-fast="' +
-              aegisEsc(inc.id) + '"' +
-              (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
-              (aegisApplyBusy[inc.id] ? "running\u2026"
-                 : "\u2026and my fast tests \u00b7 free") +
+              (aegisApplyBusy[inc.id] ? "checking\u2026"
+                 : "Apply \u00b7 verify with my fast tests") +
               "</button>" +
               '<button class="btn" data-aegis-apply-suite="' +
               aegisEsc(inc.id) + '"' +
               (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
               (aegisApplyBusy[inc.id] ? "running\u2026"
-                 : "\u2026and run my whole test suite") +
+                 : "Apply \u00b7 verify with my whole test suite") +
               "</button></div>" +
               '<div class="hint" style="margin-top:4px">Either way your repo is ' +
               'only written when you click - and never while it has uncommitted ' +
@@ -3131,17 +3131,16 @@
       return;
     }
     var applyBtn = event.target.closest(
-      "[data-aegis-apply],[data-aegis-apply-fast],[data-aegis-apply-suite]");
+      "[data-aegis-apply-fast],[data-aegis-apply-suite]");
     if (applyBtn) {
       // Three checks, and the difference between them is what they cost -
       // see the buttons' comment. Fast runs the project's OWN tests, but only
       // the ones measured to take under a second, so it checks the rest of the
       // code without spending anything.
       var withSuite = applyBtn.hasAttribute("data-aegis-apply-suite");
-      var withFast = applyBtn.hasAttribute("data-aegis-apply-fast");
+      var withFast = !withSuite;
       var applyId = applyBtn.getAttribute(
-        withSuite ? "data-aegis-apply-suite"
-        : withFast ? "data-aegis-apply-fast" : "data-aegis-apply");
+        withSuite ? "data-aegis-apply-suite" : "data-aegis-apply-fast");
       var applyRepo = (aegisRepoDraft[applyId] || savedRepo() || "").trim();
       if (!applyRepo) {
         aegisApplyOut[applyId] = { ok: false, text: "set the repo path above first" };
@@ -3158,17 +3157,18 @@
               "was already failing is not blamed on this change.\n\n" +
               "If your tests make live API or database calls, this costs " +
               "whatever those calls cost.\n\n"
-            : "Aegis will edit the files and re-run its OWN reproducer to " +
-              "prove the fix landed. That is free, and it puts everything " +
-              "back if the reproducer still fails.\n\n" +
-              "Your own test suite will NOT run, so nothing checks the rest " +
-              "of your code.\n\n") +
+            : "Aegis will edit the files, re-run its own reproducer to prove " +
+              "the fix landed, then run the tests of yours it MEASURED at " +
+              "under a second each.\n\n" +
+              "Both are free. Tests that call an API, a database or load a " +
+              "model are left out, so this does not prove everything the " +
+              "full suite would.\n\n") +
           "Nothing is committed - `git diff` shows the change.")) return;
       aegisApplyBusy[applyId] = true;
       aegisApplyOut[applyId] = { ok: false, busy: true,
         text: withSuite
           ? "applying, then running your project\u2019s own suite twice - this can take a while\u2026"
-          : "applying, then re-running Aegis\u2019s own reproducer\u2026" };
+          : "applying, checking the reproducer, then your fast tests\u2026" };
       aegisRefresh();
       fetch("/api/aegis/apply-fix", {
         method: "POST", headers: { "Content-Type": "application/json" },
