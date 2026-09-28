@@ -1872,6 +1872,98 @@
     return out + "</div>";
   }
 
+  // What a patch actually DOES, read off the diff itself - no model call, so
+  // it costs nothing and can never describe a change the diff does not make.
+  // Shown before either route (apply it yourself, or let Aegis apply it),
+  // because "here is a diff" is not an explanation and both choices deserve
+  // one.
+  function explainPatch(patch) {
+    var files = [], removed = [], added = [];
+    (patch || "").split("\n").forEach(function (line) {
+      if (line.indexOf("+++ ") === 0) {
+        var name = line.slice(4).trim().replace(/^b\//, "");
+        if (name && name !== "/dev/null") files.push(name);
+      } else if (line.indexOf("-") === 0 && line.indexOf("---") !== 0) {
+        if (line.slice(1).trim()) removed.push(line.slice(1));
+      } else if (line.indexOf("+") === 0 && line.indexOf("+++") !== 0) {
+        if (line.slice(1).trim()) added.push(line.slice(1));
+      }
+    });
+
+    var what = [];
+    // A raise/throw that disappears is the single most consequential shape
+    // here: the code stops refusing and starts falling through.
+    var droppedRaise = removed.filter(function (l) {
+      return /^\s*(raise|throw)\b/.test(l);
+    });
+    var addedRaise = added.filter(function (l) {
+      return /^\s*(raise|throw)\b/.test(l);
+    });
+    if (droppedRaise.length && !addedRaise.length) {
+      what.push("removes a " + droppedRaise[0].trim().split("(")[0].trim() +
+                " so the call no longer fails here and continues to the code below it");
+    } else if (addedRaise.length && !droppedRaise.length) {
+      what.push("adds a new error path that did not exist before");
+    }
+
+    var condFrom = removed.filter(function (l) { return /^\s*(if|elif|while)\b/.test(l); });
+    var condTo = added.filter(function (l) { return /^\s*(if|elif|while)\b/.test(l); });
+    if (condFrom.length && condTo.length) {
+      what.push("changes a condition: " + condFrom[0].trim() + " → " + condTo[0].trim());
+    }
+
+    var onlyComments = added.length && added.every(function (l) {
+      return /^\s*(#|\/\/)/.test(l) || /^\s*pass\s*$/.test(l);
+    });
+    if (onlyComments) {
+      what.push("replaces the removed code with a comment or `pass` rather " +
+                "than new logic - correct only if doing nothing here is the fix");
+    }
+
+    // Blanking a string literal has to survive an apostrophe inside a
+    // double-quoted one ("couldn't"), or the naive [^"']* ends the match
+    // early and two lines that differ only in their message text look like
+    // they differ structurally - which is exactly the shape this warning
+    // exists to catch.
+    function blankStrings(s) {
+      return String(s)
+        .replace(/"(?:[^"\\]|\\.)*"/g, "@")
+        .replace(/'(?:[^'\\]|\\.)*'/g, "@");
+    }
+    var onlyStrings = (removed.length === added.length) && removed.length > 0 &&
+      removed.every(function (l, i) {
+        var a = blankStrings(l);
+        var b = blankStrings(added[i] || "");
+        return a.trim() === b.trim() && a.indexOf("@") >= 0;
+      });
+    if (onlyStrings) {
+      what.push("⚠ only changes text inside quotes - it may be rewording a " +
+                "message rather than fixing the behaviour behind it");
+    }
+
+    if (!what.length) {
+      what.push("replaces " + removed.length + " line(s) with " + added.length +
+                " line(s) - read the diff below for exactly what changes");
+    }
+
+    return {
+      files: files,
+      lines: "−" + removed.length + " / +" + added.length,
+      points: what,
+    };
+  }
+
+  function explainPatchHtml(patch) {
+    var e = explainPatch(patch);
+    return '<div class="note-line" style="margin-top:10px"><b>what this fix does</b>' +
+      ' · ' + aegisEsc(e.files.join(", ") || "one file") +
+      ' · ' + aegisEsc(e.lines) + " lines</div>" +
+      '<ul style="margin:4px 0 0;padding-left:18px">' +
+      e.points.map(function (p) {
+        return "<li>" + aegisEsc(p) + "</li>";
+      }).join("") + "</ul>";
+  }
+
   function renderIncidents(state) {
     var incidents = state.incidents || [];
     if (!incidents.length) {
@@ -1973,16 +2065,25 @@
             aegisEsc(bundle.path) + "</div>" +
             '<pre class="aegis-bundle">' + aegisEsc(bundle.proposal) + "</pre>" +
             (bundle.patch ?
-              '<div class="row" style="gap:8px;margin-top:6px">' +
+              // Explain BEFORE offering either route: a diff is evidence, not
+              // an explanation, and the choice between doing it yourself and
+              // letting Aegis do it is only meaningful once you know what is
+              // being proposed.
+              explainPatchHtml(bundle.patch) +
+              '<div class="note-line" style="margin-top:12px"><b>how do you want to apply it?</b></div>' +
+              '<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap">' +
               '<button class="btn" data-aegis-copy-patch="' + aegisEsc(inc.id) +
-              '">Copy patch</button>' +
+              '">I\u2019ll do it myself \u00b7 copy the patch</button>' +
               // The proposal says what it WOULD do; this is where you say do
               // it. Offered only when there is a patch to apply, and it
               // undoes itself if your own tests disagree - which is what
               // makes saying yes reasonable.
               '<button class="btn primary" data-aegis-apply="' +
-              aegisEsc(inc.id) + '">Apply this fix \u00b7 reverts if your ' +
+              aegisEsc(inc.id) + '">Let Aegis apply it \u00b7 reverts if your ' +
               'tests fail</button></div>' +
+              '<div class="hint" style="margin-top:4px">Either way your repo is ' +
+              'only written when you click - and never while it has uncommitted ' +
+              'changes, unless you say so.</div>' +
               '<div id="apply-' + aegisEsc(inc.id) + '"></div>' : "");
         } else if (fixResult && fixResult.ok) {
           body += '<div class="row" style="margin-top:6px">' +
@@ -2921,7 +3022,20 @@
           aegisFixOut[fixId] = { ok: reply.ok,
             text: (reply.status ? reply.status.toUpperCase() + " - " : "") +
                   reply.detail + (reply.bundle ? "\nbundle: " + reply.bundle : "") };
-          aegisRefresh();
+          // Pull the bundle in right away rather than leaving a second
+          // "View full proposal" click between the person and the thing
+          // they just asked for. The explanation of what the patch does -
+          // and the choice of applying it yourself or letting Aegis do it -
+          // both live in that block, so waiting for another click hides the
+          // only part of this that is actually a decision.
+          if (reply.ok) {
+            fetch("/api/aegis/proposal/" + fixId, { method: "POST" })
+              .then(function (r) { return r.json(); })
+              .then(function (bundle) { aegisProposal[fixId] = bundle; aegisRefresh(); })
+              .catch(function () { aegisRefresh(); });
+          } else {
+            aegisRefresh();
+          }
         })
         .catch(function () {
           aegisFixBusy[fixId] = false;
