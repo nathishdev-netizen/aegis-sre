@@ -278,6 +278,31 @@ def test_a_replaced_block_keeps_the_patchs_own_indentation():
     assert "raise ValueError" not in text
 
 
+def test_excerpts_always_reach_back_to_the_enclosing_def():
+    """The reproducer has to IMPORT the thing under test by name. A fixed
+    +/-14 window around a line 16 below its own `def` showed the docstring
+    and body but not the signature, so the model invented `_routing_grade`
+    for `_route_after_in_scope_check` and the run died on ImportError before
+    reaching the bug."""
+    import tempfile
+    from aegis.l8_action.mapper import Location
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        target = root / "mod.py"
+        body = "\n".join(f"    # filler {i}" for i in range(30))
+        target.write_text(f"def the_real_name(state):\n{body}\n    raise ValueError('boom')\n")
+        raising = len(target.read_text().splitlines())
+
+        agent = RemediationAgent.__new__(RemediationAgent)
+        agent.repo = root
+        out = agent._excerpts([Location(file="mod.py", line=raising,
+                                        source="raise ValueError('boom')", fragment="")])
+
+    assert "def the_real_name" in out, \
+        "the signature the reproducer must import was cut out of the excerpt"
+
+
 def test_inserted_lines_keep_the_patchs_own_indentation():
     """Seen live: a guard inserted after `async def chat(...)` anchored on a
     line at column 0, so every inserted line landed at column 0 too - inside

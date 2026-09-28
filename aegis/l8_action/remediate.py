@@ -190,6 +190,11 @@ def _asserts_the_bug(reproducer: str) -> bool:
 # error MESSAGE instead of the actual bug once it ran out of ideas - the
 # shape of an agent papering over a symptom rather than admitting it is
 # stuck. Two is deliberately tight: one retry to self-correct, then stop.
+# The line that names a thing the reproducer can import: a top-level or
+# nested def/class. Matched against the enclosing scope of a mapped line.
+_DEF_LINE = re.compile(r"^\s*(?:async\s+def|def|class)\s+\w+")
+
+
 MAX_ATTEMPTS = 2
 
 
@@ -704,6 +709,16 @@ class RemediationAgent:
                 continue
             start = max(0, location.line - 1 - context)
             end = min(len(lines), location.line + context)
+            # Always reach back to the enclosing def/class, however far it is.
+            # The reproducer has to IMPORT this thing by name, and a fixed
+            # window can cut the signature off: a mapped line 16 below its own
+            # `def` left the model with the docstring and body but no name, so
+            # it invented `_routing_grade` for `_route_after_in_scope_check`
+            # and the run died on ImportError before reaching the bug.
+            for n in range(location.line - 1, max(-1, location.line - 401), -1):
+                if _DEF_LINE.match(lines[n]):
+                    start = min(start, n)
+                    break
             body = "\n".join(f"{n + 1:4} {lines[n]}" for n in range(start, end))
             chunks.append(f"# {location.file}\n{body}")
         return "\n\n".join(chunks)
