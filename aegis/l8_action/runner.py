@@ -175,7 +175,16 @@ def _tolerant_apply(work: Path, patch_text: str, *,
             indent = lines[last_index][: len(lines[last_index]) - len(lines[last_index].lstrip())]
             insert_at = last_index + 1
             for offset, new_line in enumerate(extra):
-                lines.insert(insert_at + offset, indent + new_line.strip() + "\n")
+                # Reusing the ANCHOR's indentation is right when the model
+                # wrote the line flush left, and wrong whenever the patch
+                # carries its own. Inserting a guard after `async def chat(...)`
+                # anchored on a line at column 0 put the whole block at column
+                # 0 too, inside a body that needs four spaces - IndentationError
+                # before the reproducer could run, blamed on the patch.
+                if new_line[:1] in (" ", "\t"):
+                    lines.insert(insert_at + offset, new_line.rstrip("\n") + "\n")
+                else:
+                    lines.insert(insert_at + offset, indent + new_line.strip() + "\n")
         # Highest index first, so earlier deletions do not shift later ones.
         for index in sorted(deletions, reverse=True):
             del lines[index]

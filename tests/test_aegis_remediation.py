@@ -278,6 +278,30 @@ def test_a_replaced_block_keeps_the_patchs_own_indentation():
     assert "raise ValueError" not in text
 
 
+def test_inserted_lines_keep_the_patchs_own_indentation():
+    """Seen live: a guard inserted after `async def chat(...)` anchored on a
+    line at column 0, so every inserted line landed at column 0 too - inside
+    a body needing four spaces. The run reported "the reproducer could not
+    run after the patch (IndentationError)" and blamed the patch."""
+    import tempfile
+    before = (
+        "def handler(request):\n"
+        "    return request.value\n"
+    )
+    patch = (
+        "--- a/svc/mod.py\n+++ b/svc/mod.py\n@@\n"
+        "-def handler(request):\n"
+        "+def handler(request):\n"
+        "+    if not hasattr(request, 'value'):\n"
+        "+        request.value = None\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        ok, detail, text = _apply(tmp, before, patch)
+    assert ok, f"insertion refused: {detail}"
+    compile(text, "mod.py", "exec")  # raises IndentationError if it regressed
+    assert "    if not hasattr" in text, "the inserted guard lost its indentation"
+
+
 def test_a_removed_block_is_matched_whole_not_line_by_line():
     """A five-line raise was refused because its closing ")" alone matched 124
     places in the file. As a contiguous BLOCK it occurs exactly once."""
