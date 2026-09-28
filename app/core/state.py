@@ -23,6 +23,7 @@ from app.core.parser import (
     detect_branch,
     is_run_start,
     is_continuation,
+    continues_open_traceback,
     strip_ansi,
     unwrap_payload,
     unwrap_payload_preserving_indent,
@@ -143,6 +144,9 @@ class RuntimeState:
         self._interpreting = False
         self._pending_interpretation = False
         self._raw_for_learning: list[str] = []
+        # Whether the line just ingested was a continuation, so a
+        # blank inside an open traceback can be kept with it.
+        self._last_was_continuation = False
         # Durations measured per source, persisted so "is this normal?" is answerable on
         # a fresh start rather than only after the agent has watched for a while.
         self._store: Store | None = None
@@ -1077,8 +1081,16 @@ class RuntimeState:
                 return json.loads(json.dumps(asdict(self._snapshot)))
             entry = self._snapshot.log_lines[-1]
             detail = entry.get("detail") or []
-            if len(detail) < 40:
-                detail.append(text)
+            detail.append(text)
+            if len(detail) > 40:
+                # Keep the FIRST few lines and the LAST many. A traceback's
+                # deepest frames are the ones naming the code that actually
+                # raised, and they arrive last; a loguru diagnostic traceback
+                # is long enough that a plain first-40 cap filled up on
+                # framework frames and dropped the project's own. That left
+                # the mapper with only the except/logger lines, so Propose fix
+                # patched the handler that CAUGHT the failure.
+                detail = detail[:4] + detail[-36:]
             entry["detail"] = detail
             self._snapshot.updated_at = now_iso()
 
@@ -1181,8 +1193,14 @@ class RuntimeState:
         # Unwrap first (SSE sends {"line": "  File ..."}) but keep the indentation,
         # since indentation is what identifies a stack frame.
         unwrapped = unwrap_payload_preserving_indent(raw_line)
-        if is_continuation(unwrapped):
+        # A blank line inside an open traceback is still part of it (loguru
+        # puts one between frame groups). Tracked here rather than in the
+        # parser because only the caller knows what the PREVIOUS line was.
+        if is_continuation(unwrapped) or continues_open_traceback(
+                unwrapped, self._last_was_continuation):
+            self._last_was_continuation = True
             return self._append_continuation(unwrapped)
+        self._last_was_continuation = False
 
         # Payload/header dumps are debug scaffolding, not execution. Fold them into the
         # preceding event so they stay readable without swamping the metrics - 170 of

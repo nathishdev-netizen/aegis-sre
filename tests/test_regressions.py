@@ -248,6 +248,28 @@ def test_new_request_clears_previous_verdict():
 
 # --- Bug: multi-line tracebacks fragmented into unrelated events ---------------
 
+def test_a_long_traceback_keeps_the_frames_that_name_our_own_code():
+    """detail was capped at the FIRST 40 lines. A loguru diagnostic traceback
+    is long enough that those 40 filled with framework frames (fastapi,
+    langgraph, asyncio) and the project's own - the ones naming the code that
+    actually raised, which arrive last - were dropped. The mapper then had
+    only the except/logger lines and Propose fix patched the handler that
+    CAUGHT the failure."""
+    runtime = RuntimeState()
+    runtime.ingest_line("10:00:01 ERROR [api] Unhandled error while answering", source="t")
+    runtime.ingest_line("Traceback (most recent call last):", source="t")
+    for i in range(60):                       # framework noise, more than the cap
+        runtime.ingest_line(f'  File "/venv/lib/framework{i}.py", line {i}, in wrap', source="t")
+    runtime.ingest_line('  File "/app/agents/orchestrator.py", line 1910, in _route', source="t")
+    runtime.ingest_line("    raise ValueError('dispatch unavailable')", source="t")
+
+    error = [e for e in runtime.snapshot()["log_lines"] if e.get("level") == "ERROR"][0]
+    detail = "\n".join(error.get("detail") or [])
+    assert "orchestrator.py" in detail, \
+        "the deepest frame - the one naming our own code - was dropped by the cap"
+    assert len(error["detail"]) <= 40, "the cap must still bound the detail"
+
+
 def test_loguru_marks_the_raising_frame_and_it_still_belongs_to_the_error():
     """Loguru writes the frame that actually RAISED with a "> " marker in the
     leading column, so it has no indentation to match on and became an event
