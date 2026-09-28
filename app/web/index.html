@@ -2119,15 +2119,29 @@
               // it. Offered only when there is a patch to apply, and it
               // undoes itself if your own tests disagree - which is what
               // makes saying yes reasonable.
+              // Two apply routes, because verifying is not free. Aegis's own
+              // reproducer costs nothing and proves the patch does what it
+              // claimed. The project's suite proves more - but on a real
+              // project it can be live LLM and database calls, run TWICE
+              // (baseline, then patched), so it is spend the user authorises
+              // rather than a default they discover afterwards.
               '<button class="btn primary" data-aegis-apply="' +
               aegisEsc(inc.id) + '"' +
               (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
               (aegisApplyBusy[inc.id] ? "applying\u2026"
-                 : "Let Aegis apply it \u00b7 reverts if your tests fail") +
+                 : "Let Aegis apply it \u00b7 checks with its own test") +
+              "</button>" +
+              '<button class="btn" data-aegis-apply-suite="' +
+              aegisEsc(inc.id) + '"' +
+              (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
+              (aegisApplyBusy[inc.id] ? "running\u2026"
+                 : "\u2026and run my whole test suite") +
               "</button></div>" +
               '<div class="hint" style="margin-top:4px">Either way your repo is ' +
               'only written when you click - and never while it has uncommitted ' +
-              'changes, unless you say so.</div>' +
+              'changes, unless you say so. Aegis\u2019s own test is free and ' +
+              'reverts the patch if it still fails; your suite is the broader ' +
+              'check but runs twice, so it costs whatever your tests cost.</div>' +
               applyResultHtml(inc.id) : "");
         } else if (fixResult && fixResult.ok) {
           body += '<div class="row" style="margin-top:6px">' +
@@ -3108,9 +3122,13 @@
       }
       return;
     }
-    var applyBtn = event.target.closest("[data-aegis-apply]");
+    var applyBtn = event.target.closest("[data-aegis-apply],[data-aegis-apply-suite]");
     if (applyBtn) {
-      var applyId = applyBtn.getAttribute("data-aegis-apply");
+      // Which button decides whether the project's own suite runs, and that
+      // is a spending decision - see the buttons' comment.
+      var withSuite = applyBtn.hasAttribute("data-aegis-apply-suite");
+      var applyId = applyBtn.getAttribute(
+        withSuite ? "data-aegis-apply-suite" : "data-aegis-apply");
       var applyRepo = (aegisRepoDraft[applyId] || savedRepo() || "").trim();
       if (!applyRepo) {
         aegisApplyOut[applyId] = { ok: false, text: "set the repo path above first" };
@@ -3121,16 +3139,28 @@
       // to take back by accident, so it is asked plainly and once.
       if (!window.confirm(
           "Apply this fix to " + applyRepo + "?\n\n" +
-          "Aegis will edit the files, run your own test suite, and put " +
-          "everything back automatically if those tests fail.\n\n" +
+          (withSuite
+            ? "Aegis will edit the files, then run YOUR WHOLE TEST SUITE " +
+              "twice - once before the patch and once after, so a suite that " +
+              "was already failing is not blamed on this change.\n\n" +
+              "If your tests make live API or database calls, this costs " +
+              "whatever those calls cost.\n\n"
+            : "Aegis will edit the files and re-run its OWN reproducer to " +
+              "prove the fix landed. That is free, and it puts everything " +
+              "back if the reproducer still fails.\n\n" +
+              "Your own test suite will NOT run, so nothing checks the rest " +
+              "of your code.\n\n") +
           "Nothing is committed - `git diff` shows the change.")) return;
       aegisApplyBusy[applyId] = true;
       aegisApplyOut[applyId] = { ok: false, busy: true,
-        text: "applying, then running your project\u2019s own suite - this can take a minute\u2026" };
+        text: withSuite
+          ? "applying, then running your project\u2019s own suite twice - this can take a while\u2026"
+          : "applying, then re-running Aegis\u2019s own reproducer\u2026" };
       aegisRefresh();
       fetch("/api/aegis/apply-fix", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ incident_id: applyId, repo_path: applyRepo }),
+        body: JSON.stringify({ incident_id: applyId, repo_path: applyRepo,
+                               run_tests: withSuite }),
       }).then(function (r) { return r.json(); })
         .then(function (rep) {
           aegisApplyBusy[applyId] = false;

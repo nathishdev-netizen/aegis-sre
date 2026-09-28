@@ -217,6 +217,82 @@ def test_a_monorepo_patch_is_verified_by_the_right_suite_end_to_end():
     assert "services/chatbot" in result.suite, result.suite
 
 
+def _repo_with_costly_suite() -> Path:
+    """A repo whose suite, if run, writes SPENT - standing in for the live LLM
+    and database calls a real project's tests make."""
+    root = Path(tempfile.mkdtemp(prefix="aegis-cost-test-"))
+    (root / "svc.py").write_text("def greet():\n    raise ValueError('boom')\n")
+    (root / "tests").mkdir()
+    (root / "tests" / "test_costly.py").write_text(
+        "import unittest, pathlib\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_costly(self):\n"
+        "        pathlib.Path('SPENT').write_text('money')\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "base"], cwd=root, capture_output=True)
+    return root
+
+
+_FIXING_PATCH = ("--- a/svc.py\n+++ b/svc.py\n@@\n"
+                 "-    raise ValueError('boom')\n+    return 'hi'\n")
+_REPRODUCER = ("import sys; sys.path.insert(0,'.')\n"
+               "from svc import greet\n"
+               "assert greet() == 'hi', 'still broken'\n")
+
+
+def test_the_reproducer_verifies_the_fix_without_spending_on_your_suite():
+    """Verifying cost real money. paideia's 136 tests are five files of live
+    LLM and SurrealDB calls, and apply() runs the suite TWICE (baseline, then
+    patched) - so one click was ~18 minutes and ~124 LLM-backed tests, spent
+    without the user being told. Aegis's own reproducer proves the same patch
+    landed, for free."""
+    repo = _repo_with_costly_suite()
+    result = PatchApplier(repo).apply(_FIXING_PATCH, run_tests=False,
+                                      reproducer=_REPRODUCER)
+    assert result.applied is True, result.detail
+    assert result.reverted is False
+    assert not (repo / "SPENT").exists(), "the costly suite was run anyway"
+    assert result.suite == "reproducer"
+    assert "return 'hi'" in (repo / "svc.py").read_text()
+
+
+def test_a_patch_its_own_reproducer_rejects_is_reverted():
+    """Skipping the suite must not mean skipping verification. A patch that
+    applies cleanly but does not actually fix the bug has to come back out -
+    otherwise "free" would just mean "unchecked"."""
+    repo = _repo_with_costly_suite()
+    before = (repo / "svc.py").read_text()
+    result = PatchApplier(repo).apply(
+        "--- a/svc.py\n+++ b/svc.py\n@@\n"
+        "-    raise ValueError('boom')\n+    raise ValueError('still boom')\n",
+        run_tests=False, reproducer=_REPRODUCER)
+    assert result.applied is False, result.detail
+    assert result.reverted is True
+    assert (repo / "svc.py").read_text() == before, "file left modified"
+    assert "REVERTED" in result.detail
+
+
+def test_aegis_never_leaves_its_test_file_in_your_repo():
+    """The reproducer is Aegis's, not the project's. Leaving aegis_reproducer.py
+    behind would show up in the user's next `git status` as a file they did not
+    write."""
+    repo = _repo_with_costly_suite()
+    PatchApplier(repo).apply(_FIXING_PATCH, run_tests=False,
+                             reproducer=_REPRODUCER)
+    assert not (repo / "aegis_reproducer.py").exists()
+
+
+def test_skipping_the_suite_says_so_rather_than_implying_all_is_well():
+    """Silence must not read as approval: a free check on the patch is not a
+    check on everything else, and the user has to be told which they got."""
+    repo = _repo_with_costly_suite()
+    result = PatchApplier(repo).apply(_FIXING_PATCH, run_tests=False,
+                                      reproducer=_REPRODUCER)
+    assert "NOT run" in result.detail, result.detail
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

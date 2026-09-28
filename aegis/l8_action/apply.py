@@ -180,6 +180,57 @@ def find_suite(repo: Path, near: list[str] | None = None,
     return None
 
 
+def verify_with_reproducer(repo: Path, reproducer: str,
+                          python: str | None = None) -> tuple[bool, str]:
+    """Run Aegis's OWN reproducer against the real repo.
+
+    This is the cheap verification, and for a paid suite it is the only honest
+    one. The project's suite is the broader check, but on a real project it can
+    cost real money: paideia's 136 tests are 5 files of live LLM and SurrealDB
+    calls, and apply() runs the suite TWICE (baseline, then patched), so one
+    click was ~18 minutes and ~124 LLM-backed tests. A tool that quietly spends
+    the user's API budget to verify its own work is not one they can leave on.
+
+    The reproducer costs nothing: it is a few lines Aegis already wrote, it
+    already failed before the patch and passed after IN THE SANDBOX, and
+    re-running it here proves the patch landed correctly in the real tree -
+    which is the specific thing a sandbox proof does not cover.
+
+    What it does NOT prove is that everything else still works. Callers must
+    say so plainly rather than let silence read as approval.
+    """
+    if not reproducer.strip():
+        return False, "no reproducer to run"
+    target = repo / "aegis_reproducer.py"
+    existed = target.exists()
+    previous = target.read_text() if existed else ""
+    try:
+        target.write_text(reproducer)
+        exe = python or _interpreter_for(repo, "")
+        try:
+            completed = subprocess.run(
+                [exe, str(target)], cwd=repo, text=True, capture_output=True,
+                timeout=120,
+                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                     "HOME": os.environ.get("HOME", str(repo))},
+            )
+        except subprocess.TimeoutExpired:
+            return False, "the reproducer did not finish within 120s"
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"could not run the reproducer: {exc}"
+        output = (completed.stdout + completed.stderr)[-2000:]
+        return completed.returncode == 0, output
+    finally:
+        # Never leave our own test file behind in the user's repo.
+        try:
+            if existed:
+                target.write_text(previous)
+            else:
+                target.unlink()
+        except OSError:
+            pass
+
+
 class PatchApplier:
     """Applies one proven patch to the working tree, revertibly."""
 
@@ -187,7 +238,7 @@ class PatchApplier:
         self.repo = Path(repo_path).resolve()
 
     def apply(self, patch_text: str, *, allow_dirty: bool = False,
-              run_tests: bool = True) -> ApplyResult:
+              run_tests: bool = True, reproducer: str = "") -> ApplyResult:
         if not patch_text.strip():
             return ApplyResult(False, False, "no patch to apply")
         if not self.repo.is_dir():
@@ -222,6 +273,27 @@ class PatchApplier:
             return ApplyResult(False, False, f"patch did not apply: {detail}")
 
         if not run_tests:
+            # Not "unchecked" - checked by the reproducer, which is free.
+            # Running the project's own suite is what can cost money; proving
+            # the patch does what it claimed does not.
+            if reproducer.strip():
+                passed, output = verify_with_reproducer(self.repo, reproducer)
+                if not passed:
+                    _restore(backup, self.repo, targets)
+                    shutil.rmtree(backup, ignore_errors=True)
+                    return ApplyResult(
+                        False, True,
+                        "REVERTED - the patch applied but its own reproducer "
+                        "still fails against your repo, so it did not actually "
+                        "fix this. Your files are exactly as they were.",
+                        files=targets, suite="reproducer", suite_output=output)
+                return ApplyResult(
+                    True, False,
+                    "applied - Aegis re-ran its own reproducer against your "
+                    "repo and it passes. Your project's suite was NOT run, so "
+                    "nothing has checked the REST of your code.",
+                    files=targets, suite="reproducer", suite_output=output,
+                    backup_path=str(backup))
             return ApplyResult(True, False,
                                "applied without running your tests, as asked - "
                                "verify before you commit",

@@ -1064,7 +1064,7 @@ class AegisApp:
         }
 
     def apply_fix(self, incident_id: str, repo_path: str,
-                  allow_dirty: bool = False) -> dict:
+                  allow_dirty: bool = False, run_tests: bool = True) -> dict:
         """T2: write a proven patch to the working tree, revertibly.
 
         Reachable only from an explicit human click. The patch has already
@@ -1089,8 +1089,14 @@ class AegisApp:
         if not repo.is_dir():
             return {"ok": False, "detail": f"not a directory: {repo}"}
 
-        result = PatchApplier(repo).apply(bundle["patch"],
-                                          allow_dirty=bool(allow_dirty))
+        # The reproducer travels with the patch so apply() can re-prove the
+        # fix for free when the project's own suite is skipped. A suite that
+        # makes live LLM or database calls is not something to spend on the
+        # user's behalf without them choosing it.
+        result = PatchApplier(repo).apply(
+            bundle["patch"], allow_dirty=bool(allow_dirty),
+            run_tests=bool(run_tests),
+            reproducer=bundle.get("reproducer") or "")
         payload = result.to_dict()
         payload["ok"] = result.applied
         if result.applied:
@@ -1153,6 +1159,9 @@ class AegisApp:
         return {"ok": True, "incident": clean,
                 "proposal": _read("PROPOSAL.md"),
                 "patch": _read("fix.patch"),
+                # Aegis's own test, so apply() can re-prove the fix without
+                # running (and paying for) the project's whole suite.
+                "reproducer": _read("aegis_reproducer.py"),
                 "path": str(directory)}
 
     def close(self) -> None:

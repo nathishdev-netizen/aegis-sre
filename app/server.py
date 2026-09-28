@@ -276,10 +276,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 write_json(self, HTTPStatus.OK, app.add_provider(body))
                 return
             if name == "apply-fix":
+                # run_tests defaults to TRUE only when the caller says so.
+                # A project suite can make live LLM and database calls, and
+                # apply() runs it twice (baseline, then patched), so it is the
+                # user's spend to authorise - not a silent default.
                 write_json(self, HTTPStatus.OK, app.apply_fix(
                     str(body.get("incident_id", "")),
                     str(body.get("repo_path", "")),
-                    bool(body.get("allow_dirty"))))
+                    bool(body.get("allow_dirty")),
+                    run_tests=bool(body.get("run_tests"))))
                 return
             if name == "revert-fix":
                 write_json(self, HTTPStatus.OK, app.revert_fix(
