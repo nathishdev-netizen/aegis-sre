@@ -25,10 +25,14 @@ def _repo(with_suite: bool = True, passing: bool = True) -> Path:
     (root / "svc.py").write_text("def greet():\n    return 'hi'\n")
     if with_suite:
         (root / "tests").mkdir()
+        # unittest.TestCase, not a bare def: `def test_x(): self.assertEqual(...)`
+        # has no self, is collected by nothing, and the suite passes vacuously -
+        # which silently stopped this file from testing the revert at all.
         (root / "tests" / "test_svc.py").write_text(
-            "import sys; sys.path.insert(0, '.')\n"
+            "import sys, unittest; sys.path.insert(0, '.')\n"
             "from svc import greet\n"
-            "def test_greet():\n"
+            "class TestSvc(unittest.TestCase):\n"
+            "    def test_greet(self):\n"
             "        self.assertEqual(greet(), %r)\n" % ("hi" if passing else "UNCHANGED"))
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True)
     subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
@@ -137,6 +141,80 @@ def test_the_projects_own_suite_is_discovered_not_guessed():
     assert found is not None
     assert found[0] in ("pytest", "unittest")
     assert dirty_files(repo) == []
+
+
+def _monorepo() -> Path:
+    """A monorepo shaped like paideia: a stub suite at the root, the REAL
+    service suite one level down with its own venv and its own interpreter."""
+    root = Path(tempfile.mkdtemp(prefix="aegis-mono-test-"))
+    (root / "tests").mkdir()
+    (root / "tests" / "test_stub.py").write_text(
+        "import unittest\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_broken(self):\n"
+        "        raise ImportError('this stub has nothing to do with the service')\n")
+    svc = root / "services" / "chatbot"
+    (svc / "agents").mkdir(parents=True)
+    (svc / "agents" / "orchestrator.py").write_text("def route():\n    return 'hi'\n")
+    (svc / "tests").mkdir()
+    (svc / "tests" / "test_route.py").write_text(
+        "import sys, unittest; sys.path.insert(0, '.')\n"
+        "from agents.orchestrator import route\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_route(self):\n"
+        "        self.assertEqual(route(), 'hi')\n")
+    # The service's own venv, as a real monorepo has. Symlinked to whatever
+    # interpreter is running the test so it is genuinely executable.
+    venv_bin = svc / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python3").symlink_to(sys.executable)
+    (svc / "venv" / "pyvenv.cfg").write_text("home = /usr\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "base"], cwd=root, capture_output=True)
+    return root
+
+
+def test_the_suite_beside_the_patched_file_wins_over_a_root_stub():
+    """The real failure this prevents: a patch to services/chatbot ran the
+    monorepo ROOT's unrelated tests/ under Aegis's OWN 3.9 interpreter. Both
+    root tests failed to import, and the user was told their suite "was
+    ALREADY failing" - about a suite their project never runs."""
+    repo = _monorepo()
+    found = find_suite(repo, ["services/chatbot/agents/orchestrator.py"])
+    assert found is not None
+    _name, command, directory, python = found
+    assert directory == repo / "services" / "chatbot", directory
+    assert "services/chatbot/venv" in python, python
+    assert command[0] == python, command
+
+
+def test_the_suite_runs_under_the_projects_interpreter_not_aegiss():
+    """Aegis runs in its own venv. A hardcoded "python3" is Aegis's python,
+    which has none of the project's dependencies - and the import errors that
+    follow are indistinguishable from a genuinely failing suite."""
+    repo = _monorepo()
+    found = find_suite(repo, ["services/chatbot/agents/orchestrator.py"])
+    assert found is not None
+    assert found[3] != "python3", "fell back to whatever python is on PATH"
+    assert Path(found[3]).is_file()
+
+
+def test_a_monorepo_patch_is_verified_by_the_right_suite_end_to_end():
+    """The whole chain, not just discovery: a good patch to a service stays
+    applied and reports the SERVICE's suite, never the root stub's."""
+    repo = _monorepo()
+    result = PatchApplier(repo).apply(
+        "--- a/services/chatbot/agents/orchestrator.py\n"
+        "+++ b/services/chatbot/agents/orchestrator.py\n"
+        "@@\n"
+        "-    return 'hi'\n"
+        "+    return 'hi'  # documented\n")
+    assert result.applied is True, result.detail
+    assert result.reverted is False, result.detail
+    assert "ALREADY failing" not in result.detail, result.detail
+    assert "services/chatbot" in result.suite, result.suite
 
 
 if __name__ == "__main__":

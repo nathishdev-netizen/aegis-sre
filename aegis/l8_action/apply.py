@@ -29,16 +29,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from aegis.l8_action.runner import _tolerant_apply
+from aegis.l8_action.runner import _interpreter_for, _tolerant_apply
 
-TEST_TIMEOUT_S = 300
+TEST_TIMEOUT_S = 900
 
 # How the project's own suite is run, in order of preference. The first one
 # whose marker file exists is used; nothing is installed and nothing is
 # guessed beyond this list.
 _SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("pytest", ("pytest.ini", "setup.cfg", "pyproject.toml", "tests", "test"),
-     ("python3", "-m", "pytest", "-q", "-x")),
+     ("python3", "-m", "pytest", "-q")),
     # "-s tests -p test_*.py" matters: plain `unittest discover` searches
     # the top level only, finds nothing in tests/, and exits non-zero - which
     # read as "your patch broke the suite" on every repo without an
@@ -105,23 +105,78 @@ def _is_build_output(name: str) -> bool:
             or name.endswith((".pyc", ".pyo", ".orig", ".rej")))
 
 
-def find_suite(repo: Path) -> tuple[str, tuple[str, ...]] | None:
-    """The project's own tests, as the project already runs them."""
-    for name, markers, command in _SUITES:
-        if not any((repo / marker).exists() for marker in markers):
-            continue
-        if shutil.which(command[0]) is None:
-            continue
-        # which(python3) says nothing about whether pytest is importable.
-        # Treating "No module named pytest" as a failing suite would revert
-        # good patches and tell the user their fix broke their tests.
-        if command[:3] == ("python3", "-m", "pytest"):
-            probe = subprocess.run(
-                ["python3", "-c", "import pytest"], cwd=repo,
-                capture_output=True, timeout=30)
-            if probe.returncode != 0:
+# Which interpreter runs the suite is not a detail: Aegis runs under its OWN
+# venv, so a hardcoded "python3" is whatever interpreter Aegis was started
+# with. A 3.11 project tested by Aegis's 3.9 fails to import and reads,
+# wrongly, as "your suite was already failing". T2's sandbox already solved
+# this - nearest-first venv walk from the patched file - so reuse it rather
+# than keep a second, weaker copy that can drift.
+
+
+def _upwards(start: Path, repo: Path) -> list[Path]:
+    """start (or its directory), then each parent up to and including repo."""
+    here = start if start.is_dir() else start.parent
+    chain: list[Path] = []
+    while True:
+        chain.append(here)
+        if here == repo or here.parent == here:
+            break
+        parent = here.parent
+        if parent != repo and repo not in parent.parents:
+            break
+        here = parent
+    return chain
+
+
+def _with_python(command: tuple[str, ...], python: str) -> tuple[str, ...]:
+    return (python,) + command[1:] if command[0] == "python3" else command
+
+
+def _search_roots(repo: Path, near: list[str]) -> list[Path]:
+    """Where to look for a suite: nearest the patch first, repo root last."""
+    roots: list[Path] = []
+    for rel in near:
+        for directory in _upwards(repo / rel, repo):
+            if directory not in roots:
+                roots.append(directory)
+    if repo not in roots:
+        roots.append(repo)
+    return roots
+
+
+def find_suite(repo: Path, near: list[str] | None = None,
+               ) -> tuple[str, tuple[str, ...], Path, str] | None:
+    """The project's own tests, as the project already runs them.
+
+    Returns (name, command, working directory, interpreter).
+
+    Searched from the patched files upwards, not at the repo root only: a
+    monorepo root often holds a stub tests/ directory with nothing to do with
+    the service being changed, and running that instead of the real one is
+    worse than running nothing - it reports a red suite the project never uses.
+    """
+    for directory in _search_roots(repo, near or []):
+        python = _interpreter_for(repo, str(directory.relative_to(repo) / "x.py")
+                                 if directory != repo else "")
+        for name, markers, command in _SUITES:
+            if not any((directory / marker).exists() for marker in markers):
                 continue
-        return name, command
+            command = _with_python(command, python)
+            if shutil.which(command[0]) is None and not Path(command[0]).is_file():
+                continue
+            # which(python3) says nothing about whether pytest is importable.
+            # Treating "No module named pytest" as a failing suite would
+            # revert good patches and tell the user their fix broke them.
+            if command[1:3] == ("-m", "pytest"):
+                try:
+                    probe = subprocess.run(
+                        [command[0], "-c", "import pytest"], cwd=directory,
+                        capture_output=True, timeout=30)
+                except (OSError, subprocess.SubprocessError):
+                    continue
+                if probe.returncode != 0:
+                    continue
+            return name, command, directory, python
     return None
 
 
@@ -172,7 +227,7 @@ class PatchApplier:
                                "verify before you commit",
                                files=targets, backup_path=str(backup))
 
-        found = find_suite(self.repo)
+        found = find_suite(self.repo, targets)
         if found is None:
             # No suite is not permission to keep an unverified change: say so
             # plainly and leave it applied only because there is nothing that
@@ -183,13 +238,15 @@ class PatchApplier:
                 "run - nothing has checked it beyond its own reproducer",
                 files=targets, backup_path=str(backup))
 
-        name, command = found
+        name, command, suite_dir, _python = found
+        if suite_dir != self.repo:
+            name = f"{name} ({suite_dir.relative_to(self.repo)})"
         # Was the suite green BEFORE the patch? A project whose tests were
         # already failing would otherwise have every fix reverted and be
         # told, wrongly, that the fix broke them. Measured, not assumed:
         # the backup is restored first so the baseline is the real one.
         _restore(backup, self.repo, targets)
-        baseline_passed, baseline_output = _run_suite(self.repo, command)
+        baseline_passed, baseline_output = _run_suite(suite_dir, command)
         applied_again, _ = _tolerant_apply(self.repo, patch_text)
         if not applied_again:
             _restore(backup, self.repo, targets)
@@ -197,7 +254,7 @@ class PatchApplier:
             return ApplyResult(False, True,
                                "patch applied once but not twice - reverted")
 
-        passed, output = _run_suite(self.repo, command)
+        passed, output = _run_suite(suite_dir, command)
         if not baseline_passed and not _suite_ran_nothing(baseline_output):
             # Already red before us. Keeping the patch and saying so is
             # honest; reverting it and blaming the patch is not.
