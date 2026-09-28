@@ -58,6 +58,51 @@ def test_one_rule_alone_never_groups():
     assert len(manager.incidents) == 2
 
 
+def test_same_service_plus_same_minute_is_not_one_story():
+    """The real failure: on a one-service chatbot, an Opik "continuing WITHOUT
+    tracing" config warning and an unrelated ValueError crash 52s later became
+    ONE incident - and because the benign warning came first it was ranked as
+    the cause, so the crash the user was looking for was invisible behind it.
+
+    Two rules matched, but neither was a FACT about these two signals:
+    "adjacency" (same service) is true of every signal in a one-service
+    project, and "temporal" only says they shared a minute. Nothing tied them
+    together. test_one_rule_alone_never_groups already establishes this
+    reasoning for a lone rule; the pair needs it too."""
+    manager = IncidentManager()
+    manager.observe(_sig(service="chatbot.app", trace="t-boot", ts="16:02:49"), now=0.0)
+    manager.observe(_sig(service="chatbot.app", trace="t-req", ts="16:03:41"), now=52.0)
+    assert len(manager.incidents) == 2, (
+        "a config warning and an unrelated crash were merged into one story")
+
+
+def test_a_shared_trace_still_groups_within_one_service():
+    """The guard above must not cost real grouping: a trace id is a fact about
+    these two signals, so one cause and its knock-on symptom stay ONE incident
+    even though the service alone would not have justified it."""
+    manager = IncidentManager()
+    manager.observe(_sig(service="chatbot.app", trace="t-9", ts="16:03:41"), now=0.0)
+    manager.observe(_sig(service="chatbot.app", trace="t-9", ts="16:03:41"), now=1.0)
+    assert len(manager.incidents) == 1
+    assert len(manager.incidents[0].members) == 2
+
+
+def test_adjacency_still_counts_across_services():
+    """Across services, "same service" is NOT vacuous - it is the thing being
+    asserted - so adjacency+temporal remains valid evidence there. The guard is
+    about a one-service world, not a weakening of the rule everywhere."""
+    manager = IncidentManager()
+    manager.observe(_sig(service="gateway", trace="t-1", ts="16:00:00"), now=0.0)
+    manager.observe(_sig(service="worker", trace="t-2", ts="16:00:10"), now=10.0)
+    # Different services, no shared trace: two rules never even match.
+    assert len(manager.incidents) == 2
+    # But once an incident spans two services, a third signal in one of them
+    # groups on adjacency+temporal, because adjacency now says something.
+    manager.incidents[0].services.add("worker")
+    manager.observe(_sig(service="worker", trace="t-3", ts="16:00:20"), now=20.0)
+    assert len(manager.incidents) == 2, "adjacency stopped counting across services"
+
+
 def test_p4_notes_never_open_an_incident():
     """~97% of alerts need no immediate action. A lone first-occurrence note
     is worth a line, never a page."""

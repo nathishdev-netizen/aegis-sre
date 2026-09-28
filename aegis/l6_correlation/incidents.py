@@ -154,7 +154,8 @@ class IncidentManager:
                 # per occurrence, which is how 545 events became twenty
                 # stories about the same slow operation.
                 continue
-            if len(rules) >= 2 and len(rules) > len(best_rules):
+            if (len(rules) >= 2 and self._is_evidence(rules, incident)
+                    and len(rules) > len(best_rules)):
                 best, best_rules = incident, rules
 
         if best is not None:
@@ -215,6 +216,15 @@ class IncidentManager:
             rules.append("adjacency")
         if now - incident.last_signal_s <= self.TEMPORAL_S:
             rules.append("temporal")
+        # Same instant, not merely the same window. One failure writes several
+        # lines in the same second - the error, then "/chat FAILED" - and when
+        # the request has no trace id (thread=None) that shared second is the
+        # only fact tying them together. TEMPORAL_S is 90s, which is a window,
+        # not an instant: it groups things that merely happened nearby.
+        if (signal.started_at and incident.members
+                and signal.started_at == incident.members[-1].started_at
+                and now - incident.last_signal_s <= 1.0):
+            rules.append("coincident")
         # Recurrence: the same template, flagged by the same detector, is
         # ONE problem happening repeatedly - not one story per occurrence.
         # Without this, 545 events produced 20 incidents of which 18 were
@@ -230,6 +240,35 @@ class IncidentManager:
             rules.append("recurrence")
             rules.append("recurrence-confirmed")
         return rules
+
+    def _is_evidence(self, rules: list[str], incident: Incident) -> bool:
+        """Two rules, but are they two INDEPENDENT facts?
+
+        "adjacency" means same service. In a one-service project every signal
+        matches it, so it states nothing - and paired with "temporal" it
+        grouped any two signals inside TEMPORAL_S. Seen on a real chatbot: an
+        Opik "continuing WITHOUT tracing, requests are unaffected" config
+        warning and an unrelated ValueError crash 52s later became ONE
+        incident, with the benign warning ranked as its cause because it came
+        first. Two unrelated problems in one incident misleads, which is the
+        failure this module exists to avoid.
+
+        test_one_rule_alone_never_groups already says "everything is the same
+        service in a one-service world" - this applies that same reasoning to
+        the pair, instead of only to a lone rule.
+
+        So adjacency+temporal alone is not enough when adjacency is vacuous
+        (the incident spans just this one service). Something that actually
+        ties them together - a shared trace, or the same template recurring -
+        is required. Across services adjacency IS informative and still counts.
+        """
+        informative = [r for r in rules if r not in ("adjacency", "temporal")]
+        if informative:
+            return True
+        if "adjacency" not in rules:
+            return True
+        # Vacuous adjacency: this incident knows only the one service.
+        return len(incident.services) > 1
 
     def _attach(self, incident: Incident, signal: Signal, now: float,
                 rules: list[str]) -> None:
