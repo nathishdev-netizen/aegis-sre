@@ -163,6 +163,34 @@ def test_every_simulation_admits_it_is_static():
         "a prediction that does not state its limits is a claim"
 
 
+def test_f_string_log_lines_are_not_invisible():
+    """The analyser recorded a log statement only when its first argument was a
+    plain string constant, so every f-string log line was dropped silently.
+    paideia writes almost all of them that way: 181 statements were found where
+    381 exist, and services/chatbot/agents/vector_agent.py contributed ZERO.
+
+    That is not a cosmetic count. A line the map does not know about cannot be
+    traced back to source, so neither incident mapping nor a gap report can
+    name where it came from."""
+    import ast
+    import tempfile
+    from pathlib import Path as _Path
+
+    from aegis.l4_understanding.codebase import analyze_repo
+
+    root = _Path(tempfile.mkdtemp(prefix="aegis-fstring-"))
+    (root / "svc.py").write_text(
+        "from loguru import logger\n"
+        "def work(n):\n"
+        "    logger.info('plain constant line')\n"
+        "    logger.info(f'[svc] chose tool for n={n}')\n")
+    found = analyze_repo(root).to_dict()["log_statements"]
+    texts = [s["text"] for s in found]
+    assert any("plain constant" in t for t in texts), texts
+    assert any("chose tool for n=" in t for t in texts), (
+        f"the f-string log line was dropped: {texts}")
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

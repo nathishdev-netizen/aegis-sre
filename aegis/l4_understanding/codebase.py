@@ -272,13 +272,20 @@ class _PyVisitor(ast.NodeVisitor):
                 file=self.rel, line=node.lineno,
                 guarded=self.try_depth > 0, has_timeout=has_timeout))
 
-        # logging calls with a literal first argument -> template mapping
+        # logging calls with a literal first argument -> template mapping.
+        # _literal_text, not isinstance(Constant): requiring a plain string
+        # dropped every f-string log line silently, and modern code writes
+        # almost all of them that way. paideia's vector_agent.py contributed
+        # ZERO of 181 log statements for that reason, so nothing could map a
+        # line it wrote back to source - which is exactly what a gap report
+        # needs. The helper already knew how to take the fixed words out of a
+        # JoinedStr; it just was not being asked.
         if callee in ("debug", "info", "warning", "error", "critical", "exception") \
                 and node.args:
-            first = node.args[0]
-            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            text = self._literal_text(node.args[0])
+            if text:
                 self.analysis.log_statements.append(LogStatement(
-                    text=first.value, level=callee.upper(), function=current,
+                    text=text, level=callee.upper(), function=current,
                     file=self.rel, line=node.lineno))
         self.generic_visit(node)
 
