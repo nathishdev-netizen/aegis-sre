@@ -206,6 +206,39 @@ def test_every_signal_carries_evidence():
         assert signal.evidence and signal.evidence[0].strip()
 
 
+def test_evidence_keeps_the_traceback_frames_that_name_our_code():
+    """Detection used to keep only splitlines()[0]. For a Python traceback that
+    is the framework's wrapper ("Exception in ASGI application") - text in no
+    source file - so the code mapper searched for boilerplate and Propose fix
+    reported "no evidence line maps to source" while the frame naming the real
+    file sat in the same event, already captured, one line below."""
+    from aegis.l5_detection.detectors import _evidence_from
+
+    event = Event(
+        id="e1", ts="t", service="svc", level="ERROR",
+        text_redacted=(
+            'ERROR:    Exception in ASGI application\n'
+            '  File "/repo/venv/lib/python3.11/site-packages/fastapi/routing.py", line 604, in _producer\n'
+            '  File "/repo/services/chatbot/api.py", line 276, in _memory_key\n'
+            '    raise ValueError(...)'
+        ),
+    )
+    evidence = _evidence_from(event)
+    assert evidence[0].startswith("ERROR:"), "the headline must still lead"
+    joined = "\n".join(evidence)
+    assert "api.py" in joined, "the frame naming our own code was dropped"
+    assert "site-packages" not in joined, "a vendor frame must not be offered"
+
+
+def test_evidence_of_a_plain_line_is_unchanged():
+    """The common case - a one-line error - must not grow extra entries."""
+    from aegis.l5_detection.detectors import _evidence_from
+
+    event = Event(id="e2", ts="t", service="svc", level="ERROR",
+                  text_redacted="ERROR connection refused to postgres:5432")
+    assert _evidence_from(event) == ["ERROR connection refused to postgres:5432"]
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

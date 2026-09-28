@@ -16,6 +16,9 @@ SOURCE_SUFFIXES = {".py", ".js", ".ts", ".go", ".java", ".rb", ".rs", ".php"}
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist",
              "build", ".tox", ".mypy_cache"}
 MAX_FILES = 2000
+# A Python traceback frame, which names the file and line directly rather than
+# quoting a format string that has to be searched for.
+_TRACEBACK_FRAME = re.compile(r'File "([^"]+)", line (\d+)')
 
 
 @dataclass
@@ -91,8 +94,46 @@ class TraceToCodeMapper:
             found.append(path)
         return found
 
+    def _frame_locations(self, evidence_lines: list[str]) -> list[Location]:
+        """Locations read straight off Python traceback frames.
+
+        A frame already states the file and the line - searching the repo for
+        text that looks like one is strictly worse than believing it. Text
+        matching stays for log lines that merely QUOTE a format string; this
+        path is for lines that name the code outright.
+        """
+        found: list[Location] = []
+        seen: set[tuple[str, int]] = set()
+        for raw in evidence_lines:
+            for text in str(raw).splitlines():
+                match = _TRACEBACK_FRAME.search(text)
+                if not match:
+                    continue
+                path = Path(match.group(1))
+                try:
+                    relative = path.resolve().relative_to(self.repo)
+                except ValueError:
+                    continue  # a frame outside this repo cannot be patched here
+                number = int(match.group(2))
+                key = (str(relative), number)
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    lines = path.read_text(errors="replace").splitlines()
+                    source = lines[number - 1].strip()[:160] if 0 < number <= len(lines) else ""
+                except OSError:
+                    source = ""
+                found.append(Location(file=str(relative), line=number,
+                                      source=source, fragment=text.strip()[:160]))
+        return found
+
     def locate(self, evidence_lines: list[str]) -> list[Location]:
         """Files and lines whose source contains an evidence fragment."""
+        # A traceback names the file and line outright; prefer it over guessing.
+        frames = self._frame_locations(evidence_lines)
+        if frames:
+            return frames[:20]
         wanted = []
         for line in evidence_lines:
             wanted.extend(_fragments(line))

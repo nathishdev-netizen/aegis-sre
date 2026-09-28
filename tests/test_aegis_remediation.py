@@ -195,6 +195,32 @@ def test_mapper_finds_the_raising_line():
                for l in locations)
 
 
+def test_a_traceback_frame_beats_searching_for_its_text():
+    """A real failure against paideia-chatbot: the only evidence line was
+    uvicorn's generic "Exception in ASGI application", which appears in no
+    source file, so Propose fix reported "no evidence line maps to source"
+    while the traceback naming api.py:276 sat one line below it. A frame
+    states the file and line outright - believe it rather than searching."""
+    evidence = (
+        'ERROR:    Exception in ASGI application\n'
+        f'  File "{SAMPLE_APP / "app.py"}", line 15, in acquire\n'
+        '    raise RuntimeError(...)'
+    )
+    locations = TraceToCodeMapper(SAMPLE_APP).locate([evidence])
+    assert any(l.file == "app.py" and l.line == 15 for l in locations), \
+        "a traceback frame naming the repo's own file was not mapped"
+
+
+def test_a_vendor_frame_is_never_offered_as_a_fix_site():
+    """Frames inside site-packages belong to somebody else's code - a patch
+    there would be proposed against a dependency, not this project."""
+    evidence = (
+        'ERROR\n'
+        '  File "/x/venv/lib/python3.11/site-packages/fastapi/routing.py", line 604, in _producer'
+    )
+    assert TraceToCodeMapper(SAMPLE_APP).locate([evidence]) == []
+
+
 def test_mapper_finds_a_message_split_across_two_source_lines():
     """A real failure against paideia-chatbot: the logger call splits a long
     message into two adjacent string literals -

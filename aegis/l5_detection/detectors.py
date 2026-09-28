@@ -101,6 +101,43 @@ _COST_PATTERNS = (
 # inside another's normal spend.
 _COST_LABEL = re.compile(r"\b(?:node|step|operation|op|model)[=:]\s*([\w.\-/]+)", re.I)
 
+# A Python traceback frame. The frames are the only part of an exception that
+# names a FILE and a LINE, which is exactly what the code mapper needs.
+_TRACEBACK_FRAME = re.compile(r'File "([^"]+)", line (\d+)')
+# Frames inside a virtualenv or the stdlib belong to somebody else's code; a
+# fix proposal has to land in the project's own source, so those are dropped.
+_VENDOR_PATH = re.compile(r"/(?:site-packages|dist-packages|venv|\.venv|lib/python[\d.]+)/")
+# Enough frames to reach the project's own call site without pasting a whole
+# 40-line traceback into an incident a human has to read.
+_MAX_FRAMES = 3
+
+
+def _evidence_from(event: Event, limit: int = 160) -> list[str]:
+    """The headline, plus any traceback frames naming the project's own code.
+
+    Detection used to keep only `.splitlines()[0]`. For a Python traceback that
+    headline is the framework's generic wrapper ("Exception in ASGI
+    application") - text that appears in no source file - so the code mapper
+    searched for boilerplate, found nothing, and Propose fix correctly but
+    uselessly reported "no evidence line maps to source". The frames naming
+    the real file and line were sitting in the same event, already captured by
+    the normalizer, and were thrown away one step before the mapper ran.
+    """
+    text = event.text_redacted or ""
+    lines = text.splitlines()
+    evidence = [lines[0][:limit]] if lines else []
+    if len(lines) < 2:
+        return evidence
+
+    own_frames = [
+        line.strip()[:limit]
+        for line in lines[1:]
+        if _TRACEBACK_FRAME.search(line) and not _VENDOR_PATH.search(line)
+    ]
+    # The deepest frames are the ones closest to the raise, so keep the tail.
+    evidence.extend(own_frames[-_MAX_FRAMES:])
+    return evidence
+
 
 def _extract_cost(message: str) -> tuple[str, float] | None:
     if not message:
@@ -230,43 +267,13 @@ class DetectionEngine:
         self._err_window: deque = deque()
         self._err_totals = [0, 0]           # events, errors (lifetime)
         self._err_gate = HysteresisGate(sustain_s=20.0, clear_sustain_s=60.0)
-        self._err_recent: deque = deque(maxlen=3)
+        # Holds a few recent error lines as evidence. Sized for several
+        # traceback frames per error (see _evidence_from) rather than one line
+        # each, so one exception cannot evict every other error beside it.
+        self._err_recent: deque = deque(maxlen=12)
         # cost history per unit of work: {label: [tokens, ...]}
         self._cost: dict[str, deque] = {}
         self._cost_last_fire: dict[str, float] = {}
-        # cost history per unit of work: {label: [tokens, ...]}
-        self._cost: dict[str, deque] = {}
-        self._cost_last_fire: dict[str, float] = {}
-        # cost history per unit of work: {label: [tokens, ...]}
-        self._cost: dict[str, deque] = {}
-        self._cost_last_fire: dict[str, float] = {}
-        # cost history per unit of work: {label: [tokens, ...]}
-        self._cost: dict[str, deque] = {}
-        self._cost_last_fire: dict[str, float] = {}
-        # C8 SuppressionRules: template ids muted by the operator.
-        self.suppressed: set[str] = set()
-        self._err_window: deque = deque()
-        self._err_totals = [0, 0]           # events, errors (lifetime)
-        self._err_gate = HysteresisGate(sustain_s=20.0, clear_sustain_s=60.0)
-        self._err_recent: deque = deque(maxlen=3)
-        # C8 SuppressionRules: template ids muted by the operator.
-        self.suppressed: set[str] = set()
-        self._err_window: deque = deque()
-        self._err_totals = [0, 0]           # events, errors (lifetime)
-        self._err_gate = HysteresisGate(sustain_s=20.0, clear_sustain_s=60.0)
-        self._err_recent: deque = deque(maxlen=3)
-        # C8 SuppressionRules: template ids muted by the operator.
-        self.suppressed: set[str] = set()
-        self._err_window: deque = deque()
-        self._err_totals = [0, 0]           # events, errors (lifetime)
-        self._err_gate = HysteresisGate(sustain_s=20.0, clear_sustain_s=60.0)
-        self._err_recent: deque = deque(maxlen=3)
-        # C8 SuppressionRules: template ids muted by the operator.
-        self.suppressed: set[str] = set()
-        self._err_window: deque = deque()
-        self._err_totals = [0, 0]           # events, errors (lifetime)
-        self._err_gate = HysteresisGate(sustain_s=20.0, clear_sustain_s=60.0)
-        self._err_recent: deque = deque(maxlen=3)
 
     @property
     def last_now(self) -> float | None:
@@ -370,7 +377,7 @@ class DetectionEngine:
         self._err_totals[0] += 1
         self._err_totals[1] += 1 if is_error else 0
         if is_error:
-            self._err_recent.append(event.text_redacted.splitlines()[0][:160])
+            self._err_recent.extend(_evidence_from(event))
 
         self._err_window.append((now, is_error))
         while self._err_window and now - self._err_window[0][0] > self.WINDOW_S:
@@ -422,7 +429,10 @@ class DetectionEngine:
         track.total += 1
         track.last_seen = now
         track.dropped = False
-        track.recent.append(event.text_redacted.splitlines()[0][:160])
+        # One entry per OCCURRENCE (the deque keeps the last few as examples),
+        # but each entry carries its own traceback frames so the code mapper
+        # can reach the project's source from any of them.
+        track.recent.append("\n".join(_evidence_from(event)))
         track.window.append(now)
         while track.window and now - track.window[0] > self.WINDOW_S:
             track.window.popleft()
@@ -544,5 +554,5 @@ class DetectionEngine:
             trace_id=event.trace_id,
             template_id=template_id or event.template_id,
             evidence=evidence if evidence is not None
-                     else [event.text_redacted.splitlines()[0][:160]],
+                     else _evidence_from(event),
         )
