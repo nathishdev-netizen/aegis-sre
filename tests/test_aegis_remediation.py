@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from aegis.l8_action.gate import AutonomyGate  # noqa: E402
 from aegis.l8_action.mapper import TraceToCodeMapper  # noqa: E402
-from aegis.l8_action.remediate import RemediationAgent  # noqa: E402
+from aegis.l8_action.remediate import RemediationAgent, _asserts_the_bug  # noqa: E402
 from aegis.l8_action.runner import TestRunner, MAX_REPO_BYTES  # noqa: E402
 
 SAMPLE_APP = Path(__file__).resolve().parent / "fixtures" / "sample_app"
@@ -209,6 +209,50 @@ def test_a_traceback_frame_beats_searching_for_its_text():
     locations = TraceToCodeMapper(SAMPLE_APP).locate([evidence])
     assert any(l.file == "app.py" and l.line == 15 for l in locations), \
         "a traceback frame naming the repo's own file was not mapped"
+
+
+def test_a_reproducer_that_asserts_the_bug_is_named_as_such():
+    """The model wrote this against paideia-chatbot: it catches the ValueError
+    the bug raises and prints SUCCESS, so it exits 0 WHILE the bug is present
+    and would fail once fixed - backwards. It still stops (the reproducer
+    passed), but the reader must be told the test is inverted, not that their
+    diagnosis was wrong."""
+    inverted = (
+        "from api import _memory_key\n"
+        "try:\n"
+        "    _memory_key(DummyRequest())\n"
+        "except ValueError as e:\n"
+        '    assert "memory key unavailable" in str(e)\n'
+        '    print("SUCCESS")\n'
+    )
+    assert _asserts_the_bug(inverted)
+
+
+def test_a_correct_reproducer_is_not_flagged_as_inverted():
+    """Asserting the FIXED behaviour plainly must never trip the check."""
+    correct = (
+        "from api import _memory_key\n"
+        "class R:\n"
+        "    lead_id = None\n"
+        "    session_id = 'sess'\n"
+        "assert _memory_key(R()) == 'sess'\n"
+        "print('ok')\n"
+    )
+    assert not _asserts_the_bug(correct)
+
+
+def test_catching_to_clean_up_is_not_asserting_the_bug():
+    """A reproducer may legitimately catch something and then assert on state
+    afterwards - what makes the bad shape bad is that catching IS the success
+    path, not that an except block exists at all."""
+    legitimate = (
+        "try:\n"
+        "    risky()\n"
+        "except ValueError:\n"
+        "    cleanup()\n"
+        "assert state.is_consistent()\n"
+    )
+    assert not _asserts_the_bug(legitimate)
 
 
 def test_a_vendor_frame_is_never_offered_as_a_fix_site():

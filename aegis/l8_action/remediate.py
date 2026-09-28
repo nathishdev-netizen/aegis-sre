@@ -53,6 +53,14 @@ Write ONE self-contained Python test script:
   missing dependency or a wrong signature. If the diagnosed path needs
   arguments you cannot know, construct the smallest real object the excerpts
   show, and assert on the behaviour the diagnosis names.
+- assert the CORRECT behaviour, never the broken one. Do NOT catch the
+  exception the bug raises and treat catching it as success - a script that
+  does `try: buggy() / except TheError: print("SUCCESS")` exits 0 while the
+  bug is present, which is backwards: it then passes before the patch and
+  FAILS after it, and the fix can never be proven. Call the code under test
+  plainly and let the bug's own exception fail the script; where the bug
+  returns a wrong VALUE rather than raising, assert the value the diagnosis
+  says it should have returned.
 - 30 lines maximum
 
 Reply with ONLY a fenced python code block."""
@@ -139,6 +147,29 @@ def _classify_failure(output: str) -> str:
 def _code_block(text: str) -> str:
     match = re.search(r"```(?:python|diff)?\s*\n(.*?)```", text or "", re.S)
     return match.group(1) if match else (text or "").strip()
+
+
+# An except: block whose body only SUCCEEDS - printing, passing, asserting on
+# the error's own text. Catching the bug's exception and calling that success
+# is the one way a reproducer passes while the bug is present, which is
+# exactly backwards: it would fail once the bug is fixed.
+_SUCCESS_IN_EXCEPT = re.compile(
+    r"except[^\n:]*:\s*\n"              # except SomeError as e:
+    r"(?:[ \t]+(?:#[^\n]*)?\n)*"        # blank / comment lines
+    r"[ \t]+(?:print\(|pass\b|assert\s)",
+    re.M,
+)
+
+
+def _asserts_the_bug(reproducer: str) -> bool:
+    """Whether the reproducer treats the bug's own exception as success.
+
+    Deliberately narrow: only the shape that inverts the pass/fail contract.
+    A reproducer may legitimately catch an exception to assert something
+    about state afterwards - what makes this one wrong is that catching IS
+    the success path, so the script exits 0 precisely because the bug fired.
+    """
+    return bool(_SUCCESS_IN_EXCEPT.search(reproducer or ""))
 
 
 # How many propose() calls in a row are allowed to end in "blocked" before
@@ -393,12 +424,25 @@ class RemediationAgent:
                 reproducer=reproducer, test_before=before.__dict__,
                 locations=[l.__dict__ for l in locations]))
         if before.exit_code == 0:
-            # The one rule that separates useful from dangerous.
+            # The one rule that separates useful from dangerous. But WHY it
+            # passed decides what the reader should do next, and the two
+            # causes need opposite actions: a wrong diagnosis means look
+            # again at the incident, while an inverted reproducer means the
+            # diagnosis may be perfectly right and only the test is backwards.
+            if _asserts_the_bug(reproducer):
+                detail = (
+                    "the reproducer PASSED before any fix, because it asserts "
+                    "the BUG instead of the fixed behaviour - it catches the "
+                    "error and treats catching it as success, so it would fail "
+                    "once the bug is fixed. The diagnosis may well be right; "
+                    "the test is backwards. Not patching on it.")
+            else:
+                detail = (
+                    "the reproducer PASSED before any fix - the diagnosis is "
+                    "wrong, and a patch built on it would be a confident guess. "
+                    "Stopping, as the protocol requires.")
             return self._bundle(Proposal(
-                incident_id, "stopped",
-                "the reproducer PASSED before any fix - the diagnosis is "
-                "wrong, and a patch built on it would be a confident guess. "
-                "Stopping, as the protocol requires.",
+                incident_id, "stopped", detail,
                 reproducer=reproducer, test_before=before.__dict__,
                 locations=[l.__dict__ for l in locations]))
 
