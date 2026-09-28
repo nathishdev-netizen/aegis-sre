@@ -1404,6 +1404,16 @@
     }
     // One plain sentence, first thing on the page: what is happening and whether it
     // needs attention. Everything technical belongs below this, not instead of it.
+    // A model wrote this text - either the fast one-sentence headline that
+    // lands in ~1s, or the detailed account that replaces it a few seconds
+    // later. Both are grounded model output and neither is the regex
+    // fallback, so both may be shown as the run's own account. Confidence
+    // scoring still asks for 'llm' specifically, since only the full pass
+    // produces a score.
+    function modelWrote(state) {
+      return state.interpretation === 'llm' || state.interpretation === 'headline';
+    }
+
     function renderHeadline() {
       const el = document.getElementById('headline');
       if (!el) return;
@@ -1428,7 +1438,7 @@
           : failed.slice(0, 2).join(' and ') + ' failed';
         // Prefer the model's account of THIS run over the generic pattern label:
         // "A dependency call failed" says far less than the summary it replaced.
-        sub = (state.interpretation === 'llm' && state.summary)
+        sub = (modelWrote(state) && state.summary)
           ? state.summary
           : (state.reason && state.reason !== 'Execution completed successfully.'
               ? state.reason
@@ -1440,7 +1450,7 @@
       } else if (state.running && state.status !== 'failed') {
         cls = 'busy'; icon = '◐';
         // A summary that describes a finished call should not sit under "in progress".
-        const finished = state.interpretation === 'llm' && state.summary
+        const finished = modelWrote(state) && state.summary
           && /\b(ended|completed|finished|hung up|closed)\b/i.test(state.summary);
         text = finished ? 'Last run finished' : 'Run in progress';
         sub = state.summary || '';
@@ -1469,7 +1479,7 @@
         const parts = [events + ' events'];
         if (metrics.skipped) parts.push(metrics.skipped + ' step(s) skipped');
         if (metrics.retries) parts.push(metrics.retries + ' retry/retries');
-        sub = (state.interpretation === 'llm' && state.summary)
+        sub = (modelWrote(state) && state.summary)
           ? state.summary
           : parts.join(' · ');
       }
@@ -1488,7 +1498,7 @@
       // Once the headline carries the model's summary, nothing below should repeat it
       // or add a filler line beneath it. Placeholder reasons ("Run in progress.",
       // "Execution completed successfully.") say nothing the headline has not said.
-      const usedInHeadline = state.interpretation === 'llm' && state.summary;
+      const usedInHeadline = modelWrote(state) && state.summary;
       const FILLER = ['Run in progress.', 'Execution completed successfully.',
                       'Awaiting execution events.', ''];
       // Hide rather than merely empty: an emptied element keeps its margins, which

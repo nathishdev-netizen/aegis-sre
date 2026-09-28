@@ -1441,6 +1441,25 @@ class RuntimeState:
         def run() -> None:
             try:
                 snapshot = self.snapshot()
+                # One fast sentence FIRST. The detailed pass below takes ~7s to
+                # write, and until it lands the brief still describes the
+                # previous state - which is what made a live stream feel stale.
+                # This lands in ~1s and is replaced, not competed with.
+                try:
+                    quick = llm.interpret_headline(snapshot)
+                except Exception:
+                    quick = None
+                if quick and quick.get("headline"):
+                    with self._lock:
+                        # Never overwrite a DETAILED summary with a one-liner:
+                        # on a later pass the full account is the better text
+                        # and the headline would be a downgrade.
+                        if self._snapshot.interpretation != "llm":
+                            self._snapshot.summary = quick["headline"]
+                            self._snapshot.interpretation = "headline"
+                            self._snapshot.updated_at = now_iso()
+                    self.broadcast()
+
                 result = llm.interpret_run(snapshot)
                 if not result:
                     return

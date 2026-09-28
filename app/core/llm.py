@@ -125,13 +125,14 @@ def _run_context(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _chat(messages: list[dict[str, str]], *, max_tokens: int = 700) -> str | None:
+def _chat(messages: list[dict[str, str]], *, max_tokens: int = 700,
+          model: str | None = None) -> str | None:
     client = _client()
     if client is None:
         return None
     try:
         response = client.chat.completions.create(
-            model=settings.model,
+            model=model or settings.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=0,
@@ -216,6 +217,53 @@ Return JSON only:
   "confidence": 0-100,
   "evidence": ["exact log lines that support your reading"]
 }"""
+
+
+HEADLINE_SYSTEM = """You write ONE sentence about what a backend run is doing right now.
+
+Describe the MOST RECENT run only. Ground it in the lines given - never guess a
+cause the logs do not show. Say what happened, not what you are reading.
+
+Return JSON only:
+{"headline": "one plain sentence, under 20 words",
+ "status": "running" | "failed" | "success" | "idle"}"""
+
+# The fastest model available is the right one here: this exists to land in a
+# second, and one grounded sentence needs no more reasoning than that. The
+# detailed pass behind it still uses settings.model.
+HEADLINE_MODEL = "gpt-4o-mini"
+
+
+def interpret_headline(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """One sentence, fast - the first thing the brief can show.
+
+    The full interpret_run() below asks for a 4-7 sentence account with
+    timings and comparisons, which takes ~7s to generate. That is the right
+    document to end up with and the wrong thing to wait for: while it runs,
+    the brief still describes the previous state, so a live stream does not
+    feel live. This lands in ~1s, is replaced by the detailed version when it
+    arrives, and costs a fraction as much.
+    """
+    if not snapshot.get("log_lines"):
+        return None
+    raw = _chat(
+        [
+            {"role": "system", "content": HEADLINE_SYSTEM},
+            {"role": "user", "content": _run_context(snapshot)},
+        ],
+        max_tokens=120,
+        model=HEADLINE_MODEL,
+    )
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    headline = str(data.get("headline", "")).strip()
+    if not headline:
+        return None
+    return {"headline": headline, "status": data.get("status"), "source": "llm"}
 
 
 def interpret_run(snapshot: dict[str, Any]) -> dict[str, Any] | None:
