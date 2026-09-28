@@ -2131,6 +2131,12 @@
               (aegisApplyBusy[inc.id] ? "applying\u2026"
                  : "Let Aegis apply it \u00b7 checks with its own test") +
               "</button>" +
+              '<button class="btn" data-aegis-apply-fast="' +
+              aegisEsc(inc.id) + '"' +
+              (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
+              (aegisApplyBusy[inc.id] ? "running\u2026"
+                 : "\u2026and my fast tests \u00b7 free") +
+              "</button>" +
               '<button class="btn" data-aegis-apply-suite="' +
               aegisEsc(inc.id) + '"' +
               (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
@@ -2141,7 +2147,9 @@
               'only written when you click - and never while it has uncommitted ' +
               'changes, unless you say so. Aegis\u2019s own test is free and ' +
               'reverts the patch if it still fails; your suite is the broader ' +
-              'check but runs twice, so it costs whatever your tests cost.</div>' +
+              'check but runs twice, so it costs whatever your tests cost. In ' +
+              'between, your fast tests: the ones Aegis measured at under a ' +
+              'second each, so your own code is checked for free.</div>' +
               applyResultHtml(inc.id) : "");
         } else if (fixResult && fixResult.ok) {
           body += '<div class="row" style="margin-top:6px">' +
@@ -3122,13 +3130,18 @@
       }
       return;
     }
-    var applyBtn = event.target.closest("[data-aegis-apply],[data-aegis-apply-suite]");
+    var applyBtn = event.target.closest(
+      "[data-aegis-apply],[data-aegis-apply-fast],[data-aegis-apply-suite]");
     if (applyBtn) {
-      // Which button decides whether the project's own suite runs, and that
-      // is a spending decision - see the buttons' comment.
+      // Three checks, and the difference between them is what they cost -
+      // see the buttons' comment. Fast runs the project's OWN tests, but only
+      // the ones measured to take under a second, so it checks the rest of the
+      // code without spending anything.
       var withSuite = applyBtn.hasAttribute("data-aegis-apply-suite");
+      var withFast = applyBtn.hasAttribute("data-aegis-apply-fast");
       var applyId = applyBtn.getAttribute(
-        withSuite ? "data-aegis-apply-suite" : "data-aegis-apply");
+        withSuite ? "data-aegis-apply-suite"
+        : withFast ? "data-aegis-apply-fast" : "data-aegis-apply");
       var applyRepo = (aegisRepoDraft[applyId] || savedRepo() || "").trim();
       if (!applyRepo) {
         aegisApplyOut[applyId] = { ok: false, text: "set the repo path above first" };
@@ -3160,7 +3173,7 @@
       fetch("/api/aegis/apply-fix", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ incident_id: applyId, repo_path: applyRepo,
-                               run_tests: withSuite }),
+                               run_tests: withSuite, fast_only: withFast }),
       }).then(function (r) { return r.json(); })
         .then(function (rep) {
           aegisApplyBusy[applyId] = false;

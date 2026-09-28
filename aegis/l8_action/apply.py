@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aegis.l8_action import fasttests
 from aegis.l8_action.runner import (
     _import_root, _interpreter_for, _tolerant_apply)
 
@@ -252,7 +253,8 @@ class PatchApplier:
         self.repo = Path(repo_path).resolve()
 
     def apply(self, patch_text: str, *, allow_dirty: bool = False,
-              run_tests: bool = True, reproducer: str = "") -> ApplyResult:
+              run_tests: bool = True, reproducer: str = "",
+              fast_only: bool = False) -> ApplyResult:
         if not patch_text.strip():
             return ApplyResult(False, False, "no patch to apply")
         if not self.repo.is_dir():
@@ -331,12 +333,62 @@ class PatchApplier:
         name, command, suite_dir, _python = found
         if suite_dir != self.repo:
             name = f"{name} ({suite_dir.relative_to(self.repo)})"
+
+        # The cheap subset of the project's OWN tests: a real check of the rest
+        # of the code, for free. Only possible once the suite has been timed,
+        # because which tests are cheap is a measurement - reading imports
+        # cannot tell a live client from a mocked one (it flagged 34 of 35
+        # classes here, including one that runs 12 tests in 1.77s).
+        fast_nodes: list[str] = []
+        if fast_only:
+            # Only pytest can run a chosen list of test ids and report per-test
+            # durations. Falling through to the FULL suite here would spend the
+            # user's money on the one request that explicitly asked not to -
+            # the exact failure this mode exists to prevent - so it stops.
+            if not name.startswith("pytest"):
+                _restore(backup, self.repo, targets)
+                shutil.rmtree(backup, ignore_errors=True)
+                return ApplyResult(
+                    False, False,
+                    f"your suite runs under {name}, and Aegis can only measure "
+                    "and select individual tests with pytest. Use its own test "
+                    "(free) or run the whole suite deliberately.",
+                    files=targets, suite=name)
+            timings = fasttests.load(self.repo, suite_dir)
+            if timings:
+                fast_nodes = fasttests.fast_nodes(timings)
+            if not fast_nodes:
+                _restore(backup, self.repo, targets)
+                shutil.rmtree(backup, ignore_errors=True)
+                return ApplyResult(
+                    False, False,
+                    "no timings for this suite yet, so Aegis cannot tell which "
+                    "of your tests are free to run. Run the full suite once "
+                    "(the other button) and it will remember - after that the "
+                    "fast check takes seconds.",
+                    files=targets, suite=name)
+            command = fasttests.fast_command(command, fast_nodes)
+            name = f"{name} - {len(fast_nodes)} fast tests"
         # Was the suite green BEFORE the patch? A project whose tests were
         # already failing would otherwise have every fix reverted and be
         # told, wrongly, that the fix broke them. Measured, not assumed:
         # the backup is restored first so the baseline is the real one.
         _restore(backup, self.repo, targets)
-        baseline_passed, baseline_output = _run_suite(suite_dir, command)
+        # The full run is also the measurement: ask pytest to report every
+        # test's duration, so the NEXT apply can run just the cheap ones for
+        # free. Paid once, reused until the tests change.
+        timing_run = (not fast_nodes) and name.startswith("pytest")
+        baseline_passed, baseline_output = _run_suite(
+            suite_dir,
+            fasttests.timing_command(command) if timing_run else command,
+            keep_all=timing_run)
+        if timing_run:
+            durations = fasttests.parse_durations(baseline_output)
+            if durations:
+                fasttests.save(self.repo, suite_dir, durations)
+            # Only the parser needed the whole thing; what is stored and shown
+            # stays the readable tail.
+            baseline_output = baseline_output[-4000:]
         applied_again, _ = _tolerant_apply(self.repo, patch_text)
         if not applied_again:
             _restore(backup, self.repo, targets)
@@ -415,7 +467,8 @@ def _suite_ran_nothing(output: str) -> bool:
             or "no tests collected" in low or "collected 0 items" in low)
 
 
-def _run_suite(repo: Path, command: tuple[str, ...]) -> tuple[bool, str]:
+def _run_suite(repo: Path, command: tuple[str, ...],
+               keep_all: bool = False) -> tuple[bool, str]:
     try:
         completed = subprocess.run(
             list(command), cwd=repo, text=True, capture_output=True,
@@ -427,4 +480,8 @@ def _run_suite(repo: Path, command: tuple[str, ...]) -> tuple[bool, str]:
         return False, f"your test suite did not finish within {TEST_TIMEOUT_S}s"
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"could not run your test suite: {exc}"
-    return completed.returncode == 0, (completed.stdout + completed.stderr)[-4000:]
+    output = completed.stdout + completed.stderr
+    # The tail is enough to SHOW a user, but a --durations run puts one line
+    # per test in the middle of it: truncating to 4000 chars would silently
+    # discard most of 136 timings and leave the fast subset far too small.
+    return completed.returncode == 0, output if keep_all else output[-4000:]

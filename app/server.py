@@ -284,7 +284,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                     str(body.get("incident_id", "")),
                     str(body.get("repo_path", "")),
                     bool(body.get("allow_dirty")),
-                    run_tests=bool(body.get("run_tests"))))
+                    run_tests=bool(body.get("run_tests")),
+                    fast_only=bool(body.get("fast_only"))))
                 return
             if name == "revert-fix":
                 write_json(self, HTTPStatus.OK, app.revert_fix(

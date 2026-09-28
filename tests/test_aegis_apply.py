@@ -323,6 +323,82 @@ def test_the_reproducer_runs_from_the_services_import_root():
     assert not (repo / "aegis_reproducer.py").exists()
 
 
+def test_durations_are_parsed_from_pytests_own_output():
+    """Which tests are cheap is a MEASUREMENT, not a guess. Reading imports was
+    tried first and failed: scanning for ChatOpenAI/Surreal/CrossEncoder marked
+    34 of 35 classes in paideia costly, including one that runs 12 tests in
+    1.77s, because an import says nothing about whether the thing is mocked."""
+    from aegis.l8_action import fasttests
+
+    output = (
+        "============================= slowest durations ==========\n"
+        "10.51s call     tests/test_api.py::TestChat::test_live\n"
+        "0.02s call     tests/test_unit.py::TestX::test_fast\n"
+        "0.30s setup    tests/test_unit.py::TestX::test_fast\n"
+        "0.00s teardown tests/test_unit.py::TestX::test_fast\n")
+    durations = fasttests.parse_durations(output)
+    # setup+call+teardown, summed: a fixture that opens a database is expensive
+    # even when the call itself is instant.
+    assert abs(durations["tests/test_unit.py::TestX::test_fast"] - 0.32) < 0.001
+    assert abs(durations["tests/test_api.py::TestChat::test_live"] - 10.51) < 0.001
+
+    fast = fasttests.fast_nodes(durations)
+    assert fast == ["tests/test_unit.py::TestX::test_fast"], fast
+
+
+def test_a_test_whose_fixture_is_slow_is_not_called_fast():
+    """The one that would matter most if it were wrong: a test whose CALL is
+    instant but whose setup opens a database costs exactly as much as a slow
+    test. Charging it only for the call would let the costly ones through -
+    which is the whole thing this is meant to prevent."""
+    from aegis.l8_action import fasttests
+
+    durations = fasttests.parse_durations(
+        "0.01s call     tests/t.py::test_db\n"
+        "9.90s setup    tests/t.py::test_db\n")
+    assert fasttests.fast_nodes(durations) == []
+
+
+def test_edited_tests_invalidate_the_timings():
+    """Timings describe the tests that were measured. Edit one, or add a new
+    one, and its cost is unknown again - and unknown must not mean "assumed
+    free", or a new expensive test would be silently skipped forever."""
+    import time as _time
+    from aegis.l8_action import fasttests
+
+    repo = Path(tempfile.mkdtemp(prefix="aegis-timing-test-"))
+    suite = repo / "tests"
+    suite.mkdir()
+    (suite / "test_a.py").write_text("def test_a():\n    assert True\n")
+    first = fasttests.fingerprint(suite)
+
+    fasttests.save(repo, suite, {"tests/test_a.py::test_a": 0.01})
+    assert fasttests.load(repo, suite), "timings did not survive a clean read"
+
+    _time.sleep(1.1)  # mtime has 1s resolution
+    (suite / "test_b.py").write_text("def test_b():\n    assert True\n")
+    assert fasttests.fingerprint(suite) != first, "a new test did not change it"
+    assert fasttests.load(repo, suite) is None, (
+        "stale timings were reused after the tests changed")
+
+
+def test_fast_mode_says_so_rather_than_running_nothing():
+    """With no timings yet there is no honest fast subset, and running zero
+    tests while reporting success would be the worst outcome here. It has to
+    say what is missing and how to get it."""
+    repo = _repo_with_costly_suite()
+    result = PatchApplier(repo).apply(_FIXING_PATCH, fast_only=True,
+                                      reproducer=_REPRODUCER)
+    assert result.applied is False, result.detail
+    # Either honest refusal is fine - no timings yet, or a runner whose tests
+    # cannot be measured and selected individually. What must NEVER happen is
+    # falling through to the full suite, which is the spend this mode exists to
+    # avoid: SPENT is written by the costly suite if it runs.
+    assert ("no timings" in result.detail
+            or "can only measure" in result.detail), result.detail
+    assert not (repo / "SPENT").exists(), "it ran the costly suite anyway"
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

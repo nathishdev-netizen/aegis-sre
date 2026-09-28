@@ -1064,7 +1064,8 @@ class AegisApp:
         }
 
     def apply_fix(self, incident_id: str, repo_path: str,
-                  allow_dirty: bool = False, run_tests: bool = True) -> dict:
+                  allow_dirty: bool = False, run_tests: bool = True,
+                  fast_only: bool = False) -> dict:
         """T2: write a proven patch to the working tree, revertibly.
 
         Reachable only from an explicit human click. The patch has already
@@ -1095,8 +1096,9 @@ class AegisApp:
         # user's behalf without them choosing it.
         result = PatchApplier(repo).apply(
             bundle["patch"], allow_dirty=bool(allow_dirty),
-            run_tests=bool(run_tests),
-            reproducer=bundle.get("reproducer") or "")
+            run_tests=bool(run_tests) or bool(fast_only),
+            reproducer=bundle.get("reproducer") or "",
+            fast_only=bool(fast_only))
         payload = result.to_dict()
         payload["ok"] = result.applied
         if result.applied:
