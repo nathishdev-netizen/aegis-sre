@@ -1778,6 +1778,13 @@
   var aegisInvBusy = {};
   var aegisFixOut = {};
   var aegisProposal = {};
+  // The apply RESULT has to live in state, not in the DOM. It used to be
+  // written straight into the #apply-<id> div, which the 3-second
+  // aegisRefresh() then re-rendered away - so the answer (often "your repo
+  // has uncommitted changes, commit or stash first") appeared and vanished
+  // within a frame, and the button looked like it did nothing at all.
+  var aegisApplyOut = {};
+  var aegisApplyBusy = {};
   var aegisRepoDraft = {};
 
   // Which verdict cards the reader has opened. Kept outside the render so a
@@ -1953,6 +1960,30 @@
     };
   }
 
+  // Rendered from state on every refresh, so the answer survives the
+  // 3-second re-render instead of being wiped by it.
+  function applyResultHtml(id) {
+    var r = aegisApplyOut[id];
+    if (!r) return "";
+    var html = '<div class="aegis-fix-out' + (r.ok ? " ok" : "") + '">' +
+      aegisEsc(r.text || "") + "</div>";
+    if ((r.files || []).length) {
+      html += '<div class="hint">files changed: ' +
+        r.files.map(aegisEsc).join(", ") + "</div>";
+    }
+    if (r.suite_output) {
+      html += '<pre class="aegis-bundle">' + aegisEsc(r.suite_output) + "</pre>";
+    }
+    if (r.ok && r.backup_path) {
+      html += '<div class="row" style="gap:8px;margin-top:6px">' +
+        '<button class="btn" data-aegis-revert="' + aegisEsc(id) +
+        '" data-backup="' + aegisEsc(r.backup_path) +
+        '" data-files="' + aegisEsc((r.files || []).join("|")) +
+        '">Undo this change</button></div>';
+    }
+    return html;
+  }
+
   function explainPatchHtml(patch) {
     var e = explainPatch(patch);
     return '<div class="note-line" style="margin-top:10px"><b>what this fix does</b>' +
@@ -2079,12 +2110,15 @@
               // undoes itself if your own tests disagree - which is what
               // makes saying yes reasonable.
               '<button class="btn primary" data-aegis-apply="' +
-              aegisEsc(inc.id) + '">Let Aegis apply it \u00b7 reverts if your ' +
-              'tests fail</button></div>' +
+              aegisEsc(inc.id) + '"' +
+              (aegisApplyBusy[inc.id] ? " disabled" : "") + ">" +
+              (aegisApplyBusy[inc.id] ? "applying\u2026"
+                 : "Let Aegis apply it \u00b7 reverts if your tests fail") +
+              "</button></div>" +
               '<div class="hint" style="margin-top:4px">Either way your repo is ' +
               'only written when you click - and never while it has uncommitted ' +
               'changes, unless you say so.</div>' +
-              '<div id="apply-' + aegisEsc(inc.id) + '"></div>' : "");
+              applyResultHtml(inc.id) : "");
         } else if (fixResult && fixResult.ok) {
           body += '<div class="row" style="margin-top:6px">' +
             '<button class="btn" data-aegis-proposal="' + aegisEsc(inc.id) +
@@ -3068,10 +3102,9 @@
     if (applyBtn) {
       var applyId = applyBtn.getAttribute("data-aegis-apply");
       var applyRepo = (aegisRepoDraft[applyId] || savedRepo() || "").trim();
-      var applyOut = document.getElementById("apply-" + applyId);
       if (!applyRepo) {
-        if (applyOut) applyOut.innerHTML =
-          '<div class="hint">set the repo path above first</div>';
+        aegisApplyOut[applyId] = { ok: false, text: "set the repo path above first" };
+        aegisRefresh();
         return;
       }
       // Writing to someone's working tree is the one step here that is hard
@@ -3081,42 +3114,33 @@
           "Aegis will edit the files, run your own test suite, and put " +
           "everything back automatically if those tests fail.\n\n" +
           "Nothing is committed - `git diff` shows the change.")) return;
-      applyBtn.disabled = true;
-      applyBtn.textContent = "applying, then running your tests\u2026";
-      if (applyOut) applyOut.innerHTML =
-        '<div class="hint">this runs your project\u2019s own suite - it can ' +
-        "take a minute\u2026</div>";
+      aegisApplyBusy[applyId] = true;
+      aegisApplyOut[applyId] = { ok: false, busy: true,
+        text: "applying, then running your project\u2019s own suite - this can take a minute\u2026" };
+      aegisRefresh();
       fetch("/api/aegis/apply-fix", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ incident_id: applyId, repo_path: applyRepo }),
       }).then(function (r) { return r.json(); })
         .then(function (rep) {
-          applyBtn.disabled = false;
-          applyBtn.textContent = "Apply this fix \u00b7 reverts if your tests fail";
-          if (!applyOut) return;
-          var html = '<div class="aegis-fix-out' + (rep.ok ? " ok" : "") +
-            '">' + aegisEsc(rep.detail || "") + "</div>";
-          if ((rep.files || []).length) {
-            html += '<div class="hint">files changed: ' +
-              rep.files.map(aegisEsc).join(", ") + "</div>";
-          }
-          if (rep.suite_output && !rep.ok) {
-            html += '<pre class="aegis-bundle">' +
-              aegisEsc(rep.suite_output) + "</pre>";
-          }
-          if (rep.ok && rep.backup_path) {
-            html += '<div class="row" style="gap:8px;margin-top:6px">' +
-              '<button class="btn" data-aegis-revert="' + aegisEsc(applyId) +
-              '" data-backup="' + aegisEsc(rep.backup_path) +
-              '" data-files="' + aegisEsc((rep.files || []).join("|")) +
-              '">Undo this change</button></div>';
-          }
-          applyOut.innerHTML = html;
+          aegisApplyBusy[applyId] = false;
+          aegisApplyOut[applyId] = {
+            ok: !!rep.ok,
+            text: rep.detail || (rep.ok ? "applied" : "apply failed"),
+            files: rep.files || [],
+            // Only worth showing when the suite is what rejected it.
+            suite_output: (!rep.ok && rep.suite_output) ? rep.suite_output : "",
+            backup_path: rep.ok ? (rep.backup_path || "") : "",
+          };
           aegisRefresh();
         })
-        .catch(function () {
-          applyBtn.disabled = false;
-          applyBtn.textContent = "Apply this fix \u00b7 reverts if your tests fail";
+        .catch(function (err) {
+          // Restoring the button but saying nothing made a failed request
+          // look exactly like a button that does nothing.
+          aegisApplyBusy[applyId] = false;
+          aegisApplyOut[applyId] = { ok: false,
+            text: "could not reach the agent: " + (err && err.message ? err.message : "request failed") };
+          aegisRefresh();
         });
       return;
     }
@@ -3136,14 +3160,17 @@
         }),
       }).then(function (r) { return r.json(); })
         .then(function (rep) {
-          var box = document.getElementById("apply-" + revId);
-          if (box) box.innerHTML = '<div class="aegis-fix-out">' +
-            aegisEsc(rep.detail || "") + "</div>";
+          // Same state-not-DOM rule as apply: the refresh below re-renders
+          // this whole card, so anything written into it directly is lost.
+          aegisApplyOut[revId] = { ok: !!rep.ok,
+            text: rep.detail || (rep.ok ? "reverted" : "revert failed") };
           aegisRefresh();
         })
-        .catch(function () {
-          revertBtn.disabled = false;
-          revertBtn.textContent = "Undo this change";
+        .catch(function (err) {
+          aegisApplyOut[revId] = { ok: false,
+            text: "could not reach the agent: " +
+                  (err && err.message ? err.message : "request failed") };
+          aegisRefresh();
         });
       return;
     }
