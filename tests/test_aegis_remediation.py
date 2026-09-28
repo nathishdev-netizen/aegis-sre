@@ -211,6 +211,20 @@ def test_a_traceback_frame_beats_searching_for_its_text():
         "a traceback frame naming the repo's own file was not mapped"
 
 
+def test_the_prompts_carry_no_stray_format_placeholders():
+    """Both prompts go through str.format(), so any brace in their PROSE is a
+    placeholder. Writing an f-string example into the guidance - `f"lead:{x}"`
+    - turned every real propose() call into KeyError: 'x'. The prompts are only
+    formatted at call time, so nothing catches this until a live run fails."""
+    from aegis.l8_action.remediate import _PATCH_PROMPT, _REPRODUCER_PROMPT
+
+    _REPRODUCER_PROMPT.format(
+        diagnosis="d", evidence="e", locations="l", excerpts="x",
+        import_root="r", import_file="f", import_stmt="s")
+    _PATCH_PROMPT.format(
+        diagnosis="d", locations="l", excerpts="e", reproducer="r", max_lines=12)
+
+
 def test_overlap_walks_a_logged_line_back_to_its_format_string():
     """_overlap went missing in the repo recovery while two callers still
     imported it (server.get_code_for, remediate._code_context). Live, that

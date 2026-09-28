@@ -61,6 +61,17 @@ Write ONE self-contained Python test script:
   plainly and let the bug's own exception fail the script; where the bug
   returns a wrong VALUE rather than raising, assert the value the diagnosis
   says it should have returned.
+- assert only what the EXCERPTS literally show. Never infer a return format
+  by symmetry with a neighbouring line: if one branch returns a prefixed
+  value like "lead:" + x and the branch you are testing returns x plainly,
+  the expected value is x itself - NOT a "session:" + x you never saw
+  written anywhere. Inventing a prefix, a
+  wrapper or a type the source does not show makes the assertion fail even
+  once the patch is correct, which blocks a good fix for a reason that has
+  nothing to do with the bug. When the excerpt does not show what a call
+  returns, assert something you CAN see - that it did not raise, or that a
+  field the diagnosis names has the value the diagnosis names - rather than
+  guessing the exact shape.
 - 30 lines maximum
 
 Reply with ONLY a fenced python code block."""
@@ -676,7 +687,14 @@ class RemediationAgent:
 
     # -- the bundle ----------------------------------------------------------
 
-    def _excerpts(self, locations, context: int = 6) -> str:
+    # Six lines each way cut the excerpt off one line above the branch the
+    # reproducer had to assert on: it showed `if request.session_id:` but not
+    # the `return request.session_id` below it, so the model inferred a
+    # "session:" prefix by symmetry with the `lead:` branch it COULD see. The
+    # patch was then correct and the assertion wrong, which blocks a good fix
+    # for a reason unrelated to the bug. Enough lines to carry a whole small
+    # function, which is the unit the assertion is actually about.
+    def _excerpts(self, locations, context: int = 14) -> str:
         chunks = []
         for location in locations[:4]:
             path = self.repo / location.file
