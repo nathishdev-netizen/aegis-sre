@@ -1156,8 +1156,12 @@
         <div class="card">
           <div class="row" style="flex-wrap:wrap">
             <select class="input" id="connKind" style="max-width:230px">
+              <!-- SigNoz over MCP is deliberately not offered: it needs SigNoz's
+                   Go binary installed on this machine, and reads exactly the same
+                   logs the HTTP option already reads with nothing to install. One
+                   way to connect SigNoz, and it is the one that is verified. The
+                   preset still exists in the backend for anyone who wants it. -->
               <option value="signoz">SigNoz — HTTP API</option>
-              <option value="signoz-mcp">SigNoz — MCP server</option>
               <option value="opik-mcp">Opik / Comet — MCP server</option>
               <option value="mcp">Other MCP server</option>
             </select>
@@ -3419,8 +3423,9 @@
         hint.textContent = "Queries the SigNoz HTTP API directly.";
       } else if (kind === "signoz-mcp") {
         target.placeholder = "https://signoz.example.com (SIGNOZ_URL)";
-        hint.textContent = "Runs SigNoz's own MCP server (uvx signoz-mcp-server) " +
-          "and calls its fetch_traces_or_logs tool. Needs uvx on this machine.";
+        hint.textContent = "Runs SigNoz's own MCP server and calls its " +
+          "signoz_search_logs tool. Needs the signoz-mcp-server binary on this " +
+          "machine - the HTTP API option reads the same logs with nothing to install.";
       } else if (kind === "opik-mcp") {
         target.placeholder = "workspace, usually 'default'";
         hint.textContent = "Runs Opik's MCP server (uvx opik-mcp) for LLM traces " +
