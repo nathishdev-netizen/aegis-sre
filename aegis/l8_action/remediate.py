@@ -269,6 +269,10 @@ class Proposal:
     test_before: dict[str, Any] = field(default_factory=dict)
     test_after: dict[str, Any] = field(default_factory=dict)
     locations: list[dict[str, Any]] = field(default_factory=list)
+    # What logging would have let this be answered. Present only when Aegis
+    # FAILED to explain something - a gap is evidence that would have answered
+    # a question somebody actually asked, not a lint of the whole repo.
+    gaps: dict[str, Any] = field(default_factory=dict)
     bundle_path: str = ""
     # Shown, never acted on: things worth a human's attention that did not
     # rise to blocking the proposal outright. A diagnosis/traceback mismatch
@@ -347,10 +351,20 @@ class RemediationAgent:
         # bundle should say which one the reviewer is holding.
         self.blast_radius = self._blast_radius(locations)
         if not locations:
+            # The promise this message has been making. Nothing maps, so the
+            # useful answer is not "fix by hand" - it is WHICH line would have
+            # made the next one mappable.
+            from app.core import gaps
+
+            report = gaps.generate(
+                "which line of this project does this incident come from?",
+                evidence, self.code)
             return self._bundle(Proposal(
                 incident_id, "advise",
-                "no evidence line maps to source in this repo - fix by hand, "
-                "or add logging so the next incident maps (the gap report)"))
+                "no evidence line maps to source in this repo. " + (
+                    report.detail or "Analyze this project so the next "
+                    "incident can be traced to a file and a line."),
+                gaps=report.to_dict()))
 
         excerpts = self._excerpts(locations)
         loc_text = "\n".join(f"  {l.file}:{l.line}  {l.source}" for l in locations)
@@ -822,6 +836,13 @@ class RemediationAgent:
             lines += ["", "MAPPED CODE:"] + [
                 f"  {l['file']}:{l['line']}  {l['source']}"
                 for l in proposal.locations[:6]]
+        if proposal.gaps and proposal.gaps.get("gaps"):
+            lines += ["", "WHAT WOULD HAVE LET ME ANSWER THIS:",
+                      f"  {proposal.gaps.get('detail', '')}"]
+            for gap in proposal.gaps["gaps"]:
+                lines += [f"  {gap['file']}:{gap['line']}  ({gap['function']})",
+                          f"      {gap['why']}",
+                          f"      -> {gap['suggestion']}"]
         if proposal.test_before:
             lines += ["", f"REPRODUCER before patch: exit "
                           f"{proposal.test_before.get('exit_code')} (must be non-zero)"]

@@ -2005,6 +2005,24 @@
       }).join("") + "</ul>";
   }
 
+
+  // A gap report: what should have been logged, so the next incident explains
+  // itself. Every gap names a file and a line - "add more logging" is an
+  // opinion, and one nobody acts on.
+  function gapReportHtml(report) {
+    if (!report || !(report.gaps || []).length) return "";
+    return '<div class="note-line" style="margin-top:8px"><b>what would have ' +
+      'let me answer this</b></div>' +
+      (report.detail ? '<div class="hint">' + aegisEsc(report.detail) + "</div>" : "") +
+      '<ul style="margin:6px 0 0;padding-left:18px">' +
+      report.gaps.map(function (g) {
+        return "<li><code>" + aegisEsc(g.file) + ":" + aegisEsc(g.line) +
+          "</code>" + (g.function ? " in " + aegisEsc(g.function) + "()" : "") +
+          '<div class="hint">' + aegisEsc(g.why) + "</div>" +
+          '<div class="hint"><b>add:</b> ' + aegisEsc(g.suggestion) + "</div></li>";
+      }).join("") + "</ul>";
+  }
+
   function renderIncidents(state) {
     var incidents = state.incidents || [];
     if (!incidents.length) {
@@ -2099,6 +2117,11 @@
         if (fixResult) {
           body += '<div class="aegis-fix-out' + (fixResult.ok ? " ok" : "") + '">' +
             aegisEsc(fixResult.text) + "</div>";
+          // When Aegis could not explain this, the useful answer is not "fix it
+          // by hand" - it is which line's absence stopped it. Shown with the
+          // failure, not hidden behind another click, because it is the only
+          // actionable thing in that reply.
+          body += gapReportHtml(fixResult.gaps);
         }
         var bundle = aegisProposal[inc.id];
         if (bundle && bundle.ok) {
@@ -3083,7 +3106,7 @@
       }).then(function (r) { return r.json(); })
         .then(function (reply) {
           aegisFixBusy[fixId] = false;
-          aegisFixOut[fixId] = { ok: reply.ok,
+          aegisFixOut[fixId] = { ok: reply.ok, gaps: reply.gaps,
             text: (reply.status ? reply.status.toUpperCase() + " - " : "") +
                   reply.detail + (reply.bundle ? "\nbundle: " + reply.bundle : "") };
           // Pull the bundle in right away rather than leaving a second

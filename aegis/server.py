@@ -76,10 +76,6 @@ class AegisApp:
         self._lock = threading.Lock()
         self._spec: FlowSpec | None = None
         self.code_analysis: dict | None = None
-        self.code_analysis: dict | None = None
-        self.code_analysis: dict | None = None
-        self.code_analysis: dict | None = None
-        self.code_analysis: dict | None = None
         self._stop = threading.Event()
         if log_path:
             self.attach(log_path, project)
@@ -1048,8 +1044,14 @@ class AegisApp:
             return {"ok": False, "detail": f"not a directory: {repo}"}
         try:
             from aegis.l8_action.remediate import RemediationAgent
+            # The analysed code map, which the agent's own docstring says it
+            # needs: "it turns 'grep for this log line' into 'this line is
+            # written at file:line'". It was never being handed over, so
+            # _locate_via_code always fell through to text search and a gap
+            # report could not name a single line.
             agent = RemediationAgent(self.router, repo, tier="T1",
-                                     project=self.project)
+                                     project=self.project,
+                                     code=self._load_code())
             proposal = agent.propose(incident.to_dict(),
                                      self.hypotheses.get(incident_id))
         except Exception as exc:
@@ -1061,6 +1063,9 @@ class AegisApp:
             "bundle": proposal.bundle_path,
             "patch": (proposal.patch or "")[:800],
             "warnings": proposal.warnings,
+            # Present only when Aegis could not explain the incident: the
+            # lines whose absence is why.
+            "gaps": proposal.gaps,
         }
 
     def apply_fix(self, incident_id: str, repo_path: str,
