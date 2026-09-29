@@ -363,6 +363,11 @@
     .input::placeholder { color: var(--text-3); }
     .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em;
       text-transform: uppercase; color: var(--text-3); margin: 0 0 7px; }
+    /* Picking one service out of a backend that holds many. */
+    .conn-services { flex-basis: 100%; margin-top: 8px; display: flex;
+      flex-wrap: wrap; gap: 6px; }
+    .conn-svc { display: inline-flex; align-items: center; gap: 7px; }
+    .conn-svc .hint { font-family: var(--num-font); font-variant-numeric: tabular-nums; }
     /* What a connector has read: service, environment, time, then the line. */
     .rec-row { padding: 9px 0; border-top: 1px solid var(--line-soft); }
     .rec-row:first-of-type { border-top: none; padding-top: 0; }
@@ -2926,9 +2931,16 @@
         '<span class="tg">' + aegisEsc(c.target) +
         (c.detail ? " · " + aegisEsc(c.detail) : "") + "</span>" +
         '<button class="btn ghost" data-conn-check="' + aegisEsc(c.name) + '">Test</button>' +
+        // One backend holds every service's logs. Streaming it whole mixes
+        // unrelated systems into one pipeline, and incidents then group across
+        // services that share nothing but a vendor - so the choice of WHICH is
+        // offered before the choice to stream.
+        '<button class="btn ghost" data-conn-services="' + aegisEsc(c.name) + '">' +
+        (streaming ? "Change service" : "Pick service") + "</button>" +
         '<button class="btn ghost" data-conn-stream="' + aegisEsc(c.name) + '">' +
-        (streaming ? "Stop" : "Stream") + "</button>" +
+        (streaming ? "Stop" : "Stream all") + "</button>" +
         '<button class="btn ghost" data-conn-remove="' + aegisEsc(c.name) + '">Remove</button>' +
+        '<div class="conn-services" data-conn-list="' + aegisEsc(c.name) + '" hidden></div>' +
         "</div>";
     }).join("") ||
     '<div class="hint">No connectors yet. Local ports show you now; connectors ' +
@@ -3205,6 +3217,55 @@
           aegisRefresh();
         })
         .catch(function () { combine.textContent = "failed"; });
+      return;
+    }
+    // "Pick service": list what this backend can see, so one service can be
+    // chosen instead of streaming every system it holds into one pipeline.
+    var svcBtn = event.target.closest("[data-conn-services]");
+    if (svcBtn) {
+      var svcName = svcBtn.getAttribute("data-conn-services");
+      var box = document.querySelector('[data-conn-list="' + svcName + '"]');
+      if (box && !box.hidden) { box.hidden = true; return; }
+      svcBtn.disabled = true;
+      var was = svcBtn.textContent;
+      svcBtn.textContent = "looking…";
+      fetch("/api/aegis/provider/services", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: svcName }),
+      }).then(function (r) { return r.json(); })
+        .then(function (rep) {
+          svcBtn.disabled = false; svcBtn.textContent = was;
+          if (!box) return;
+          box.hidden = false;
+          if (!rep.ok || !(rep.services || []).length) {
+            box.innerHTML = '<div class="hint">' +
+              aegisEsc(rep.detail || "no services found in the last 6 hours") +
+              "</div>";
+            return;
+          }
+          box.innerHTML = '<div class="hint" style="margin:8px 0 6px">' +
+            "Watch one service, or stream everything:</div>" +
+            rep.services.map(function (sv) {
+              return '<button class="btn ghost conn-svc" data-conn-pick="' +
+                aegisEsc(svcName) + "|" + aegisEsc(sv.name) + '">' +
+                aegisEsc(sv.name) +
+                (sv.env ? ' <span class="rec-env">' + aegisEsc(sv.env) + "</span>" : "") +
+                ' <span class="hint">' + aegisEsc(sv.records) + "</span></button>";
+            }).join("");
+        })
+        .catch(function () { svcBtn.disabled = false; svcBtn.textContent = was; });
+      return;
+    }
+    var pick = event.target.closest("[data-conn-pick]");
+    if (pick) {
+      var parts = pick.getAttribute("data-conn-pick").split("|");
+      pick.disabled = true; pick.textContent = "starting…";
+      fetch("/api/aegis/provider/stream", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: parts[0], service: parts[1] }),
+      }).then(function (r) { return r.json(); })
+        .then(function () { refreshConnectors(); aegisRefresh(); })
+        .catch(function () { pick.disabled = false; });
       return;
     }
     var connBtn = event.target.closest("[data-conn-check],[data-conn-stream],[data-conn-remove]");

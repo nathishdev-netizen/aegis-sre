@@ -748,6 +748,46 @@ class ProviderRegistry:
                                 "detail": f"{exc.__class__.__name__}: {exc}"}
             return None
 
+    def services(self, name: str) -> dict[str, Any]:
+        """Which services this connector can see, so the user can pick one.
+
+        A connector points at ONE backend holding logs from EVERY service, so
+        streaming it whole mixes unrelated systems into one pipeline - and then
+        incidents group across services that share nothing but a vendor. The
+        reader has to be able to say which one they mean.
+
+        Sampled over a wide window rather than the five records check() takes:
+        a service that logs once a minute is exactly the one worth watching and
+        exactly the one a small sample misses.
+        """
+        provider = self.build(name)
+        if provider is None:
+            return {"ok": False, "detail": "unknown provider"}
+        try:
+            records = provider.query_logs(LogFilter(since_minutes=360, limit=400))
+            failure = getattr(provider, "last_error", "")
+            if failure:
+                return {"ok": False, "detail": failure}
+            seen: dict[str, dict[str, Any]] = {}
+            for record in records:
+                if not record.service:
+                    continue
+                entry = seen.setdefault(record.service,
+                                        {"name": record.service, "env": "", "records": 0})
+                entry["records"] += 1
+                if record.host and not entry["env"]:
+                    entry["env"] = record.host
+            return {"ok": True,
+                    "services": sorted(seen.values(),
+                                       key=lambda e: -e["records"]),
+                    "sampled": len(records)}
+        except Exception as exc:
+            return {"ok": False, "detail": f"{exc.__class__.__name__}: {exc}"}
+        finally:
+            close = getattr(getattr(provider, "client", None), "close", None)
+            if close:
+                close()
+
     def check(self, name: str) -> dict[str, Any]:
         """Try one small query. Providers charge money and go down; the user
         must be able to see which state a connector is actually in."""

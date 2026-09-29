@@ -283,6 +283,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 pname = str(body.get("name", ""))
                 if rest == "check":
                     write_json(self, HTTPStatus.OK, app.check_provider(pname))
+                elif rest == "services":
+                    write_json(self, HTTPStatus.OK, app.provider_services(pname))
                 elif rest == "stream":
                     write_json(self, HTTPStatus.OK,
                                app.stream_provider(pname, str(body.get("service", ""))))

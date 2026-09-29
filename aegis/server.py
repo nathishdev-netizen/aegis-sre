@@ -132,6 +132,12 @@ class AegisApp:
     def check_provider(self, name: str) -> dict:
         return self.registry.check(str(name))
 
+    def provider_services(self, name: str) -> dict:
+        """Which services this connector can see - the choice the user makes
+        before streaming, so one backend's many systems do not arrive as one
+        undifferentiated stream."""
+        return self.registry.services(str(name))
+
     def stream_provider(self, name: str, service: str = "") -> dict:
         """Attach the pipeline to a provider instead of a local file."""
         name = str(name).strip()
@@ -505,10 +511,13 @@ class AegisApp:
                 return {"kind": "none", "label": "not reading anything",
                         "detail": "a connector was selected but is not streaming",
                         "healthy": False}
-            return {"kind": "connector", "name": name,
-                    "label": "streaming " + name,
-                    "detail": getattr(self, "provider_service", "") or "",
-                    "healthy": True}
+            service = getattr(self, "provider_service", "") or ""
+            return {"kind": "connector", "name": name, "service": service,
+                    # Name the SERVICE when one was chosen: "signoz" alone does
+                    # not say which of its eight systems is being read.
+                    "label": ("streaming " + service + " via " + name) if service
+                             else ("streaming all of " + name),
+                    "detail": service, "healthy": True}
         if path:
             return {"kind": "file", "name": path,
                     "label": "reading " + path.rsplit("/", 1)[-1],
