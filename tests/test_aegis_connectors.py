@@ -81,6 +81,48 @@ def test_removing_a_provider_forgets_it():
     assert registry.list() == []
 
 
+
+
+# A real SigNoz v5 raw-logs response, captured from a live v0.117.1 instance on
+# 2026-09-29. The parse must survive THIS shape, not the one we guessed:
+# service.name lives in resources_string, severity in severity_text, and the
+# row is {"timestamp", "data"} - not flat.
+_LIVE_V5_RESPONSE = {
+    "data": {"data": {"results": [{"rows": [
+        {"timestamp": "2026-09-29T05:35:40Z", "data": {
+            "body": "/api/method/ping | Outgoing Response | {\"http_status_code\": 200}",
+            "severity_text": "INFO",
+            "attributes_string": {"trace_id": "022a9e51d9b8318c85a00e115924f784",
+                                  "api_method": "/api/method/ping"},
+            "attributes_number": {"http_status_code": 200},
+            "resources_string": {"service.name": "CRM-CBT-PROD",
+                                 "deployment.environment": "UAT"},
+        }},
+    ]}]}},
+}
+
+
+def test_a_real_v5_row_parses_service_severity_and_numbers():
+    """Guards the shape a live instance actually returns. service.name is nested
+    in resources_string - reading it off the top of data (as the first version
+    did) left every record with an empty service, and everything an empty
+    service breaks: incident grouping, per-service baselines, the lot."""
+    from aegis.l1_ingestion.providers import SigNozProvider, LogFilter
+
+    p = SigNozProvider("http://signoz.test", api_key="k",
+                       transport=lambda *a, **k: _LIVE_V5_RESPONSE)
+    records = p.query_logs(LogFilter(since_minutes=60, limit=10))
+    assert len(records) == 1, records
+    rec = records[0]
+    assert rec.service == "CRM-CBT-PROD", rec.service
+    assert "INFO" in rec.payload, rec.payload
+    assert "022a9e51" in rec.payload, "trace id was dropped"
+    # A field already present in the body is not duplicated; one that is not
+    # (api_method) gets appended so detection can see it.
+    assert "http_status_code" in rec.payload, "status code lost entirely"
+    assert "api_method=/api/method/ping" in rec.payload, "attribute was dropped"
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

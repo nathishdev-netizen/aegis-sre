@@ -12,10 +12,12 @@ Two transports, and they are different things:
            Opik, Grafana all do) - Direction A of C12: MCP as the transport
            UNDER this interface, never exposed to agents raw.
 
-Honesty note, recorded where it belongs: the SigNoz payload/parse here is
-built against the published v5 API shape, exercised only with fixture
-responses - no live instance existed at build time. The adapter exists so
-that when one does, corrections land in this one file and nowhere else.
+Verified against a live SigNoz v0.117.1 (EE) on 2026-09-29: the v5 request is
+accepted, real log records come back, and service/severity/trace/timestamp
+parse correctly. The corrections that verification forced - service.name is
+in resources_string not at the top of data, the query filter uses
+{"expression": ...} - all landed in this one file, which is the point of the
+boundary. The request shape and parse are no longer a guess.
 """
 
 from __future__ import annotations
@@ -177,7 +179,16 @@ class SigNozProvider:
 
     def _normalize(self, response: dict[str, Any],
                    query: LogFilter) -> list[RawRecord]:
-        """Vendor JSON -> canonical RawRecord. The boundary P6 talks about."""
+        """Vendor JSON -> canonical RawRecord. The boundary P6 talks about.
+
+        Shapes below were read off a live v0.117 instance, not the published
+        docs. A v5 raw logs row is {"timestamp": ..., "data": {...}}, and the
+        data holds: body, severity_text, and three attribute bags -
+        attributes_string / attributes_number / resources_string. service.name
+        lives in resources_string, NOT at the top of data, which is why service
+        came back empty before and every SigNoz record grouped as one blob.
+        """
+        from aegis.l1_ingestion.tabular import flatten_fields
         records: list[RawRecord] = []
         results = (((response.get("data") or {}).get("data") or {})
                    .get("results") or (response.get("data") or {}).get("results") or [])
@@ -187,21 +198,31 @@ class SigNozProvider:
                 text = str(data.get("body") or data.get("log") or "")
                 if not text:
                     continue
-                # Same rule as the MCP path: a row's other columns - status
-                # code, duration, http route, span kind - are the numbers
-                # detection works on, and dropping them left every SigNoz
-                # record as bare prose.
-                from aegis.l1_ingestion.tabular import flatten_fields
-                extras = [pair for pair in flatten_fields(
-                    {k: v for k, v in data.items()
-                     if k not in ("body", "log")})
-                    if pair.split("=", 1)[0] not in text]
+                resources = data.get("resources_string") or {}
+                attrs_s = data.get("attributes_string") or {}
+                attrs_n = data.get("attributes_number") or {}
+                # Severity and trace id are what a run's story is stitched from;
+                # neither is in the body, so prepend them where the parser and
+                # the correlator will see them.
+                severity = str(data.get("severity_text") or "").strip()
+                trace = str(attrs_s.get("trace_id") or "").strip()
+                prefix = " ".join(
+                    part for part in (severity, f"trace={trace}" if trace else "")
+                    if part)
+                if prefix:
+                    text = prefix + " " + text
+                # A row's other columns - status code, duration, http route -
+                # are the numbers detection works on; dropping them left every
+                # SigNoz record as bare prose.
+                extras = [pair for pair in flatten_fields({**attrs_s, **attrs_n})
+                          if pair.split("=", 1)[0] not in text]
                 if extras:
                     text = text + " " + " ".join(extras)
                 records.append(RawRecord(
                     source_id=f"signoz:{query.service or 'all'}",
                     payload=text,
-                    service=str(data.get("service.name") or query.service),
+                    service=str(resources.get("service.name")
+                                or data.get("service.name") or query.service or ""),
                     collected_at=str(row.get("timestamp") or ""),
                 ))
         return records
