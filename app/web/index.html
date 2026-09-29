@@ -83,6 +83,20 @@
       content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
       background: var(--glow);
     }
+    /* A second, softer glow that drifts slowly - gives the page depth and a
+       sense of being alive rather than a flat panel. Very restrained. */
+    body::after {
+      content: ""; position: fixed; inset: -20%; z-index: 0; pointer-events: none;
+      background: radial-gradient(40% 40% at 70% 15%,
+        color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 70%);
+      filter: blur(30px); opacity: .7;
+      animation: drift 26s ease-in-out infinite alternate;
+    }
+    @keyframes drift {
+      0%   { transform: translate(-4%, -2%) scale(1);    opacity: .55; }
+      100% { transform: translate(6%, 4%)  scale(1.15);  opacity: .8; }
+    }
+    @media (prefers-reduced-motion: reduce) { body::after { animation: none; } }
     .app { position: relative; z-index: 1; }
     /* Numbers wherever they carry weight: sharp, bold, tabular. */
     .stat-num, .metric-num, .port-num, .num { font-family: var(--num-font);
@@ -127,8 +141,12 @@
     /* ---------- main ---------- */
     .main { min-width: 0; display: flex; flex-direction: column; }
     .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
-      gap: 12px; padding: 11px 22px; background: color-mix(in srgb, var(--bg) 88%, transparent);
-      backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+      gap: 12px; padding: 11px 22px; background: color-mix(in srgb, var(--bg) 72%, transparent);
+      backdrop-filter: blur(14px); border-bottom: 1px solid var(--line-soft); }
+    /* The run status, moved up from the bottom-left rail into the top strip. */
+    .statusline { display: flex; align-items: center; gap: 18px; margin-left: 4px; }
+    .stat-inline { font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+    .stat-inline b { color: var(--text); font-weight: 600; margin-left: 3px; }
     .crumb { font-weight: 650; font-size: 15px; }
     .chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line);
       background: var(--surface); border-radius: 99px; padding: 4px 11px;
@@ -762,7 +780,6 @@
     </nav>
     <div class="rail-foot">
       <button class="icon-btn" id="themeBtn" title="Switch theme">◐ Theme</button>
-      <span class="faint" style="font-size:11px" id="topline"></span>
     </div>
   </aside>
 
@@ -771,6 +788,7 @@
       <span class="crumb" id="viewTitle">Overview</span>
       <span class="chip" id="headSource" onclick="location.hash='#/settings'"><span class="dot"></span>
         <span id="headSourceText">no source</span></span>
+      <span class="statusline" id="topline"></span>
       <span class="grow"></span>
       <span class="chip" id="backendBadge" hidden>pattern matches only</span>
       <span class="chip" id="profilePill" hidden></span>
@@ -1176,13 +1194,17 @@
     }
     function renderTopline() {
       const el = document.getElementById('topline');
-      el.innerHTML = [
-        badge('Status: ' + state.status.toUpperCase()),
-        badge('Current: ' + (state.current_label || (state.metrics && state.metrics.total_events ? 'running' : 'no source attached'))),
-        badge('Confidence: ' + state.confidence + '%'),
-        badge('Events: ' + state.metrics.total_events),
-        badge('Retries: ' + state.metrics.retries)
-      ].join('');
+      if (!el) return;
+      const m = state.metrics || {};
+      function stat(label, value) {
+        return '<span class="stat-inline">' + escapeHtml(label) +
+          ' <b class="num">' + escapeHtml(String(value)) + '</b></span>';
+      }
+      el.innerHTML =
+        stat('status', (state.status || '—').toLowerCase()) +
+        stat('confidence', (state.confidence || 0) + '%') +
+        stat('events', m.total_events || 0) +
+        stat('retries', m.retries || 0);
     }
     function badge(text) { return '<span class="pill">' + escapeHtml(text) + '</span>'; }
     function renderStats() {
@@ -2961,15 +2983,11 @@
   }
 
   function renderProfile(state) {
-    // Which provider is actually being spent, visible at all times - a paid
-    // profile should never be a surprise discovered on an invoice.
+    // The provider pill was removed from the header at the user's request.
+    // Kept as a no-op so callers stay valid; the paid/free state still shows
+    // in Settings where spend decisions are actually made.
     var pill = aegisEl("profilePill");
-    var model = state.model || {};
-    if (!pill || !model.profile) return;
-    pill.hidden = false;
-    pill.textContent = (model.profile === "prod" ? "PAID · " : "free · ") +
-      (model.route || "");
-    pill.style.color = model.profile === "prod" ? "var(--warn)" : "var(--text-2)";
+    if (pill) pill.hidden = true;
   }
 
   function aegisRefresh() {
