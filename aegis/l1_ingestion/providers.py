@@ -37,22 +37,6 @@ from aegis.contracts.events import RawRecord
 
 # Where configured providers live. One file for the install (providers are
 # infrastructure, not per-project), never inside any project directory.
-
-
-# Where configured providers live. One file for the install (providers are
-# infrastructure, not per-project), never inside any project directory.
-
-
-# Where configured providers live. One file for the install (providers are
-# infrastructure, not per-project), never inside any project directory.
-
-
-# Where configured providers live. One file for the install (providers are
-# infrastructure, not per-project), never inside any project directory.
-
-
-# Where configured providers live. One file for the install (providers are
-# infrastructure, not per-project), never inside any project directory.
 REGISTRY_PATH = Path(os.path.expanduser("~/.aegis/providers.json"))
 
 
@@ -113,6 +97,38 @@ def _http_post(url: str, headers: dict[str, str], body: dict[str, Any],
                  "User-Agent": "aegis-log-agent/0.1", **headers}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+# Environments as they actually arrive, which is inconsistently. Measured on a
+# live SigNoz across five services: most set deployment.environment, some set
+# deployment.environment.name instead, and some set the literal string
+# "unknown". Reading one key and giving up made two of five services unlabelled
+# - and the fix cannot be "go and reconfigure every app", because the whole
+# point is to work with the telemetry a project already emits.
+_ENV_KEYS = ("deployment.environment", "deployment.environment.name",
+             "env", "environment", "host.name")
+_ENV_HINTS = (("prod", "PROD"), ("uat", "UAT"), ("stag", "STAGING"),
+              ("dev", "DEV"), ("test", "TEST"), ("local", "LOCAL"))
+
+
+def _environment_of(resources: dict[str, Any]) -> str:
+    """Which deployment a record came from, from whatever the service set.
+
+    Falls back to the service NAME when the attribute is missing or literally
+    "unknown": cbt-uat-crm is plainly UAT, and saying so is more useful than
+    printing "unknown" next to it. Marked with a trailing ? so a reader can
+    tell a declared environment from an inferred one - guessing silently would
+    be worse than the gap.
+    """
+    for key in _ENV_KEYS:
+        value = str(resources.get(key) or "").strip()
+        if value and value.lower() not in ("unknown", "none", "null"):
+            return value
+    name = str(resources.get("service.name") or "").lower()
+    for token, label in _ENV_HINTS:
+        if token in name:
+            return label + "?"
+    return ""
 
 
 class SigNozProvider:
@@ -227,8 +243,7 @@ class SigNozProvider:
                     # a reader can act on; "5 records from cbt-uat-crm (UAT)"
                     # tells them whether they are looking at the right system at
                     # all - and prod and UAT logs look identical otherwise.
-                    host=str(resources.get("deployment.environment")
-                             or resources.get("host.name") or ""),
+                    host=_environment_of(resources),
                     collected_at=str(row.get("timestamp") or ""),
                 ))
         return records

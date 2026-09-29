@@ -123,6 +123,40 @@ def test_a_real_v5_row_parses_service_severity_and_numbers():
     assert "api_method=/api/method/ping" in rec.payload, "attribute was dropped"
 
 
+def test_the_environment_is_read_however_the_service_declared_it():
+    """Measured across five live services: most set deployment.environment,
+    some set deployment.environment.name instead, and some set the literal
+    "unknown". Reading one key left two of five unlabelled, and "reconfigure
+    every app" is not an answer - the point is to work with the telemetry a
+    project already emits."""
+    from aegis.l1_ingestion.providers import _environment_of
+
+    assert _environment_of({"deployment.environment": "PROD"}) == "PROD"
+    # gateway-ms really does use this key, and was being dropped entirely
+    assert _environment_of({"deployment.environment.name": "UAT"}) == "UAT"
+
+
+def test_a_useless_environment_falls_back_to_the_service_name():
+    """cbt-dev-crm declaring "unknown" is worse than no value: it occupies the
+    slot with nothing. The name plainly says dev, so say so - marked with ? so
+    an inferred environment can never be mistaken for a declared one."""
+    from aegis.l1_ingestion.providers import _environment_of
+
+    assert _environment_of({"service.name": "cbt-dev-crm",
+                            "deployment.environment": "unknown"}) == "DEV?"
+    assert _environment_of({"service.name": "cbt-uat-crm"}) == "UAT?"
+
+
+def test_an_environment_that_cannot_be_known_is_left_blank():
+    """destiin-cbt-v2 says nothing about where it runs. Guessing would be worse
+    than the gap - a wrong PROD label is how someone debugs the wrong system."""
+    from aegis.l1_ingestion.providers import _environment_of
+
+    assert _environment_of({"service.name": "destiin-cbt-v2",
+                            "deployment.environment": "unknown"}) == ""
+    assert _environment_of({}) == ""
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
