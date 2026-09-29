@@ -2213,19 +2213,6 @@
           hypBlock(inc.hypothesis);
         // The one label no code can infer: did the fix actually work? Without
         // it every precedent reads "outcome: not recorded" forever.
-        if (inc.outcome) {
-          body += '<div class="note-line"><b>outcome recorded</b> · ' +
-            aegisEsc(inc.outcome.replace(/_/g, " ")) + "</div>";
-        } else if (inc.hypothesis) {
-          body += '<div class="note-line" style="margin-top:10px"><b>did this diagnosis hold up?</b>' +
-            " (teaches memory - future similar incidents cite it)</div>" +
-            '<div class="row" style="gap:8px">' +
-            ["worked", "did_not_work", "wrong_diagnosis"].map(function (o) {
-              return '<button class="btn" data-aegis-outcome="' +
-                aegisEsc(inc.id) + "|" + o + '">' +
-                o.replace(/_/g, " ") + "</button>";
-            }).join("") + "</div>";
-        }
         var fixBusy = !!aegisFixBusy[inc.id];
         body += '<div class="note-line" style="margin-top:12px;"><b>propose a fix</b>' +
           " (draft only - your repo is read, never written)</div>" +
@@ -2300,6 +2287,26 @@
           body += '<div class="row" style="margin-top:6px">' +
             '<button class="btn" data-aegis-proposal="' + aegisEsc(inc.id) +
             '">View full proposal</button></div>';
+        }
+        // The one label no code can infer: did the fix actually work? Asked
+        // LAST and only once something has been tried - a patch applied, or a
+        // proposal read. Asked earlier (it used to render before "propose a
+        // fix", on nothing more than a hypothesis existing) it is a question
+        // nobody can answer yet, and an answer given before the test is worse
+        // than none: memory cites it at the next similar incident.
+        var applied = (aegisApplyOut[inc.id] || {}).ok;
+        if (inc.outcome) {
+          body += '<div class="note-line" style="margin-top:12px"><b>outcome recorded</b> · ' +
+            aegisEsc(inc.outcome.replace(/_/g, " ")) + "</div>";
+        } else if (applied || (bundle && bundle.ok)) {
+          body += '<div class="note-line" style="margin-top:14px"><b>did this fix hold up?</b>' +
+            " (teaches memory - future similar incidents cite it)</div>" +
+            '<div class="row" style="gap:8px;margin-top:6px">' +
+            ["worked", "did_not_work", "wrong_diagnosis"].map(function (o) {
+              return '<button class="btn" data-aegis-outcome="' +
+                aegisEsc(inc.id) + "|" + o + '">' +
+                o.replace(/_/g, " ") + "</button>";
+            }).join("") + "</div>";
         }
         body += "</div>";
       }
