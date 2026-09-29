@@ -3323,7 +3323,7 @@
         target.placeholder = "https://signoz.example.com";
         hint.textContent = "Queries the SigNoz HTTP API directly.";
       } else if (kind === "signoz-mcp") {
-        target.placeholder = "https://signoz.example.com (SIGNOZ_HOST)";
+        target.placeholder = "https://signoz.example.com (SIGNOZ_URL)";
         hint.textContent = "Runs SigNoz's own MCP server (uvx signoz-mcp-server) " +
           "and calls its fetch_traces_or_logs tool. Needs uvx on this machine.";
       } else if (kind === "opik-mcp") {
@@ -3399,7 +3399,7 @@
         entry.api_key = key;
       } else if (kind === "signoz-mcp") {
         entry.preset = "signoz-mcp";
-        entry.env = { SIGNOZ_HOST: target, SIGNOZ_API_KEY: key };
+        entry.env = { SIGNOZ_URL: target, SIGNOZ_API_KEY: key };
       } else if (kind === "opik-mcp") {
         entry.preset = "opik-mcp";
         entry.env = { OPIK_WORKSPACE: target || "default", OPIK_API_KEY: key };

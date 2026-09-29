@@ -25,10 +25,12 @@ def test_signoz_needs_a_url_and_mcp_needs_a_tool():
 
 
 def test_presets_carry_the_vendors_real_tool_names():
-    """The tool names were verified against the vendors' published docs, not
-    guessed - a wrong tool name means a connector that silently returns
-    nothing."""
-    assert MCP_PRESETS["signoz-mcp"]["logs_tool"] == "fetch_traces_or_logs"
+    """The tool names must match the vendor's real ones - a wrong name is a
+    connector that silently returns nothing. signoz_search_logs was confirmed
+    against github.com/SigNoz/signoz-mcp-server and the official docs, and a
+    live v0.117 instance, in Sept 2026. The old value fetch_traces_or_logs was
+    a guess and was wrong."""
+    assert MCP_PRESETS["signoz-mcp"]["logs_tool"] == "signoz_search_logs"
     assert "opik-mcp" in MCP_PRESETS
     assert {p["id"] for p in preset_choices()} == set(MCP_PRESETS)
 
@@ -38,7 +40,7 @@ def test_a_preset_fills_in_the_tool_for_the_user():
     assert registry.add({"name": "sig", "kind": "mcp", "preset": "signoz-mcp"})["ok"]
     import json
     stored = json.loads(registry.path.read_text())[0]
-    assert stored["logs_tool"] == "fetch_traces_or_logs"
+    assert stored["logs_tool"] == "signoz_search_logs"
     assert stored["command"] == MCP_PRESETS["signoz-mcp"]["command"]
 
 

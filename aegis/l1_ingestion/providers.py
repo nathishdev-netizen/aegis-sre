@@ -395,13 +395,6 @@ class McpProvider:
         # A detail read costs thousands of tokens of reply, so each id is
         # fetched at most once for the life of the connector.
         self._detail_cache: dict[str, str] = {}
-        # A detail read costs thousands of tokens of reply, so each id is
-        # fetched at most once for the life of the connector.
-        self._detail_cache: dict[str, str] = {}
-        self.last_error = ""
-        self.last_error = ""
-        self.last_error = ""
-        self.last_error = ""
 
     def capabilities(self) -> set[str]:
         return {"logs"}
@@ -578,12 +571,16 @@ class McpProvider:
 MCP_PRESETS: dict[str, dict[str, Any]] = {
     "signoz-mcp": {
         "label": "SigNoz (MCP server)",
-        # https://github.com/SigNoz/signoz-mcp-server
-        "command": ["uvx", "signoz-mcp-server"],
-        "logs_tool": "fetch_traces_or_logs",
-        "arguments": {"type": "logs"},
-        "probe_tool": "test_connection",
-        "env_hint": "SIGNOZ_HOST / SIGNOZ_API_KEY",
+        # github.com/SigNoz/signoz-mcp-server and signoz.io/docs/ai/signoz-mcp-server.
+        # Verified against a live v0.117 instance and the official docs, Sept
+        # 2026 - every field below was previously wrong: it is a Go binary, not
+        # a `uvx` python package; the logs tool is signoz_search_logs, not
+        # fetch_traces_or_logs; it reads SIGNOZ_URL, not SIGNOZ_HOST.
+        "command": ["signoz-mcp-server"],  # the downloaded Go binary, on PATH
+        "logs_tool": "signoz_search_logs",
+        "arguments": {},
+        "probe_tool": "signoz_search_logs",
+        "env_hint": "SIGNOZ_URL / SIGNOZ_API_KEY (same key as the HTTP API)",
     },
     "opik-mcp": {
         "label": "Opik / Comet (MCP server)",
