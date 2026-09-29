@@ -611,10 +611,6 @@ class AegisApp:
             # a field nothing ever set - so the panel said "not generated yet"
             # even immediately after generating one.
             "understanding": self._project_brief(),
-            # What a connector has actually read. A connector has no Live
-            # Brief - that is v1's runtime, which never sees these records -
-            # so this is the only place the page can show what is arriving.
-            "recent": list(self.provider_recent[:8]),
             "stats": stats,
             "funnel": [
                 ("log lines", stats["lines_in"]),
