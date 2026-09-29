@@ -3731,18 +3731,30 @@
     ]).then(function (both) {
       var source = (both[0].state || {}).source || {};
       var aegis = both[1] || {};
+      // Aegis now says outright WHAT it is reading - file, port or connector -
+      // instead of the UI inferring it. The old code read aegis.streaming_from,
+      // which /api/aegis/state never returned (it lives on the providers
+      // payload), so a live connector never registered as streaming and the
+      // chip kept showing whatever file v1 had seen last, long after the source
+      // had changed.
+      var desc = aegis.source || {};
       var watchingFile = source.type && source.type !== "idle";
-      var streaming = !!aegis.streaming_from;
-      var attached = watchingFile || streaming;
-      // The chip already says "watching", and v1's label is the sentence
-      // "Watching local log file" - so the two ran together as "watching
-      // Watching local log file". The file's own name is both shorter and
-      // more useful: it says WHICH log, which the generic label never did.
-      var label = streaming
-        ? aegis.streaming_from + " (connector)"
-        : (source.path
-             ? source.path.split("/").pop()
-             : (source.label || "source"));
+      var label, attached;
+      if (desc.kind === "connector") {
+        label = desc.name + " (connector)";
+        attached = true;
+      } else if (watchingFile) {
+        label = source.via_port
+          ? source.path.split("/").pop() + " (port " + source.via_port + ")"
+          : source.path.split("/").pop();
+        attached = true;
+      } else if (desc.kind === "file") {
+        label = String(desc.name).split("/").pop();
+        attached = true;
+      } else {
+        label = "source";
+        attached = false;
+      }
       setSourceChip(label, attached);
       var onboard = document.getElementById("onboardCard");
       var brief = document.getElementById("briefBlock");

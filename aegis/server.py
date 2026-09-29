@@ -485,9 +485,39 @@ class AegisApp:
 
     # -- views ---------------------------------------------------------------
 
+    def _source_descriptor(self) -> dict:
+        """What is actually being read, right now.
+
+        Three kinds, and they must never be confused: a local log FILE, a local
+        PORT whose log file was resolved for you, or a CONNECTOR streamed from a
+        vendor. The UI was inferring this from the shape of log_path, which
+        cannot tell a live connector from a leftover one - provider://X with
+        provider_source empty means nothing is being read at all, and that is
+        exactly the state that kept showing a stale "watching chatbot.log".
+        """
+        path = str(self.log_path or "")
+        if path.startswith("provider://"):
+            name = self.provider_source or ""
+            if not name:
+                return {"kind": "none", "label": "not reading anything",
+                        "detail": "a connector was selected but is not streaming",
+                        "healthy": False}
+            return {"kind": "connector", "name": name,
+                    "label": "streaming " + name,
+                    "detail": getattr(self, "provider_service", "") or "",
+                    "healthy": True}
+        if path:
+            return {"kind": "file", "name": path,
+                    "label": "reading " + path.rsplit("/", 1)[-1],
+                    "detail": path, "healthy": True}
+        return {"kind": "none", "label": "not reading anything",
+                "detail": "", "healthy": False}
+
     def state(self) -> dict:
         if self.pipeline is None:
             return {"attached": False, "sources": self.sources(),
+                    "source": {"kind": "none", "label": "not reading anything",
+                               "detail": "", "healthy": False},
                     "model": {"profile": active_profile(),
                               "route": ":".join(_route_for("explain_incident")),
                               "available": self.router.available(),
@@ -554,6 +584,11 @@ class AegisApp:
             "attached": True,
             "project": self.project,
             "log_path": self.log_path,
+            # WHAT is being watched, said plainly rather than left for the UI to
+            # infer from a "provider://" prefix. A stale log_path and an empty
+            # streaming_from looked identical to a live connector, so the header
+            # kept claiming a source that was no longer being read.
+            "source": self._source_descriptor(),
             "stats": stats,
             "funnel": [
                 ("log lines", stats["lines_in"]),
