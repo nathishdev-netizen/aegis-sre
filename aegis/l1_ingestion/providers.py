@@ -128,10 +128,6 @@ class SigNozProvider:
         self.quota = quota or QuotaGuard()
         self.cache = cache or QueryCache()
         self.last_error = ""
-        self.last_error = ""
-        self.last_error = ""
-        self.last_error = ""
-        self.last_error = ""
 
     def capabilities(self) -> set[str]:
         return {"logs"}
@@ -664,8 +660,23 @@ class ProviderRegistry:
             return {"ok": False, "detail": "kind must be 'signoz' or 'mcp'"}
         if kind == "signoz" and not str(entry.get("base_url", "")).startswith("http"):
             return {"ok": False, "detail": "signoz needs a base_url (http…)"}
+        # A preset is the whole point of presets: the user picks "SigNoz (MCP
+        # server)" and does not have to know that its logs tool is called
+        # fetch_traces_or_logs. Filling it in here means a wrong tool name
+        # cannot be typed at all, and the vendor's real names live in exactly
+        # one place. Anything the user set explicitly wins.
+        preset = MCP_PRESETS.get(str(entry.get("preset", "")).strip())
+        if kind == "mcp" and preset:
+            entry = {**{k: v for k, v in preset.items() if k != "label"}, **entry}
         if kind == "mcp" and not entry.get("command"):
             return {"ok": False, "detail": "an mcp provider needs a command to run"}
+        if kind == "mcp" and not entry.get("logs_tool"):
+            # Without it there is nothing to call, and the connector would
+            # register happily and then return zero records forever - the
+            # failure mode this whole layer exists to avoid.
+            return {"ok": False, "detail":
+                    "an mcp provider needs a logs_tool (the tool that returns "
+                    "log records) - or pick a preset, which fills it in"}
         entries = [e for e in self._load() if e.get("name") != name]
         entries.append({k: v for k, v in entry.items() if v not in (None, "")})
         self._save(entries)
@@ -707,6 +718,16 @@ class ProviderRegistry:
                     "detail": self._live.get(name, {}).get("detail", "unknown provider")}
         try:
             records = provider.query_logs(LogFilter(since_minutes=15, limit=5))
+            # query_logs SWALLOWS transport failures by design - a dead provider
+            # must not stall detection - and records the reason instead of
+            # raising. So an empty list means either "nothing matched" or "could
+            # not reach it", and only last_error tells them apart. Reading it is
+            # the difference between a connector that reports it is down and one
+            # that reports "0 records" and looks healthy.
+            failure = getattr(provider, "last_error", "")
+            if failure:
+                self._live[name] = {"status": "error", "detail": failure}
+                return {"ok": False, "name": name, "detail": failure}
             self._live[name] = {"status": "ok",
                                 "detail": f"{len(records)} record(s) in the last 15m"}
             return {"ok": True, "name": name, "records": len(records),
