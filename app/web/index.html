@@ -364,7 +364,7 @@
     .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em;
       text-transform: uppercase; color: var(--text-3); margin: 0 0 7px; }
     /* Picking one service out of a backend that holds many. */
-    .conn-services { flex-basis: 100%; margin-top: 8px; display: flex;
+    .conn-services { grid-column: 1 / -1; margin-top: 8px; display: flex;
       flex-wrap: wrap; gap: 6px; }
     .conn-svc { display: inline-flex; align-items: center; gap: 7px; }
     .conn-svc .hint { font-family: var(--num-font); font-variant-numeric: tabular-nums; }
@@ -773,17 +773,22 @@
       text-transform: uppercase; }
     .gap .w { font-size: 13px; margin: 3px 0; }
     .gap .m { font-size: 11.5px; color: var(--text-3); }
-    /* A connector row: identity on the left, actions right-aligned, and the
-       service list on its own line beneath. Four buttons in one flat flex row
-       pushed the target text to a sliver and wrapped unpredictably. */
-    .conn { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px;
-      align-items: center; padding: 14px 2px;
+    /* The default row - ports, suggestions, stored data: name, description, one
+       action, all on one line. */
+    .conn { display: flex; align-items: center; gap: 11px; padding: 11px 2px;
       border-bottom: 1px solid var(--line-soft); }
     .conn:last-child { border-bottom: none; }
-    .conn .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .conn .nm { font-weight: 620; white-space: nowrap; }
-    .conn .tg { grid-column: 1; color: var(--text-3); font-size: 11.5px;
+    .conn .tg { color: var(--text-3); font-size: 11.5px; flex: 1; min-width: 0;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* A CONNECTOR row carries three actions and a service list, which does not
+       fit one flat line - the target text was squeezed to a sliver. Only this
+       row becomes a grid; scoping it by .has-acts keeps the rows above intact,
+       which an unscoped rule broke. */
+    .conn.has-acts { display: grid; grid-template-columns: 1fr auto;
+      gap: 4px 14px; align-items: center; padding: 14px 2px; }
+    .conn .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .conn.has-acts .tg { grid-column: 1; flex: none; }
     .conn .acts { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 7px;
       align-items: center; }
     .conn .acts .btn { padding: 7px 13px; font-size: 12.5px; }
@@ -2927,7 +2932,7 @@
         label = streaming ? "STREAMING · NO DATA" : "NO DATA";
         tone = "empty";
       }
-      return '<div class="conn">' +
+      return '<div class="conn has-acts">' +
         '<div class="who"><span class="nm">' + aegisEsc(c.name) + "</span>" +
         '<span class="tag st-' + tone + '">' + label + "</span></div>" +
         '<span class="tg">' + aegisEsc(c.target) +
