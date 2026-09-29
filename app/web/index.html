@@ -355,8 +355,12 @@
     .btn.primary:hover { background: #e9e9ec; border-color: #e9e9ec; }
     .btn.ghost { background: transparent; border-color: var(--line); color: var(--text-2); }
     .btn:disabled { opacity: .45; cursor: default; }
-    .input { background: var(--bg); border: 1px solid var(--line); color: var(--text);
-      border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none; width: 100%; }
+    .input { background: rgba(0,0,0,.25); border: 1px solid var(--btn-edge); color: var(--text);
+      border-radius: 0; padding: 11px 13px; font-size: 13px; outline: none; width: 100%; }
+    .input:focus { border-color: var(--accent); }
+    .input::placeholder { color: var(--text-3); }
+    .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase; color: var(--text-3); margin: 0 0 7px; }
     .input:focus { border-color: var(--accent); }
     .row { display: flex; gap: 8px; align-items: center; }
     .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
@@ -988,6 +992,7 @@
           <b>supposed</b> to do: routes, external calls, what is guarded and what is not.
           Everything is derived by parsing - no model reads your code.</div>
         <div class="card">
+          <label class="field-label">Repository path</label>
           <div class="row">
             <input class="input" id="anaRepo" placeholder="/path/to/this/service's repo">
             <button class="btn primary" id="anaBtn">Analyze</button>
@@ -2145,11 +2150,12 @@
         var fixBusy = !!aegisFixBusy[inc.id];
         body += '<div class="note-line" style="margin-top:12px;"><b>propose a fix</b>' +
           " (draft only - your repo is read, never written)</div>" +
+          '<label class="field-label" style="margin-top:10px">Repository path</label>' +
           '<div class="aegis-fix-row">' +
-          '<input placeholder="/path/to/the/service\u2019s repo" data-aegis-repo="' +
+          '<input class="input" placeholder="/path/to/the/service\u2019s repo" data-aegis-repo="' +
           aegisEsc(inc.id) + '" value="' +
           aegisEsc(aegisRepoDraft[inc.id] || savedRepo()) + '">' +
-          '<button class="btn ghost" data-aegis-fix="' + aegisEsc(inc.id) + '"' +
+          '<button class="btn" data-aegis-fix="' + aegisEsc(inc.id) + '"' +
           (model.available && !fixBusy ? "" : " disabled") + ">" +
           (fixBusy ? "working…" : "Propose fix") + "</button></div>";
         var fixResult = aegisFixOut[inc.id];
