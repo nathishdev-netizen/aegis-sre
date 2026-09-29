@@ -65,6 +65,28 @@ NEW_ENTRY_PATTERN = re.compile(
 )
 
 
+def continues_open_traceback(line: str, previous_was_continuation: bool) -> bool:
+    """Whether a BLANK line still belongs to the entry above it.
+
+    Loguru's diagnostic tracebacks put a blank line between frame groups:
+
+        └ <function ask_with_lead at 0x112ee5e40>
+                                                    <- blank
+      File ".../agents/orchestrator.py", line 1910
+
+    A blank ends a continuation everywhere else, so that blank severed the
+    traceback and every frame after it was orphaned from its error. The
+    frames left on the ERROR event were the framework's (langgraph, asyncio)
+    and the one naming the code that actually raised was gone - which is why
+    Propose fix mapped to the `except` handler that caught the failure
+    instead. Only a blank DIRECTLY inside an open continuation is kept; a
+    blank between two ordinary entries still separates them.
+    """
+    if strip_ansi(line or "").strip():
+        return False
+    return previous_was_continuation
+
+
 def is_continuation(line: str) -> bool:
     """Whether a line continues the previous log entry instead of starting a new one."""
     text = strip_ansi(line or "").rstrip()
