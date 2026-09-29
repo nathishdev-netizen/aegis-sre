@@ -2886,6 +2886,12 @@
     'been seen 10+ times.</td></tr>';
   }
 
+  // What each connector's service picker is showing, kept OUTSIDE the render.
+  // renderConnectors rewrites connList.innerHTML wholesale every 8 seconds, so
+  // a picker opened by hand was wiped mid-read - the services appeared and then
+  // vanished a few seconds later, which looked like the connector disappearing.
+  var connPickerHtml = {};
+
   function renderConnectors(payload) {
     var list = payload.providers || [];
     var live = payload.streaming_from || "";
@@ -2922,6 +2928,16 @@
     }).join("") ||
     '<div class="hint">No connectors yet. Local ports show you now; connectors ' +
     'add weeks of history and the services you do not run locally.</div>';
+    // Put any open service picker back: the wholesale innerHTML rewrite above
+    // just destroyed it, and a list that vanishes while you are reading it is
+    // indistinguishable from the connector itself disappearing.
+    Object.keys(connPickerHtml).forEach(function (nm) {
+      var box = document.querySelector('[data-conn-list="' + nm + '"]');
+      if (box && connPickerHtml[nm]) {
+        box.innerHTML = connPickerHtml[nm];
+        box.hidden = false;
+      }
+    });
     badge("navConnBadge", list.length, true);
   }
 
@@ -3201,7 +3217,7 @@
     if (svcBtn) {
       var svcName = svcBtn.getAttribute("data-conn-services");
       var box = document.querySelector('[data-conn-list="' + svcName + '"]');
-      if (box && !box.hidden) { box.hidden = true; return; }
+      if (box && !box.hidden) { box.hidden = true; delete connPickerHtml[svcName]; return; }
       svcBtn.disabled = true;
       var was = svcBtn.textContent;
       svcBtn.textContent = "looking…";
@@ -3217,6 +3233,7 @@
             box.innerHTML = '<div class="hint">' +
               aegisEsc(rep.detail || "no services found in the last 6 hours") +
               "</div>";
+            connPickerHtml[svcName] = box.innerHTML;
             return;
           }
           box.innerHTML = '<div class="hint" style="margin:10px 0 7px">' +
@@ -3235,6 +3252,7 @@
             aegisEsc(svcName) + '|">Everything' +
             ' <span class="hint">all ' + aegisEsc(rep.services.length) +
             "</span></button>";
+          connPickerHtml[svcName] = box.innerHTML;
         })
         .catch(function () { svcBtn.disabled = false; svcBtn.textContent = was; });
       return;
@@ -3247,7 +3265,10 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: parts[0], service: parts[1] }),
       }).then(function (r) { return r.json(); })
-        .then(function () { refreshConnectors(); aegisRefresh(); })
+        .then(function () {
+          delete connPickerHtml[parts[0]];
+          refreshConnectors(); aegisRefresh();
+        })
         .catch(function () { pick.disabled = false; });
       return;
     }

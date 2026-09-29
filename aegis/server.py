@@ -125,8 +125,12 @@ class AegisApp:
         return self.registry.add(entry)
 
     def remove_provider(self, name: str) -> dict:
+        # Removing the connector currently being streamed has to detach too,
+        # for the same reason stopping does: a cleared provider_source beside a
+        # live pipeline and a "provider://" log_path is a half-state the page
+        # cannot describe.
         if self.provider_source == name:
-            self.provider_source = ""
+            self.stream_provider("")
         return self.registry.remove(str(name))
 
     def check_provider(self, name: str) -> dict:
@@ -142,7 +146,25 @@ class AegisApp:
         """Attach the pipeline to a provider instead of a local file."""
         name = str(name).strip()
         if not name:
+            # Stopping must tear the source DOWN, not just stop polling it.
+            # Clearing provider_source alone left log_path "provider://signoz"
+            # and the pipeline alive - a state that is neither attached nor
+            # detached, so the page reported "not reading anything" while the
+            # funnel still showed 502 ingested events, and panels gated on the
+            # source vanished.
+            with self._lock:
+                if self.pipeline is not None:
+                    try:
+                        self.pipeline.close()
+                    except Exception:
+                        pass
+                self.pipeline = None
+                self.log_path = ""
+                self.project = ""
+                self.provider_recent = []
+                self._provider_seen = set()
             self.provider_source = ""
+            self.provider_service = ""
             return {"ok": True, "streaming_from": ""}
         check = self.registry.check(name)
         if not check.get("ok"):
