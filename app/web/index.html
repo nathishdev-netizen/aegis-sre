@@ -1161,8 +1161,8 @@
                    logs the HTTP option already reads with nothing to install. One
                    way to connect SigNoz, and it is the one that is verified. The
                    preset still exists in the backend for anyone who wants it. -->
-              <option value="signoz">SigNoz — HTTP API</option>
-              <option value="opik-mcp">Opik / Comet — MCP server</option>
+              <option value="signoz">SigNoz</option>
+              <option value="opik-mcp">Opik</option>
               <option value="mcp">Other MCP server</option>
             </select>
             <input class="input" id="connName" placeholder="name, e.g. prod-signoz" style="max-width:210px">
@@ -3176,8 +3176,12 @@
         .then(function (reply) {
           var msg = aegisEl("connMsg");
           if (msg) msg.textContent = reply.ok ?
-            (action === "check" ? connName + ": " + (reply.records || 0) +
-             " record(s) returned" : "") :
+            // reply.detail now names the services and environments the sample
+            // came from - a bare count could not tell prod from UAT.
+            (action === "check"
+              ? connName + ": " + (reply.detail ||
+                  ((reply.records || 0) + " record(s) returned"))
+              : "") :
             (connName + ": " + (reply.detail || "failed"));
           refreshConnectors();
           aegisRefresh();

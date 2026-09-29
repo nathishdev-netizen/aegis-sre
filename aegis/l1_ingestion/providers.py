@@ -223,6 +223,12 @@ class SigNozProvider:
                     payload=text,
                     service=str(resources.get("service.name")
                                 or data.get("service.name") or query.service or ""),
+                    # Which deployment these came from. "5 records" says nothing
+                    # a reader can act on; "5 records from cbt-uat-crm (UAT)"
+                    # tells them whether they are looking at the right system at
+                    # all - and prod and UAT logs look identical otherwise.
+                    host=str(resources.get("deployment.environment")
+                             or resources.get("host.name") or ""),
                     collected_at=str(row.get("timestamp") or ""),
                 ))
         return records
@@ -746,10 +752,26 @@ class ProviderRegistry:
             if failure:
                 self._live[name] = {"status": "error", "detail": failure}
                 return {"ok": False, "name": name, "detail": failure}
-            self._live[name] = {"status": "ok",
-                                "detail": f"{len(records)} record(s) in the last 15m"}
+            # A bare count is not an answer: "5 records" cannot tell the reader
+            # WHICH system they just connected to, and a prod and a UAT stream
+            # look identical from a number. Name the services and environments
+            # the sample actually came from.
+            services = sorted({r.service for r in records if r.service})
+            envs = sorted({r.host for r in records if r.host})
+            where = ""
+            if services:
+                where = " from " + ", ".join(services[:3])
+                if len(services) > 3:
+                    where += f" +{len(services) - 3} more"
+                if envs:
+                    where += " (" + ", ".join(envs[:2]) + ")"
+            detail = f"{len(records)} record(s) in the last 15m{where}"
+            self._live[name] = {"status": "ok", "detail": detail}
             return {"ok": True, "name": name, "records": len(records),
-                    "sample": [r.payload[:120] for r in records[:3]]}
+                    "detail": detail, "services": services, "environments": envs,
+                    "sample": [{"service": r.service, "env": r.host,
+                                "at": r.collected_at[:19],
+                                "text": r.payload[:140]} for r in records[:3]]}
         except Exception as exc:
             self._live[name] = {"status": "error",
                                 "detail": f"{exc.__class__.__name__}: {exc}"}
