@@ -563,19 +563,21 @@
     .ev-line:last-child { margin-bottom: 0; }
 
     .run[data-verdict] { cursor: pointer; }
-    .vd-more { font-size: 11px; color: var(--text-3); margin-top: 7px; }
+    .vd-more { font-size: 11.5px; color: var(--text-3); padding: 0 15px 13px; }
     .run.open .vd-more { color: var(--accent); }
-    .vd-body { margin-top: 10px; border-top: 1px solid var(--line);
-      padding-top: 9px; }
+    .vd-body { margin: 10px 0 0; border-top: 1px solid var(--line-soft);
+      padding: 11px 15px 14px; }
     .vd-sec { font-size: 10px; font-weight: 800; letter-spacing: .07em;
       text-transform: uppercase; color: var(--text-3); margin: 9px 0 5px; }
     .vd-sec:first-child { margin-top: 0; }
     .vd-exp { font-size: 12px; line-height: 1.55; padding: 2px 0; }
     .vd-exp.ran { color: var(--ok); }
     .vd-exp.missed { color: var(--bad); font-weight: 600; }
-    .vd-step { font-size: 11px; line-height: 1.5; color: var(--text-2);
-      font-family: var(--mono, ui-monospace, monospace); padding: 3px 0;
-      overflow-wrap: anywhere; }
+    .vd-step { font-size: 11.5px; line-height: 1.6; color: var(--text-2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      padding: 5px 0; overflow-wrap: anywhere; white-space: pre-wrap;
+      border-top: 1px solid var(--line-soft); }
+    .vd-step:first-of-type { border-top: none; }
     .vd-ts { color: var(--text-3); margin-right: 8px; }
 
     .sim-choice { font-size: 12px; padding: 5px 11px; }
@@ -683,7 +685,12 @@
     .stat .k { color: var(--text-3); font-size: 11px; margin-top: 4px; letter-spacing: .01em; }
 
     /* ---------- run cards ---------- */
-    .runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 10px; }
+    /* An expanded run shows its whole log line by line, which does not fit a
+       238px column - the text overflowed the card and ran under the one beside
+       it. Open cards take the full row; collapsed ones still tile. */
+    .runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 10px; align-items: start; }
+    .runs .run.open { grid-column: 1 / -1; }
     .run { background: var(--surface); border: none; box-shadow: var(--shadow);
       border-radius: var(--radius); padding: 0; overflow: hidden; }
     .run .head { padding: 12px 15px 10px; border-bottom: 1px solid var(--line-soft); }
@@ -934,10 +941,10 @@
 
       <!-- ============ RUNS ============ -->
       <div class="view" data-view-panel="runs" hidden>
-        <div class="section-title">Run verdicts</div>
+        <div class="section-title">Did each run actually work?</div>
         <div class="lede">Every completed run, judged against what a run of this kind is
-          supposed to do. <b class="v-hollow">Hollow</b> means it finished cleanly and
-          achieved nothing — the failure no error can show you.</div>
+          supposed to do. <b class="v-hollow">Finished, achieved nothing</b> is the one
+          worth looking for — a run that errored nowhere and still did not do its job.</div>
         <div id="aegisRunsPanel" hidden>
           <div class="runs" id="aegisVerdicts"></div>
           <div class="hint" id="aegisVerdictNote" style="margin-top:10px"></div>
@@ -1926,7 +1933,7 @@
       }
       return '<div class="run ' + v_ + (open ? " open" : "") +
         '" data-verdict="' + id + '"><div class="head">' +
-        '<span class="tag v-' + v_ + '">' + v_.toUpperCase() + "</span>" +
+        '<span class="tag v-' + v_ + '">' + aegisEsc(verdictLabel(v_)) + "</span>" +
         '<span class="meta">@' + aegisEsc(v.opened_at) + " \u00b7 " +
         aegisEsc(v.duration_s) + "s \u00b7 " + aegisEsc(v.events || 0) +
         " events</span></div><p>" + aegisEsc(v.reason) + "</p>" +
@@ -1936,9 +1943,23 @@
     }).join("");
     var marked = state.spec && state.spec.purpose_marked;
     aegisEl("aegisVerdictNote").textContent = verdicts.length && !marked ?
-      "Verdicts stay unknown until purpose steps are marked - use the button on the right." : "";
+      "Aegis can see what each run DID, but not what it was supposed to do - " +
+      "so it cannot say whether any of them worked. Mark the steps that matter " +
+      "(button on the right) and every run after that is judged against them." : "";
     aegisEl("aegisMarkBtn").hidden = !(state.spec && state.spec.exists && !marked);
   }
+
+  // The verdict in the reader's words. The raw enum was printed as-is, so a run
+  // nobody could judge announced itself as "UNKNOWN" - which sounds like a
+  // failure of the run rather than a gap in what Aegis was told to look for.
+  var VERDICT_LABEL = {
+    achieved: "Did its job",
+    hollow:   "Finished, achieved nothing",
+    failed:   "Failed",
+    degraded: "Worked, but abnormally",
+    unknown:  "Not judged yet",
+  };
+  function verdictLabel(v) { return VERDICT_LABEL[v] || v; }
 
   function hypBlock(h) {
     if (!h) return "";

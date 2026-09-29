@@ -106,8 +106,9 @@ class ConformanceEngine:
             evidence = [e.text_redacted.splitlines()[0][:160] for e in errored[:3]]
         elif not critical_steps:
             verdict, reason = "unknown", (
-                "no critical steps are marked in the spec, so whether this run"
-                " achieved anything cannot be judged")
+                "Nobody has said yet what this kind of run is FOR, so there is"
+                " nothing to judge it against. Mark the steps that matter and"
+                " every run after this one gets a real verdict.")
         elif not purpose_ran:
             verdict = "hollow"
             reason = ("completed cleanly - no errors, normal teardown - but none"
