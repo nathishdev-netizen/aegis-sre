@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Log Intelligence</title>
+  <title>Aegis</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
   <style>
     /* ============================================================
        Design tokens. Both themes are defined here and nowhere else,
@@ -15,39 +15,44 @@
        ============================================================ */
     :root, [data-theme="dark"] {
       color-scheme: dark;
-      --bg:        #0b0e14;
-      --bg-raised: #111621;
-      --surface:   #151b28;
-      --surface-2: #1a2130;
-      --line:      #232c3d;
-      --line-soft: #1b2231;
-      --text:      #e8edf5;
-      --text-2:    #9aabc2;
-      --text-3:    #6b7d96;
+      --bg:        #08080a;
+      --bg-raised: rgba(29,32,40,.80);
+      --surface:   rgba(21,23,29,.72);
+      --surface-2: rgba(33,37,47,.78);
+      --line:      rgba(255,255,255,.08);
+      --line-soft: rgba(255,255,255,.05);
+      --text:      #f4f4f5;
+      --text-2:    #a1a1aa;
+      --text-3:    #6b6b73;
       --accent:    #4c8dff;
-      --accent-bg: rgba(76,141,255,.13);
-      --ok:        #2fd48f;
-      --ok-bg:     rgba(47,212,143,.13);
-      --warn:      #f5b544;
-      --warn-bg:   rgba(245,181,68,.13);
-      --bad:       #ff6b6b;
-      --bad-bg:    rgba(255,107,107,.13);
+      --accent-bg: rgba(76,141,255,.15);
+      --ok:        #43c98d;
+      --ok-bg:     rgba(67,201,141,.13);
+      --warn:      #e0a94f;
+      --warn-bg:   rgba(224,169,79,.13);
+      --bad:       #ff5c5c;
+      --bad-bg:    rgba(255,92,92,.13);
       --hollow:    #b98cff;
       --hollow-bg: rgba(185,140,255,.14);
-      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
-      --radius:    10px;
+      --shadow:    0 1px 0 rgba(255,255,255,.03), 0 10px 34px rgba(0,0,0,.5);
+      --radius:    14px;
+      /* The backdrop: a strong blue radial glow at top-center, fading to
+         near-black corners. Depth and warmth instead of flat black. */
+      --glow:      radial-gradient(130% 100% at 50% -15%, #26344f 0%, #172032 30%, #0c1018 58%, #070709 100%);
+      --btn-edge:  rgba(255,255,255,.22);
+      --num-font:  'Chakra Petch', sans-serif;
     }
     [data-theme="light"] {
       color-scheme: light;
-      --bg:        #f6f8fb;
+      --bg:        #f4f5f7;
       --bg-raised: #ffffff;
       --surface:   #ffffff;
       --surface-2: #f2f5fa;
-      --line:      #e2e8f2;
-      --line-soft: #edf1f7;
-      --text:      #0f1826;
-      --text-2:    #56657c;
-      --text-3:    #8494ab;
+      --line:      rgba(0,0,0,.09);
+      --line-soft: rgba(0,0,0,.05);
+      --text:      #14161a;
+      --text-2:    #52525b;
+      --text-3:    #8a8a93;
       --accent:    #2563eb;
       --accent-bg: rgba(37,99,235,.09);
       --ok:        #0f9d63;
@@ -58,16 +63,30 @@
       --bad-bg:    rgba(220,38,38,.09);
       --hollow:    #7c3aed;
       --hollow-bg: rgba(124,58,237,.10);
-      --shadow:    0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
+      --shadow:    0 1px 2px rgba(15,23,42,.05), 0 8px 24px rgba(15,23,42,.06);
+      --radius:    14px;
+      --glow:      radial-gradient(130% 100% at 50% -15%, #ffffff 0%, #eef1f6 42%, #e7eaf0 100%);
+      --btn-edge:  rgba(0,0,0,.22);
+      --num-font:  'Chakra Petch', sans-serif;
     }
 
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body {
       margin: 0; background: var(--bg); color: var(--text);
-      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+      font: 14px/1.55 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
+      font-feature-settings: "cv11","ss01";
     }
+    /* The glow backdrop, fixed behind everything so it never scrolls away. */
+    body::before {
+      content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: var(--glow);
+    }
+    .app { position: relative; z-index: 1; }
+    /* Numbers wherever they carry weight: sharp, bold, tabular. */
+    .stat-num, .metric-num, .port-num, .num { font-family: var(--num-font);
+      font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px;
       border: 3px solid transparent; background-clip: content-box; }
@@ -75,14 +94,12 @@
 
     /* ---------- app frame ---------- */
     .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
-    .rail { background: var(--bg-raised); border-right: 1px solid var(--line);
+    .rail { background: transparent;
       display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
-    .rail-head { padding: 18px 16px 14px; }
+    .rail-head { padding: 20px 16px 10px; }
     .wordmark { display: flex; align-items: center; gap: 9px; font-weight: 700;
-      font-size: 15px; letter-spacing: -.01em; }
-    .spark { width: 22px; height: 22px; border-radius: 7px; flex: none;
-      background: linear-gradient(135deg, var(--accent), var(--hollow));
-      display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 800; }
+      font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--text-3); }
+    .spark { display: none; }
     .rail-sub { color: var(--text-3); font-size: 11.5px; margin-top: 7px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -126,8 +143,8 @@
     .content { padding: 22px; max-width: 1420px; width: 100%; }
 
     /* ---------- primitives ---------- */
-    .card { background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 16px 18px; }
+    .card { background: var(--surface); border: none;
+      border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
     .card + .card { margin-top: 12px; }
     .section-title { font-size: 11px; font-weight: 700; letter-spacing: .1em;
       text-transform: uppercase; color: var(--text-3); margin: 26px 0 10px; }
@@ -291,13 +308,12 @@
       border-radius: 14px; margin-top: 14px;
     }
     @media (prefers-reduced-motion: reduce) { .nf { transition: none; } }
-    .btn { background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
-      border-radius: 9px; padding: 7px 14px; font-size: 13px; font-weight: 560;
-      cursor: pointer; transition: transform .12s, border-color .12s, filter .12s,
-      box-shadow .12s; }
-    .btn:hover { border-color: var(--text-3); transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(0,0,0,.14); }
-    .btn:active { transform: translateY(0); }
+    .btn { background: transparent; border: 1px solid var(--btn-edge); color: var(--text);
+      border-radius: 0; padding: 9px 16px; font-size: 13px; font-weight: 600;
+      letter-spacing: .01em; cursor: pointer;
+      transition: border-color .12s, background .12s, filter .12s; }
+    .btn:hover { border-color: var(--text); background: var(--surface-2); }
+    .btn:active { filter: brightness(.96); }
     .aegis-bundle { max-height: 320px; overflow: auto; font-size: 12px;
       background: var(--surface-2, var(--surface)); border: 1px solid var(--line);
       border-radius: 8px; padding: 10px 12px; white-space: pre-wrap;
@@ -308,12 +324,10 @@
       color-mix(in srgb, var(--bad) 40%, transparent); }
     .btn.danger:hover { background:
       color-mix(in srgb, var(--bad) 10%, transparent); }
-    .btn.primary { background: linear-gradient(180deg,
-      color-mix(in srgb, var(--accent) 92%, #fff) 0%, var(--accent) 100%);
-      border-color: transparent; color: #fff;
-      box-shadow: 0 1px 2px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.18); }
-    .btn.primary:hover { filter: brightness(1.06); }
-    .btn.ghost { background: transparent; }
+    .btn.primary { background: #fff; border-color: #fff; color: #0a0a0b;
+      box-shadow: none; }
+    .btn.primary:hover { background: #e9e9ec; border-color: #e9e9ec; }
+    .btn.ghost { background: transparent; border-color: var(--line); color: var(--text-2); }
     .btn:disabled { opacity: .45; cursor: default; }
     .input { background: var(--bg); border: 1px solid var(--line); color: var(--text);
       border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none; width: 100%; }
@@ -419,10 +433,10 @@
     .tag.bad { background: var(--bad-bg); color: var(--bad); }
 
     /* ---------- hero brief ---------- */
-    .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg-raised) 100%);
-      border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+    .hero { background: var(--surface);
+      border: none; border-radius: 16px; padding: 28px 30px; box-shadow: var(--shadow); }
     .hero .eyebrow { font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase;
-      color: var(--text-3); margin-bottom: 9px; display: flex; gap: 9px; align-items: center; }
+      color: var(--text-3); margin-bottom: 12px; display: flex; gap: 9px; align-items: center; }
     .hero h1 { margin: 0; font-size: 23px; line-height: 1.32; font-weight: 650;
       letter-spacing: -.015em; }
     /* The verdict, its dot and the account of the run are three different
@@ -585,7 +599,8 @@
       line-height: 1.45; color: var(--text-2);
       font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .story-line > span { color: var(--text-3); flex: none; }
-    .hero .why { color: var(--text-2); margin-top: 9px; font-size: 13.5px; }
+    .hero .why { color: var(--text); margin-top: 14px; font-size: 20px; line-height: 1.6;
+      font-weight: 500; letter-spacing: -.005em; }
     .hero .meter { height: 3px; border-radius: 3px; background: var(--surface-2);
       margin-top: 16px; overflow: hidden; }
     .hero .meter > span { display: block; height: 100%; background: var(--accent);
@@ -730,7 +745,7 @@
 <div class="app">
   <aside class="rail">
     <div class="rail-head">
-      <div class="wordmark"><span class="spark">◆</span> Log Intelligence</div>
+      <div class="wordmark">Aegis</div>
       <div class="rail-sub" id="sourcePath">no source</div>
     </div>
     <nav class="nav">
@@ -757,11 +772,11 @@
       <span class="chip" id="headSource" onclick="location.hash='#/settings'"><span class="dot"></span>
         <span id="headSourceText">no source</span></span>
       <span class="grow"></span>
-      <span class="chip" id="backendBadge">pattern matches only</span>
+      <span class="chip" id="backendBadge" hidden>pattern matches only</span>
       <span class="chip" id="profilePill" hidden></span>
       <span class="chip" id="liveStatus">Waiting</span>
       <button class="btn ghost" id="resetBtn">Clear run</button>
-      <button class="btn ghost" id="demoBtn">Demo</button>
+      <button class="btn ghost" id="demoBtn" hidden>Demo</button>
     </header>
 
     <div class="subtabs" id="subOverview" hidden>

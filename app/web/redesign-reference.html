@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en" data-theme="blue">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aegis — redesign reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=VT323&family=Silkscreen:wght@400;700&family=Micro+5&family=Press+Start+2P&family=Pixelify+Sans:wght@400;600;700&family=Handjet:wght@400;600&family=DotGothic16&family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800&family=Rajdhani:wght@600;700&family=Oxanium:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     REFERENCE ONLY — not wired to the app. Flip the switcher to
+     compare accents. This shows the NEW visual language applied
+     to the real screens, so you can pick before I touch index.html.
+     ============================================================ */
+
+  /* ---- Monochrome (white/silver) : dark ---- */
+  [data-theme="mono"] {
+    --bg:#08080a; --surface:rgba(23,23,26,.72); --raised:rgba(32,32,36,.8);
+    --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+    --text:#f4f4f5; --text-2:#a1a1aa; --text-3:#6b6b73;
+    --accent:#e8e8ea; --accent-ink:#0a0a0b; --accent-bg:rgba(255,255,255,.09);
+    --accent-line:rgba(255,255,255,.22);
+    --bad:#ff5c5c; --bad-bg:rgba(255,92,92,.12);
+    --warn:#e0a94f; --warn-bg:rgba(224,169,79,.12);
+    --ok:#43c98d; --ok-bg:rgba(67,201,141,.12);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 30px rgba(0,0,0,.5);
+    --glow:radial-gradient(120% 90% at 15% -10%, #22222a 0%, #131318 34%, #08080a 68%);
+  }
+  /* ---- Electric blue : dark ---- */
+  [data-theme="blue"] {
+    --bg:#08080a; --surface:rgba(21,23,29,.72); --raised:rgba(29,32,40,.8);
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --text:#f4f4f5; --text-2:#a1a1aa; --text-3:#6b6b73;
+    --accent:#4c8dff; --accent-ink:#fff; --accent-bg:rgba(76,141,255,.15);
+    --accent-line:rgba(76,141,255,.45);
+    --bad:#ff5c5c; --bad-bg:rgba(255,92,92,.12);
+    --warn:#e0a94f; --warn-bg:rgba(224,169,79,.12);
+    --ok:#43c98d; --ok-bg:rgba(67,201,141,.12);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 30px rgba(0,0,0,.5);
+    --glow:radial-gradient(130% 100% at 50% -15%, #26344f 0%, #172032 30%, #0c1018 58%, #070709 100%);
+  }
+  /* ---- Warm amber/gold : dark ---- */
+  [data-theme="amber"] {
+    --bg:#0b0a08; --surface:rgba(24,21,15,.72); --raised:rgba(32,28,20,.8);
+    --line:rgba(255,240,214,.08); --line-2:rgba(255,240,214,.15);
+    --text:#f5f1e8; --text-2:#a9a291; --text-3:#6f6a5c;
+    --accent:#e0a94f; --accent-ink:#1b1408; --accent-bg:rgba(224,169,79,.14);
+    --accent-line:rgba(224,169,79,.45);
+    --bad:#ff6b5c; --bad-bg:rgba(255,107,92,.12);
+    --warn:#e0a94f; --warn-bg:rgba(224,169,79,.14);
+    --ok:#5bd39a; --ok-bg:rgba(91,211,154,.12);
+    --shadow:0 1px 0 rgba(255,240,214,.03), 0 8px 30px rgba(0,0,0,.55);
+    --glow:radial-gradient(120% 90% at 15% -10%, #241d10 0%, #16130c 36%, #0b0a08 70%);
+  }
+  /* ---- Emerald : dark ---- */
+  [data-theme="emerald"] {
+    --bg:#080b09; --surface:rgba(18,23,20,.72); --raised:rgba(25,32,27,.8);
+    --line:rgba(220,255,235,.08); --line-2:rgba(220,255,235,.15);
+    --text:#eef5f0; --text-2:#9aa8a0; --text-3:#63706a;
+    --accent:#34d399; --accent-ink:#052014; --accent-bg:rgba(52,211,153,.14);
+    --accent-line:rgba(52,211,153,.42);
+    --bad:#ff5c5c; --bad-bg:rgba(255,92,92,.12);
+    --warn:#e0a94f; --warn-bg:rgba(224,169,79,.12);
+    --ok:#34d399; --ok-bg:rgba(52,211,153,.14);
+    --shadow:0 1px 0 rgba(220,255,235,.03), 0 8px 30px rgba(0,0,0,.5);
+    --glow:radial-gradient(120% 90% at 15% -10%, #10251a 0%, #0c1611 36%, #080b09 70%);
+  }
+  /* ---- Light (for the mono accent) ---- */
+  [data-theme="light"] {
+    --bg:#f7f7f8; --surface:#ffffff; --raised:#ffffff;
+    --line:rgba(0,0,0,.09); --line-2:rgba(0,0,0,.16);
+    --text:#18181b; --text-2:#52525b; --text-3:#8a8a93;
+    --accent:#18181b; --accent-ink:#fff; --accent-bg:rgba(0,0,0,.06);
+    --accent-line:rgba(0,0,0,.28);
+    --bad:#dc2626; --bad-bg:rgba(220,38,38,.08);
+    --warn:#b45309; --warn-bg:rgba(180,83,9,.08);
+    --ok:#059669; --ok-bg:rgba(5,150,105,.08);
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+    --glow:radial-gradient(120% 90% at 15% -10%, #ffffff 0%, #f2f3f6 40%, #eceef2 100%);
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased;
+    font-feature-settings:"cv11","ss01";
+    min-height:100vh; }
+  /* The ENSQUARED-style backdrop: not flat black. A soft radial glow near the
+     top, fading to darker corners - depth and warmth, applied to the whole
+     page behind everything. Fixed so it does not scroll away. */
+  body::before {
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:var(--glow);
+  }
+  .app, .switch { position:relative; z-index:1; }
+  .mono { font-family:'JetBrains Mono',monospace; }
+
+  /* switcher */
+  .switch { position:fixed; top:14px; right:14px; z-index:50; display:flex; gap:6px;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:6px; box-shadow:var(--shadow); }
+  .switch button { font:inherit; font-size:12px; font-weight:600; padding:7px 12px; border:1px solid transparent;
+    background:none; color:var(--text-2); cursor:pointer; border-radius:6px; }
+  .switch button.on { background:var(--accent-bg); color:var(--text); border-color:var(--accent-line); }
+
+  .app { display:grid; grid-template-columns:210px 1fr; min-height:100vh; }
+
+  /* ---- rail ---- */
+  .rail { background:transparent; padding:20px 14px; display:flex; flex-direction:column; gap:4px; }
+  .rail .head { font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--text-3); padding:2px 10px 14px; }
+  .navgroup { font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--text-3); padding:16px 10px 6px; }
+  .nav { display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:8px;
+    color:var(--text-2); font-size:14px; font-weight:500; cursor:pointer; }
+  .nav:hover { background:var(--raised); color:var(--text); }
+  .nav.on { background:var(--accent-bg); color:var(--text); font-weight:600; box-shadow:inset 2px 0 0 var(--accent); }
+  .nav .ic { width:16px; text-align:center; opacity:.7; }
+  .nav .count { margin-left:auto; font-size:11px; font-weight:700; color:var(--bad); }
+
+  /* ---- main ---- */
+  .main { padding:0 32px 60px; max-width:1080px; }
+  .strip { display:flex; align-items:center; gap:18px; padding:18px 0 22px; border-bottom:1px solid var(--line); margin-bottom:28px; position:sticky; top:0; background:color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter:blur(14px); z-index:10; }
+  .strip .live { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-2); font-weight:500; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px var(--ok-bg); }
+  .dot.bad { background:var(--bad); box-shadow:0 0 0 4px var(--bad-bg); }
+  .strip .metric { font-size:13px; color:var(--text-3); }
+  .strip .metric b { color:var(--text); font-weight:700; font-family:'Chakra Petch',sans-serif; font-size:15px; font-variant-numeric:tabular-nums; }
+  .strip .right { margin-left:auto; display:flex; gap:8px; }
+
+  .h1 { font-size:13px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-3); margin:0 0 4px; }
+
+  /* ---- buttons: SHARP rectangles ---- */
+  .btn { font:inherit; font-size:13px; font-weight:600; padding:10px 18px; border-radius:0;
+    border:1px solid rgba(255,255,255,.22); background:transparent; color:var(--text); cursor:pointer; letter-spacing:.01em; }
+  .btn:hover { border-color:var(--text-3); }
+  .btn.primary { background:#fff; color:#0a0a0b; border-color:#fff; }
+  .btn.primary:hover { background:#eaeaea; }
+  .btn.ghost { background:none; border-color:rgba(255,255,255,.12); color:var(--text-2); }
+
+  /* ---- stat cards (the 20 log lines / events / templates / signals / incidents row) ---- */
+  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:28px; }
+  .stat { background:var(--surface); border:none; border-radius:14px; padding:20px 20px 18px; box-shadow:var(--shadow); }
+  .stat .n { font-family:'Chakra Petch',sans-serif; font-size:38px; font-weight:700; letter-spacing:-.01em; line-height:1; font-variant-numeric:tabular-nums; }
+  .stat .l { font-size:12px; color:var(--text-3); margin-top:8px; font-weight:500; }
+  .stat.alert .n { color:var(--bad); }
+
+  /* ---- live brief : BIG ---- */
+  .brief { background:var(--surface); border:none; border-radius:16px; padding:28px 32px; box-shadow:var(--shadow); margin-bottom:14px; }
+  .brief .verdict { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--bad); background:var(--bad-bg); padding:5px 11px; border-radius:99px; margin-bottom:16px; }
+  .brief .lead { font-size:20px; line-height:1.6; font-weight:500; letter-spacing:-.005em; color:var(--text); }
+  .brief .lead b { font-weight:700; }
+  .brief .why { margin-top:18px; padding-top:18px; border-top:1px solid var(--line); font-size:14.5px; line-height:1.7; color:var(--text-2); }
+  .brief .why .ev { color:var(--text); }
+
+  /* ---- incident card ---- */
+  .inc { background:var(--surface); border:none; border-left:3px solid var(--bad); border-radius:14px; padding:18px 22px; box-shadow:var(--shadow); margin-bottom:12px; cursor:pointer; }
+  .inc:hover { background:var(--raised); }
+  .inc .top { display:flex; align-items:center; gap:12px; }
+  .inc .sev { font-size:11px; font-weight:800; padding:3px 8px; border-radius:5px; background:var(--bad-bg); color:var(--bad); letter-spacing:.05em; }
+  .inc .id { font-size:15px; font-weight:700; }
+  .inc .status { font-size:12px; color:var(--text-3); margin-left:auto; }
+  .inc .headline { margin-top:12px; font-size:15px; color:var(--text); line-height:1.5; }
+  .inc .evline { margin-top:10px; font-size:12.5px; color:var(--text-2); background:rgba(0,0,0,.25); border:none; border-radius:8px; padding:10px 13px; }
+
+  /* ---- propose fix : path field ---- */
+  .field { margin:18px 0 6px; }
+  .field label { display:block; font-size:12px; font-weight:600; color:var(--text-2); margin-bottom:7px; }
+  .field input { width:100%; font:inherit; font-size:13.5px; padding:12px 14px; border-radius:0;
+    border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25); color:var(--text); }
+  .field input:focus { outline:none; border-color:var(--accent); }
+  .actions { display:flex; gap:9px; margin-top:14px; flex-wrap:wrap; }
+
+  /* ---- ports ---- */
+  .ports { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
+  .port { background:var(--surface); border:none; border-radius:12px; padding:15px 18px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow); }
+  .port .p { font-size:20px; font-weight:700; font-family:'Chakra Petch',sans-serif; line-height:1; }
+  .port .svc { font-size:12px; color:var(--text-3); }
+  .port .watch { margin-left:auto; }
+
+  .section { margin:34px 0 14px; }
+  .note { font-size:13px; color:var(--text-3); margin:6px 0 22px; line-height:1.6; }
+  .divider { height:1px; background:var(--line); margin:36px 0; }
+</style>
+</head>
+<body>
+<div class="switch" id="sw">
+  <button data-t="mono">Mono</button>
+  <button data-t="blue" class="on">Blue</button>
+  <button data-t="amber">Amber</button>
+  <button data-t="emerald">Emerald</button>
+  <button data-t="light">Light</button>
+</div>
+<div class="switch" id="fw" style="top:64px;flex-wrap:wrap;max-width:360px;justify-content:flex-end">
+  <button data-f="'Chakra Petch',sans-serif" class="on">Chakra</button>
+  <button data-f="'Orbitron',sans-serif">Orbitron</button>
+  <button data-f="'Rajdhani',sans-serif">Rajdhani</button>
+  <button data-f="'Oxanium',sans-serif">Oxanium</button>
+  <button data-f="'Silkscreen',monospace">Silkscreen</button>
+  <button data-f="'Press Start 2P',monospace">PressStart</button>
+  <button data-f="'Pixelify Sans',monospace">Pixelify</button>
+  <button data-f="'VT323',monospace">VT323</button>
+</div>
+
+<div class="app">
+  <!-- RAIL -->
+  <aside class="rail">
+    <div class="head">Aegis</div>
+    <div class="navgroup">Watch</div>
+    <div class="nav on"><span class="ic">◆</span> Overview</div>
+    <div class="nav"><span class="ic">▢</span> Detail</div>
+    <div class="nav"><span class="ic">▣</span> Runs</div>
+    <div class="nav"><span class="ic">◇</span> Incidents <span class="count">2</span></div>
+    <div class="navgroup">Act</div>
+    <div class="nav"><span class="ic">↗</span> Flow &amp; spec</div>
+    <div class="nav"><span class="ic">✎</span> Improve</div>
+    <div class="nav"><span class="ic">⬇</span> Audit</div>
+    <div class="navgroup">Setup</div>
+    <div class="nav"><span class="ic">◉</span> Sources</div>
+    <div class="nav"><span class="ic">⚙</span> Settings</div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- status strip (moved from bottom-left rail) -->
+    <div class="strip">
+      <span class="live"><span class="dot bad"></span> watching chatbot.log</span>
+      <span class="metric">status <b>failed</b></span>
+      <span class="metric">confidence <b>95%</b></span>
+      <span class="metric">events <b>22</b></span>
+      <div class="right">
+        <button class="btn ghost">Clear run</button>
+      </div>
+    </div>
+
+    <!-- stat cards -->
+    <p class="h1">This run</p>
+    <div class="stats">
+      <div class="stat"><div class="n">143</div><div class="l">log lines</div></div>
+      <div class="stat"><div class="n">22</div><div class="l">events</div></div>
+      <div class="stat"><div class="n">16</div><div class="l">templates</div></div>
+      <div class="stat"><div class="n">3</div><div class="l">signals</div></div>
+      <div class="stat alert"><div class="n">1</div><div class="l">incident</div></div>
+    </div>
+
+    <!-- live brief : BIG -->
+    <p class="h1">Live brief</p>
+    <div class="brief">
+      <span class="verdict"><span class="dot bad" style="width:6px;height:6px;box-shadow:none"></span> Failed</span>
+      <div class="lead">The latest request to <b>/chat</b> failed with an unhandled error during the
+        <b>check_in_scope</b> step — a question about UWS and Presidency that needs both workers at once.
+        It failed 1,101ms in, where the previous request completed cleanly in 5.9s across 7 steps.</div>
+      <div class="why">
+        <b>Why it happened.</b> Unhandled error in the <span class="ev mono">check_in_scope</span> task —
+        read from this run by gpt-4o. The previous request finished normally; this is a new failure,
+        not a recurring one.
+      </div>
+    </div>
+    <p class="note">↑ The brief is the headline — 24px, easy to read at a glance. Compare to the current ~13px.</p>
+
+    <div class="divider"></div>
+
+    <!-- incident card -->
+    <p class="h1">Incidents</p>
+    <div class="inc">
+      <div class="top">
+        <span class="sev">P2</span>
+        <span class="id">INC-3</span>
+        <span class="status">open · 2 signals · 16:03</span>
+      </div>
+      <div class="headline">Unhandled error while answering a question that needs both workers</div>
+      <div class="evline mono">[api] Unhandled error while answering: 'Give me a complete picture of UWS and Presidency…'</div>
+    </div>
+    <div class="inc" style="border-left-color:var(--warn)">
+      <div class="top">
+        <span class="sev" style="background:var(--warn-bg);color:var(--warn)">P2</span>
+        <span class="id">INC-2</span>
+        <span class="status">open · 1 signal · 16:02</span>
+      </div>
+      <div class="headline">Opik tracing not configured</div>
+      <div class="evline mono">[observability] Opik configuration failed — continuing WITHOUT tracing, requests are unaffected</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- propose fix path field + sharp buttons -->
+    <p class="h1">Propose fix · INC-3</p>
+    <p class="note">The fix is drafted. Point Aegis at the repo, then choose how to apply it.</p>
+    <div class="field">
+      <label>Repository path</label>
+      <input value="/Users/nathish/Desktop/Nathish/explore/paideia-platform-explore">
+    </div>
+    <div class="actions">
+      <button class="btn">Copy the patch</button>
+      <button class="btn primary">Apply · run the tests for this code</button>
+      <button class="btn ghost">Whole test suite</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ports -->
+    <p class="h1">Detected ports</p>
+    <p class="note">Local services with an open log file — pick one to watch.</p>
+    <div class="ports">
+      <div class="port"><div><div class="p">:8030</div><div class="svc">chatbot · Python</div></div><button class="btn primary watch">Watch</button></div>
+      <div class="port"><div><div class="p">:8010</div><div class="svc">crawl · Python</div></div><button class="btn ghost watch">Watch</button></div>
+      <div class="port"><div><div class="p">:8080</div><div class="svc">surrealdb</div></div><button class="btn ghost watch">Watch</button></div>
+    </div>
+  </main>
+</div>
+
+<script>
+  var sw = document.getElementById('sw');
+  sw.addEventListener('click', function(e){
+    var b = e.target.closest('button[data-t]'); if(!b) return;
+    document.documentElement.setAttribute('data-theme', b.getAttribute('data-t'));
+    sw.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+  });
+  var fw = document.getElementById('fw');
+  fw.addEventListener('click', function(e){
+    var b = e.target.closest('button[data-f]'); if(!b) return;
+    var f = b.getAttribute('data-f');
+    document.querySelectorAll('.stat .n, .strip .metric b, .port .p')
+      .forEach(function(n){ n.style.fontFamily = f; });
+    fw.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+  });
+</script>
+</body>
+</html>
