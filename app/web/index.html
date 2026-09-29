@@ -152,6 +152,14 @@
       background: var(--surface); border-radius: 99px; padding: 4px 11px;
       font-size: 12px; color: var(--text-2); cursor: pointer; }
     .chip:hover { border-color: var(--text-3); }
+    /* detected-port pills: quiet, with the port number in the sharp font */
+    .port-chip { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line);
+      background: var(--surface); border-radius: 8px; padding: 7px 12px; margin: 0;
+      font-size: 12px; color: var(--text-3); cursor: pointer;
+      transition: border-color .12s, background .12s; }
+    .port-chip:hover { border-color: var(--btn-edge); background: var(--surface-2); color: var(--text); }
+    .port-chip span { font-family: var(--num-font); font-variant-numeric: tabular-nums;
+      font-size: 13px; font-weight: 600; color: var(--text); }
     .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
     .chip.live .dot { background: var(--ok); box-shadow: 0 0 0 0 var(--ok-bg);
       animation: beat 2.4s infinite; }
@@ -378,9 +386,8 @@
     /* ---------- depth: cards lift, surfaces read as layers ---------- */
     .card, .hero, .run, .inc, .stat, .funnel .step {
       transition: border-color .16s, transform .16s, box-shadow .16s; }
-    .card, .stat { box-shadow: 0 1px 2px rgba(0,0,0,.05); }
     .run:hover, .inc:hover, .stat:hover {
-      transform: translateY(-1px); box-shadow: var(--shadow); border-color: var(--line); }
+      transform: translateY(-1px); background: var(--surface-2); }
     .hero { position: relative; overflow: hidden; box-shadow: var(--shadow); }
     .hero::after { content: ""; position: absolute; inset: 0 0 auto auto; width: 320px;
       height: 320px; border-radius: 50%; pointer-events: none; opacity: .10;
@@ -624,37 +631,32 @@
     .hero .meter > span { display: block; height: 100%; background: var(--accent);
       transition: width .4s; }
 
-    /* ---------- funnel ---------- */
-    .funnel { display: flex; gap: 0; margin: 14px 0 0; overflow-x: auto; }
-    .funnel .step { flex: 1; min-width: 104px; background: var(--surface);
-      border: 1px solid var(--line); padding: 11px 10px; text-align: center; position: relative; }
-    .funnel .step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-    .funnel .step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
-    .funnel .step + .step { border-left: none; }
-    .funnel .step::after { content: ""; position: absolute; right: -6px; top: 50%;
-      width: 10px; height: 10px; transform: translateY(-50%) rotate(45deg);
-      border-top: 1px solid var(--line); border-right: 1px solid var(--line);
-      background: var(--surface); z-index: 2; }
-    .funnel .step:last-child::after { display: none; }
-    .funnel .step:last-child { background: var(--accent-bg); }
+    /* ---------- funnel : clean separate cards, big sharp numbers ---------- */
+    .funnel { display: flex; gap: 10px; margin: 14px 0 0; overflow-x: auto; }
+    .funnel .step { flex: 1; min-width: 108px; background: var(--surface);
+      border: none; border-radius: var(--radius); padding: 18px 16px 15px;
+      box-shadow: var(--shadow); position: relative; }
+    .funnel .step::after { display: none; }
+    .funnel .step:last-child { background: var(--surface); }
     .funnel .step:last-child b { color: var(--accent); }
-    .funnel b { display: block; font-size: 19px; font-weight: 650; letter-spacing: -.02em; }
-    .funnel span { color: var(--text-3); font-size: 10px; text-transform: uppercase;
-      letter-spacing: .07em; }
+    .funnel b { display: block; font-family: var(--num-font); font-variant-numeric: tabular-nums;
+      font-size: 30px; font-weight: 700; letter-spacing: -.01em; line-height: 1; }
+    .funnel span { color: var(--text-3); font-size: 11px; margin-top: 9px; display: block;
+      letter-spacing: .01em; }
 
     /* ---------- stat strip ---------- */
     .stats { display: flex; gap: 10px; flex-wrap: wrap; }
-    .stat { flex: 1; min-width: 128px; background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 12px 14px; }
-    .stat .n { font-size: 22px; font-weight: 680; letter-spacing: -.02em; }
-    .stat .k { color: var(--text-3); font-size: 11px; text-transform: uppercase;
-      letter-spacing: .07em; margin-top: 2px; }
+    .stat { flex: 1; min-width: 128px; background: var(--surface); border: none;
+      border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+    .stat .n { font-family: var(--num-font); font-variant-numeric: tabular-nums;
+      font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+    .stat .k { color: var(--text-3); font-size: 11px; margin-top: 4px; letter-spacing: .01em; }
 
     /* ---------- run cards ---------- */
     .runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 10px; }
-    .run { background: var(--surface); border: 1px solid var(--line);
+    .run { background: var(--surface); border: none; box-shadow: var(--shadow);
       border-radius: var(--radius); padding: 0; overflow: hidden; }
-    .run .head { padding: 11px 14px 9px; border-bottom: 1px solid var(--line-soft); }
+    .run .head { padding: 12px 15px 10px; border-bottom: 1px solid var(--line-soft); }
     .run p { padding: 0 14px 13px; }
     .run.achieved .head { background: var(--ok-bg); }
     .run.hollow   .head { background: var(--hollow-bg); }
@@ -668,8 +670,8 @@
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
     /* ---------- incidents ---------- */
-    .inc { background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 13px 16px 13px 19px; position: relative;
+    .inc { background: var(--surface); border: none; box-shadow: var(--shadow);
+      border-radius: var(--radius); padding: 15px 18px 15px 21px; position: relative;
       overflow: hidden; }
     .inc::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
       background: var(--text-3); }
@@ -1110,7 +1112,7 @@
             <span class="muted">All detected ports</span>
             <button class="btn ghost" id="refreshPortsBtn">Refresh</button>
           </div>
-          <div id="ports"></div>
+          <div id="ports" style="display:flex;flex-wrap:wrap;gap:8px"></div>
         </div>
         <div class="section-title" style="margin-top:18px">Stored data</div>
         <div class="lede">Everything Aegis learned, per project — kept under
