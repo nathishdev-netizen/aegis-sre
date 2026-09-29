@@ -140,7 +140,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 write_json(self, HTTPStatus.OK, app.sources(force=force))
                 return
             if name == "providers":
-                write_json(self, HTTPStatus.OK, {"providers": app.providers()})
+                # app.providers() is ALREADY {providers, presets, streaming_from}.
+                # Wrapping it again buried the list at providers.providers and
+                # hid the presets, so the UI's payload.providers was an object,
+                # not an array, and no connector ever rendered.
+                write_json(self, HTTPStatus.OK, app.providers())
                 return
             if name == "proposal" and rest:
                 write_json(self, HTTPStatus.OK, app.proposal(rest))
@@ -270,10 +274,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                            app.wipe_project(str(body.get("project", ""))))
                 return
             if name == "provider":
-                if rest:
-                    write_json(self, HTTPStatus.OK, app.remove_provider(rest))
-                    return
-                write_json(self, HTTPStatus.OK, app.add_provider(body))
+                # The UI calls provider/add, provider/check, provider/stream and
+                # provider/remove. Only add and remove were wired, and "rest"
+                # (the sub-route) was being read as a provider NAME - so
+                # provider/add ran remove_provider("add") and check/stream hit
+                # nothing at all. Route on the sub-route, take the name from the
+                # body, as the UI sends it.
+                pname = str(body.get("name", ""))
+                if rest == "check":
+                    write_json(self, HTTPStatus.OK, app.check_provider(pname))
+                elif rest == "stream":
+                    write_json(self, HTTPStatus.OK,
+                               app.stream_provider(pname, str(body.get("service", ""))))
+                elif rest == "remove" or (rest and rest not in ("add",)):
+                    write_json(self, HTTPStatus.OK, app.remove_provider(pname or rest))
+                else:  # add
+                    write_json(self, HTTPStatus.OK, app.add_provider(body))
                 return
             if name == "apply-fix":
                 # run_tests defaults to TRUE only when the caller says so.
