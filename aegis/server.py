@@ -592,6 +592,16 @@ class AegisApp:
             # streaming_from looked identical to a live connector, so the header
             # kept claiming a source that was no longer being read.
             "source": self._source_descriptor(),
+            # The diagram of this project, from the analysis plus the measured
+            # telemetry. _project_flow existed and was never called, so the UI
+            # that renders it could only ever show "Run Analyze below and this
+            # becomes a diagram" - including right after a successful analyze.
+            "project_flow": self._project_flow(incidents, notes),
+            # The cached project brief. It was read for prompt context but never
+            # sent to the page, and renderUnderstanding reads "understanding" -
+            # a field nothing ever set - so the panel said "not generated yet"
+            # even immediately after generating one.
+            "understanding": self._project_brief(),
             # What a connector has actually read. A connector has no Live
             # Brief - that is v1's runtime, which never sees these records -
             # so this is the only place the page can show what is arriving.
