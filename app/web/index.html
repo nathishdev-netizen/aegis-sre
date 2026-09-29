@@ -363,6 +363,11 @@
     .input::placeholder { color: var(--text-3); }
     .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em;
       text-transform: uppercase; color: var(--text-3); margin: 0 0 7px; }
+    /* An empty view must still say which state it is in, and what comes next. */
+    .empty-state { padding: 46px 30px; text-align: center; }
+    .empty-title { font-size: 17px; font-weight: 600; color: var(--text-2); }
+    .empty-sub { font-size: 13.5px; color: var(--text-3); margin-top: 8px;
+      max-width: 460px; margin-left: auto; margin-right: auto; line-height: 1.6; }
     .input:focus { border-color: var(--accent); }
     .row { display: flex; gap: 8px; align-items: center; }
     .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
@@ -422,12 +427,19 @@
       white-space: pre-wrap; }
     .msg.you .ev { border-left-color: rgba(255,255,255,.4); color: rgba(255,255,255,.8); }
     .muted-msg { color: var(--text-2); background: var(--surface-2); }
-    .verdict-pill { display: inline-block; border-radius: 6px; padding: 1px 8px;
-      font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
-      margin-right: 8px; background: var(--surface); color: var(--text-2); }
+    /* The verdict is the answer to "did this run achieve anything" - the one
+       thing v2 exists to say - so it reads as a statement, not a footnote. */
+    .verdict-pill { display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 99px; padding: 4px 11px;
+      font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      margin-right: 9px; background: var(--surface-2); color: var(--text-2); }
+    .verdict-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%;
+      background: currentColor; flex: none; }
     .verdict-pill.yes, .verdict-pill.achieved { background: var(--ok-bg); color: var(--ok); }
     .verdict-pill.no, .verdict-pill.failed { background: var(--bad-bg); color: var(--bad); }
-    .verdict-pill.unknown { background: var(--surface); color: var(--text-3); }
+    .verdict-pill.hollow { background: var(--hollow-bg); color: var(--hollow); }
+    .verdict-pill.degraded { background: var(--warn-bg); color: var(--warn); }
+    .verdict-pill.unknown { background: var(--surface-2); color: var(--text-3); }
     .typing span { display: inline-block; width: 5px; height: 5px; border-radius: 50%;
       background: var(--text-3); margin-right: 3px; animation: blink 1.3s infinite; }
     .typing span:nth-child(2) { animation-delay: .18s; }
@@ -2075,8 +2087,28 @@
   function renderIncidents(state) {
     var incidents = state.incidents || [];
     if (!incidents.length) {
+      // "No incidents." alone reads as a dead end - the reader cannot tell
+      // whether that is good news, or whether something failed to run. Say
+      // which state this is and what happens next.
+      var watching = state.attached;
+      var seen = ((state.stats || {}).events) || 0;
       aegisEl("aegisIncidents").innerHTML =
-        '<div class="hint" style="padding:6px 0;">No incidents.</div>';
+        '<div class="empty-state">' +
+        '<div class="empty-title">' +
+          (watching ? "No incidents open" : "Nothing is being watched yet") +
+        "</div>" +
+        '<div class="empty-sub">' +
+          (watching
+            ? (seen
+               ? "Aegis has read " + seen + " event" + (seen === 1 ? "" : "s") +
+                 " and found nothing worth paging you about. It keeps watching."
+               : "Watching. Nothing has arrived on this source yet.")
+            : "Attach a log file or stream a connector, and anything that goes " +
+              "wrong will be grouped into an incident here.") +
+        "</div>" +
+        (watching ? "" :
+          '<a class="btn primary" style="margin-top:14px" href="#/settings">Choose a source</a>') +
+        "</div>";
       return;
     }
     var model = state.model || {};
@@ -2350,8 +2382,8 @@
         sub += " <b>" + others + " other " +
                (others === 1 ? "incident" : "incidents") + "</b> also open.";
       }
-      acts = '<a class="btn primary" href="#/incidents">Open ' +
-             aegisEsc(worst.id) + "</a>";
+      acts = '<a class="btn primary" href="#/incidents" data-aegis-goto="' +
+             aegisEsc(worst.id) + '">Open ' + aegisEsc(worst.id) + "</a>";
     } else if (!stats.events) {
       tone = ""; label = "Listening";
       head = "Connected, nothing has arrived yet.";
@@ -2412,7 +2444,8 @@
         '<p class="nf-why">' + aegisEsc(why) + "</p>" +
         (evidence ? '<div class="nf-ev">' + aegisEsc(evidence.slice(0, 160)) + "</div>" : "") +
         '<div class="nf-acts">' +
-          '<a class="btn" href="#/incidents">Open ' + aegisEsc(inc.id) + "</a>" +
+          '<a class="btn" href="#/incidents" data-aegis-goto="' + aegisEsc(inc.id) +
+            '">Open ' + aegisEsc(inc.id) + "</a>" +
           (hyp.immediate_action
             ? '<span class="hint" style="align-self:center">next: ' +
               aegisEsc(String(hyp.immediate_action).slice(0, 90)) + "</span>"
@@ -3063,6 +3096,22 @@
   }
 
   document.addEventListener("click", function (event) {
+    // "Open INC-x" from the brief or the feed: land on the Incidents tab with
+    // THAT incident already expanded and scrolled to. Navigating to the list
+    // and leaving the reader to find it again is the gap this closes.
+    var goto = event.target.closest("[data-aegis-goto]");
+    if (goto) {
+      var wanted = goto.getAttribute("data-aegis-goto");
+      aegisOpen[wanted] = true;
+      aegisRefresh();
+      setTimeout(function () {
+        var card = document.querySelector('[data-aegis-toggle="' + wanted + '"]');
+        if (card && card.scrollIntoView) {
+          card.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }, 160);
+      return;  // the href still carries the hash change
+    }
     var toggle = event.target.closest("[data-aegis-toggle]");
     if (toggle) {
       var id = toggle.getAttribute("data-aegis-toggle");
