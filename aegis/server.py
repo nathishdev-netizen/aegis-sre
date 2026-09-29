@@ -72,6 +72,7 @@ class AegisApp:
         # Provider polling is opt-in per source: pulling history costs money
         # and quota, so it never starts on its own.
         self.provider_source = ""
+        self.provider_recent: list[dict] = []
         self._provider_seen: set[str] = set()
         self._lock = threading.Lock()
         self._spec: FlowSpec | None = None
@@ -156,6 +157,7 @@ class AegisApp:
             self.hypotheses = {}
             self._spec = None
             self._provider_seen = set()
+            self.provider_recent = []
         self.provider_source = name
         self.provider_service = service
         self.pull_provider()
@@ -190,6 +192,16 @@ class AegisApp:
                 if key in self._provider_seen:
                     continue
                 self._provider_seen.add(key)
+                # The newest arrivals, kept verbatim. A connector has no Live
+                # Brief (that is written by v1's runtime, which never sees these
+                # records), so without this the page could say a connector was
+                # streaming but never show a single thing it had read.
+                self.provider_recent.insert(0, {
+                    "service": record.service, "env": record.host,
+                    "at": (record.collected_at or "")[:19],
+                    "text": record.payload[:200],
+                })
+                del self.provider_recent[25:]
                 event = self.pipeline.normalizer.feed(record.payload)
                 if event is not None:
                     self.pipeline._commit(event)
@@ -204,15 +216,6 @@ class AegisApp:
             if final is not None:
                 self.pipeline._commit(final)
                 fresh += 1
-            # The normalizer holds the last line pending, waiting to see
-            # whether the next one continues it (a traceback, a folded dump).
-            # A file keeps arriving so that resolves itself; a provider poll
-            # ENDS, so without this the newest record of every poll sat
-            # invisible until the following poll twenty ticks later - and a
-            # single-record answer never appeared at all.
-            final = self.pipeline.normalizer.flush()
-            if final is not None:
-                self.pipeline._commit(final)
                 fresh += 1
             # The normalizer holds the last line pending, waiting to see
             # whether the next one continues it (a traceback, a folded dump).
@@ -589,6 +592,10 @@ class AegisApp:
             # streaming_from looked identical to a live connector, so the header
             # kept claiming a source that was no longer being read.
             "source": self._source_descriptor(),
+            # What a connector has actually read. A connector has no Live
+            # Brief - that is v1's runtime, which never sees these records -
+            # so this is the only place the page can show what is arriving.
+            "recent": list(self.provider_recent[:8]),
             "stats": stats,
             "funnel": [
                 ("log lines", stats["lines_in"]),
