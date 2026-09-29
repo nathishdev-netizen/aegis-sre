@@ -377,8 +377,11 @@
 </head>
   <style>
     /* ---------- sub-tabs ---------- */
-    .subtabs { display: flex; gap: 3px; padding: 0 22px; background: var(--bg);
-      border-bottom: 1px solid var(--line); position: sticky; top: 51px; z-index: 19; }
+    /* Translucent, not a solid slab: an opaque background here painted a flat
+       black band across the top and cut the page's glow off at the header. */
+    .subtabs { display: flex; gap: 3px; padding: 0 22px; background: transparent;
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line-soft); position: sticky; top: 51px; z-index: 19; }
     .subtab { padding: 10px 13px; font-size: 13px; color: var(--text-2); font-weight: 520;
       border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex;
       align-items: center; gap: 7px; }
