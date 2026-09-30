@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
@@ -127,7 +128,33 @@ class FlowSpec:
 
 
 def _seconds(ts: str) -> float | None:
-    parts = ts.strip().split(":")
+    """Seconds on a comparable scale, from either timestamp shape we see.
+
+    A log FILE usually prints a bare clock ("10:12:04"). A connector returns a
+    full ISO instant ("2026-09-29T10:12:04.640311808Z"), which splits on ":"
+    into three parts that are not all numbers - so this returned None for every
+    connector-backed run and every duration came out 0.0.
+
+    The ISO branch also fixes a second bug the clock branch still has by
+    construction: a run that crosses midnight cannot be measured from a clock
+    alone, because 00:00:05 looks like it comes before 23:59:58.
+    """
+    text = ts.strip()
+    if not text:
+        return None
+
+    # Full instant first: it carries the date, so it is the only shape that can
+    # measure a run spanning midnight.
+    if "-" in text[:11] and "T" in text:
+        iso = text.replace("Z", "+00:00")
+        # Python parses at most 6 fractional digits; connectors send 9.
+        iso = re.sub(r"(\.\d{6})\d+", r"\1", iso)
+        try:
+            return datetime.fromisoformat(iso).timestamp()
+        except ValueError:
+            return None
+
+    parts = text.split(":")
     if len(parts) != 3:
         return None
     try:

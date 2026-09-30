@@ -556,6 +556,12 @@
       border-top: 1px solid var(--line-soft); }
     .vd-step:first-of-type { border-top: none; }
     .vd-ts { color: var(--text-3); margin-right: 8px; }
+    /* Stands in for the verdict paragraph when every card would repeat the
+       same one. Quieter than a reason, because it is identification, not a
+       finding. */
+    .vd-gist { font-size: 12px; line-height: 1.5; color: var(--text-3);
+      margin: 0; overflow-wrap: anywhere; }
+    .vd-gist b { color: var(--text-2); font-weight: 650; }
 
     .sim-choice { font-size: 12px; padding: 5px 11px; }
     .sim-choice .v-degraded { font-size: 10.5px; }
@@ -1885,6 +1891,16 @@
 
   function renderVerdicts(state) {
     var verdicts = state.verdicts || [];
+    // Until somebody marks what a run is FOR, every run gets the same verdict
+    // for the same reason - so the same 40-word paragraph was printed once per
+    // card, eight times down the page, plus once more in the note above them.
+    // The reader had to read all of it to discover the cards differed only in
+    // their header. Say the shared reason once, in the note; give each card
+    // the part that is actually its own.
+    var reasons = {};
+    verdicts.forEach(function (v) { reasons[v.reason || ""] = 1; });
+    var oneReason = verdicts.length > 1 && Object.keys(reasons).length === 1;
+
     aegisEl("aegisVerdicts").innerHTML = verdicts.map(function (v) {
       var v_ = aegisEsc(v.verdict);
       var id = aegisEsc(v.trace_id || v.opened_at);
@@ -1921,16 +1937,18 @@
         '<span class="tag v-' + v_ + '">' + aegisEsc(verdictLabel(v_)) + "</span>" +
         '<span class="meta">@' + aegisEsc(v.opened_at) + " \u00b7 " +
         aegisEsc(v.duration_s) + "s \u00b7 " + aegisEsc(v.events || 0) +
-        " events</span></div><p>" + aegisEsc(v.reason) + "</p>" +
+        " events</span></div>" +
+        (oneReason ? runGist(v) : "<p>" + aegisEsc(v.reason) + "</p>") +
         '<div class="vd-more">' + (open ? "hide the run \u25b4"
                                         : "show what it did \u25be") + "</div>" +
         (body ? '<div class="vd-body">' + body + "</div>" : "") + "</div>";
     }).join("");
     var marked = state.spec && state.spec.purpose_marked;
     aegisEl("aegisVerdictNote").textContent = verdicts.length && !marked ?
-      "Aegis can see what each run DID, but not what it was supposed to do - " +
-      "so it cannot say whether any of them worked. Mark the steps that matter " +
-      "(button on the right) and every run after that is judged against them." : "";
+      "None of these " + verdicts.length + " runs is judged yet. Aegis can see " +
+      "what each one DID, but not what it was supposed to do - so it cannot say " +
+      "whether any of them worked. Mark the steps that matter (button on the " +
+      "right) and every run after that is judged against them." : "";
     aegisEl("aegisMarkBtn").hidden = !(state.spec && state.spec.exists && !marked);
   }
 
@@ -1945,6 +1963,21 @@
     unknown:  "Not judged yet",
   };
   function verdictLabel(v) { return VERDICT_LABEL[v] || v; }
+
+  // What this particular run was, in one line, for when the verdict reason is
+  // the same on every card. Prefers the service it ran in and its first step,
+  // because those are the two things that differ between otherwise identical
+  // unjudged runs.
+  function runGist(v) {
+    var who = v.service || (v.services || [])[0] || "";
+    var steps = v.steps || [];
+    var first = steps.length ? (steps[0].text || "") : "";
+    if (!who && !first) return "";
+    return '<p class="vd-gist">' + (who ? "<b>" + aegisEsc(who) + "</b>" : "") +
+      (who && first ? " \u00b7 " : "") +
+      aegisEsc(first.length > 110 ? first.slice(0, 110) + "\u2026" : first) +
+      "</p>";
+  }
 
   function hypBlock(h) {
     if (!h) return "";

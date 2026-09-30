@@ -650,6 +650,11 @@ class AegisApp:
                     "trace_id": trace_id, "verdict": report.verdict,
                     "reason": report.reason, "duration_s": report.duration_s,
                     "opened_at": events[0].ts, "events": len(events),
+                    # Which service this run happened in. A connector holds
+                    # many, and when no purpose is marked every run carries
+                    # the same verdict and the same reason - the service is
+                    # then the only thing telling two cards apart.
+                    "service": next((e.service for e in events if e.service), ""),
                     "deviations": report.deviations,
                     "evidence": report.evidence,
                     "steps": [{
