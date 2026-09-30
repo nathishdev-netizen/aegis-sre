@@ -15,6 +15,7 @@ free to leave open forever.
 from __future__ import annotations
 
 import json
+import re
 import os
 import threading
 import time
@@ -77,6 +78,58 @@ def _in_time_order(events: list) -> list:
             (seconds, index, event))
     stamped.sort(key=lambda row: (row[0], row[1]))
     return [row[2] for row in stamped] + [row[2] for row in bare]
+
+
+_TRACE_FILE = re.compile(r'File "([^"]+)", line \d+')
+
+
+def _repo_root_from_evidence(evidence: list) -> str:
+    """The project directory a traceback's own frames point at, if they agree.
+
+    Frames name absolute paths. The deepest frame inside the user's code is
+    the best anchor; its package root (the highest directory still holding an
+    __init__.py, else its own directory) is what a repo path should be.
+    Interpreter and site-packages frames are ignored - every traceback has
+    them and they say nothing about the project.
+    """
+    from pathlib import Path as _Path
+
+    candidates: list[_Path] = []
+    for line in evidence:
+        for text in str(line).splitlines():
+            found = _TRACE_FILE.search(text)
+            if not found:
+                continue
+            raw = found.group(1)
+            if any(mark in raw for mark in (
+                    "/site-packages/", "/dist-packages/", "/lib/python",
+                    "/Cellar/", "/.venv/", "/venv/", "/node_modules/",
+                    "/Frameworks/Python.framework/")):
+                continue
+            path = _Path(raw)
+            if path.exists():
+                candidates.append(path)
+    if not candidates:
+        return ""
+    # Deepest frame last in a traceback; it is the one that actually raised.
+    # Climb to the nearest directory that looks like a PROJECT - one holding
+    # a pytest.ini, requirements.txt, pyproject.toml, setup.py or .git. That
+    # is what a repo path means, and it is what the runner needs to find the
+    # right interpreter and import root. Walking by __init__.py alone was
+    # wrong both ways: a package dir without one stopped the climb at
+    # "agents/", and a deeply nested package overshot.
+    markers = ("pytest.ini", "requirements.txt", "pyproject.toml",
+               "setup.py", "setup.cfg", ".git", "Pipfile")
+    target = candidates[-1].parent
+    probe = target
+    for _ in range(6):
+        if any((probe / marker).exists() for marker in markers):
+            return str(probe)
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    return str(target)
+
 
 
 class AegisApp:
@@ -640,6 +693,16 @@ class AegisApp:
             # then saw no further signal was frozen mid-lifecycle forever.
             self.pipeline.incidents.settle(self.pipeline.detect.last_now)
             incidents = [i.to_dict() for i in self.pipeline.incidents.incidents]
+            # The traceback already names the checkout that produced these
+            # logs. Offering it means the repo field starts correct instead
+            # of holding whatever path the browser remembered - a stale one
+            # sent two whole fix attempts at a different checkout of the same
+            # project, where the frames resolved nowhere and the patch landed
+            # on the `except` that logged the error.
+            for incident in incidents:
+                root = _repo_root_from_evidence(incident.get("evidence") or [])
+                if root:
+                    incident["repo_hint"] = root
             notes = [s.to_dict() for s in self.pipeline.incidents.notes[-15:]]
             traces = self.pipeline.trace_index.traces()
             templates = self.pipeline.store.templates(limit=10)

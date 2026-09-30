@@ -1564,6 +1564,40 @@ def test_a_repo_path_that_does_not_match_the_traceback_is_named():
             f"a library frame ({library}) was mistaken for a wrong repo path")
 
 
+def test_the_repo_field_starts_at_the_checkout_that_made_the_logs():
+    """The field held whatever the browser remembered, from any project.
+
+    A stale path to a SECOND checkout of the same project sent two whole fix
+    attempts at code that did not contain the bug. The traceback names the
+    right tree outright, so the field can start correct.
+    """
+    import tempfile
+    from pathlib import Path
+    from aegis.server import _repo_root_from_evidence
+
+    repo = Path(tempfile.mkdtemp()) / "svc"
+    (repo / "agents").mkdir(parents=True)
+    # What marks a project root: the service holds a pytest.ini, the package
+    # directory below it holds nothing. Climbing by __init__.py was wrong both
+    # ways - a package dir without one stopped the climb one level too deep.
+    (repo / "pytest.ini").write_text("[pytest]\n")
+    (repo / "agents" / "orchestrator.py").write_text("x = 1\n")
+
+    evidence = [f'  File "{repo / "agents" / "orchestrator.py"}", line 1, in go']
+    assert _repo_root_from_evidence(evidence) == str(repo), (
+        "the project root was not derived from the traceback")
+
+    # Interpreter and package frames say nothing about the project.
+    for library in ("/opt/homebrew/lib/python3.11/asyncio/base_events.py",
+                    "/x/.venv/lib/python3.11/site-packages/langgraph/pregel.py"):
+        assert _repo_root_from_evidence(
+            [f'  File "{library}", line 9, in run']) == "", (
+            f"{library} was mistaken for the project root")
+
+    # No traceback at all offers nothing rather than guessing.
+    assert _repo_root_from_evidence(["[api] plain log line"]) == ""
+
+
 if __name__ == "__main__":
     import sys
 

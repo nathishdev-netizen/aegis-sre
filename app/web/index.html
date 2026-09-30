@@ -2238,10 +2238,19 @@
           '<div class="aegis-fix-row">' +
           '<input class="input" placeholder="/path/to/the/service\u2019s repo" data-aegis-repo="' +
           aegisEsc(inc.id) + '" value="' +
-          aegisEsc(aegisRepoDraft[inc.id] || savedRepo()) + '">' +
+          aegisEsc(aegisRepoDraft[inc.id] || inc.repo_hint || savedRepo()) + '">' +
           '<button class="btn" data-aegis-fix="' + aegisEsc(inc.id) + '"' +
           (model.available && !fixBusy ? "" : " disabled") + ">" +
           (fixBusy ? "working…" : "Propose fix") + "</button></div>";
+        // A remembered path from another checkout of the same project sent
+        // two whole fix attempts at code that did not contain the bug. When
+        // the traceback names a different tree than the box remembered, say
+        // which one is in the field.
+        if (inc.repo_hint && savedRepo() && inc.repo_hint !== savedRepo()
+            && !aegisRepoDraft[inc.id]) {
+          body += '<div class="hint">using the path this incident\u2019s own ' +
+            'traceback names, not the one remembered from before.</div>';
+        }
         var fixResult = aegisFixOut[inc.id];
         if (fixResult) {
           body += '<div class="aegis-fix-out' + (fixResult.ok ? " ok" : "") + '">' +
