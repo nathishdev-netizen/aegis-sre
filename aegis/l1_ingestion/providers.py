@@ -193,6 +193,61 @@ class SigNozProvider:
         self.cache.put(key, records)
         return records
 
+    def list_services(self, days: int = 7) -> list[dict[str, Any]] | None:
+        """Every service this backend holds logs for, with its record count.
+
+        ASKED, not sampled. Sampling recent logs cannot answer this: busy
+        services fill the sample and quiet ones vanish. Measured against a live
+        instance - 7 days and 2000 records found 9 services where the backend
+        actually has 12, and payment-ms (42 records in a week) was invisible at
+        every window tried. A grouped count returns all twelve in 135ms.
+
+        Returns None when the backend cannot answer, so the caller can fall
+        back rather than show an empty list as though it were the truth.
+        """
+        now_ms = int(time.time() * 1000)
+        body = {
+            "schemaVersion": "v1",
+            "start": now_ms - days * 86_400_000,
+            "end": now_ms,
+            "requestType": "scalar",
+            "compositeQuery": {"queries": [{
+                "type": "builder_query",
+                "spec": {
+                    "name": "A", "signal": "logs", "disabled": False,
+                    "aggregations": [{"expression": "count()"}],
+                    "groupBy": [{"name": "service.name", "fieldContext": "resource"}],
+                    "filter": {"expression": ""}, "limit": 200,
+                },
+            }]},
+        }
+        headers = {"SIGNOZ-API-KEY": self.api_key} if self.api_key else {}
+        try:
+            response = self._transport(f"{self.base_url}/api/v5/query_range",
+                                       headers, body, 40.0)
+            self.last_error = ""
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            self.last_error = f"{exc.__class__.__name__}: {exc}"
+            return None
+        try:
+            results = response["data"]["data"]["results"][0]
+            rows = results.get("rows") or results.get("data") or []
+        except (KeyError, IndexError, TypeError):
+            return None
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            # [service.name, count] - the shape this API returns for a grouped
+            # scalar query.
+            if not isinstance(row, (list, tuple)) or not row:
+                continue
+            service = str(row[0] or "").strip()
+            if not service:
+                continue
+            count = row[1] if len(row) > 1 else 0
+            out.append({"name": service, "env": "",
+                        "records": int(count) if isinstance(count, (int, float)) else 0})
+        return out or None
+
     def _normalize(self, response: dict[str, Any],
                    query: LogFilter) -> list[RawRecord]:
         """Vendor JSON -> canonical RawRecord. The boundary P6 talks about.
@@ -756,15 +811,43 @@ class ProviderRegistry:
         incidents group across services that share nothing but a vendor. The
         reader has to be able to say which one they mean.
 
-        Sampled over a wide window rather than the five records check() takes:
-        a service that logs once a minute is exactly the one worth watching and
-        exactly the one a small sample misses.
+        ASKED where the backend can answer, sampled only as a fallback.
+        Sampling cannot do this job: busy services fill the sample and quiet
+        ones disappear. Measured against a live instance - even 7 days and 2000
+        records found 9 of the 12 services present, and payment-ms (42 records
+        in a week) never appeared at any window. A grouped count returns all
+        twelve.
         """
         provider = self.build(name)
         if provider is None:
             return {"ok": False, "detail": "unknown provider"}
         try:
-            records = provider.query_logs(LogFilter(since_minutes=360, limit=400))
+            asked = getattr(provider, "list_services", None)
+            if asked is not None:
+                listed = asked()
+                if listed:
+                    # The grouped count carries no resource attributes, so a
+                    # name-inferred "PROD?" would replace a DECLARED "PROD" -
+                    # a downgrade. One small sample recovers the declared
+                    # values; anything it does not cover still falls back to
+                    # the name, marked inferred.
+                    declared: dict[str, str] = {}
+                    try:
+                        for record in provider.query_logs(
+                                LogFilter(since_minutes=1440, limit=300)):
+                            if record.service and record.host and \
+                                    record.service not in declared:
+                                declared[record.service] = record.host
+                    except Exception:
+                        pass
+                    for entry in listed:
+                        entry["env"] = declared.get(entry["name"]) or \
+                            _environment_of({"service.name": entry["name"]})
+                    return {"ok": True, "services": listed, "asked": True}
+                failure = getattr(provider, "last_error", "")
+                if failure:
+                    return {"ok": False, "detail": failure}
+            records = provider.query_logs(LogFilter(since_minutes=1440, limit=1000))
             failure = getattr(provider, "last_error", "")
             if failure:
                 return {"ok": False, "detail": failure}
@@ -780,7 +863,7 @@ class ProviderRegistry:
             return {"ok": True,
                     "services": sorted(seen.values(),
                                        key=lambda e: -e["records"]),
-                    "sampled": len(records)}
+                    "sampled": len(records), "asked": False}
         except Exception as exc:
             return {"ok": False, "detail": f"{exc.__class__.__name__}: {exc}"}
         finally:
