@@ -1331,6 +1331,96 @@ def test_a_run_is_measured_even_when_its_events_arrive_newest_first():
     assert len(kept) == 2
 
 
+def test_a_service_with_no_correlation_id_still_produces_runs():
+    """/chat/sync logs a thread (the LEAD), never a per-turn id.
+
+    Every one of its lines was unattributable, so the endpoint had no runs, no
+    verdicts and no duration - it was invisible to the tool even though its
+    log says plainly where each request begins and ends.
+    """
+    from aegis.l2_normalization.normalizer import Normalizer
+    from aegis.l2_normalization.tracelinker import TraceLinker
+
+    turn = [
+        "12:46:27 INFO [api] /chat/sync request received thread='lead:L-1' chars=5",
+        "12:46:27 INFO [orchestrator] Question received (sources=['uws'])",
+        "12:46:30 INFO [orchestrator] LLM usage node=generate total_tokens=4754",
+        "12:46:31 INFO [orchestrator] ANSWER DELIVERED thread='lead:L-1' chars=136",
+        "12:46:31 INFO [api] /chat/sync responded thread='lead:L-1' chars=136",
+    ]
+    norm, linker = Normalizer(service="chatbot"), TraceLinker()
+    events = []
+    for line in turn:
+        event = norm.feed(line)
+        if event is not None:
+            events.append(linker.link(event))
+    tail = norm.flush()
+    if tail is not None:
+        events.append(linker.link(tail))
+
+    keyed = {e.trace_id for e in events if e.trace_id}
+    assert len(keyed) == 1, f"the turn did not group into one run: {keyed}"
+    assert linker.unattributed == 0, (
+        f"{linker.unattributed} line(s) could not be placed")
+
+    # The NEXT request must be its own run, not a continuation.
+    for line in ["12:50:01 INFO [api] /chat/sync request received thread='lead:L-1' chars=9",
+                 "12:50:02 INFO [api] /chat/sync responded thread='lead:L-1' chars=40"]:
+        event = norm.feed(line)
+        if event is not None:
+            events.append(linker.link(event))
+    tail = norm.flush()
+    if tail is not None:
+        events.append(linker.link(tail))
+    assert len({e.trace_id for e in events if e.trace_id}) == 2, (
+        "the second request was absorbed into the first")
+
+
+def test_a_bare_clock_still_expires_an_idle_session():
+    """_epoch only read a full date, so the idle timeout never ran.
+
+    Sessions accumulated - 42 in one real log - and because inference needs
+    exactly ONE open session, that silently disabled correlation for the
+    entire file.
+    """
+    from aegis.l2_normalization.tracelinker import _epoch, TraceLinker
+    from aegis.contracts.events import Event
+
+    assert _epoch("15:49:03") is not None, "a bare clock must be usable"
+    assert _epoch("2026-09-30 15:49:03.163") is not None
+    assert _epoch("") is None and _epoch("junk") is None
+
+    linker = TraceLinker(idle_timeout_s=300.0)
+    linker.link(Event(id="e1", ts="10:00:00", service="s", level="INFO",
+                      text_redacted="call=abc123def CALL START"))
+    assert len(linker._open) == 1
+    # Six minutes later, with no END logged: the session must not survive.
+    linker.link(Event(id="e2", ts="10:06:01", service="s", level="INFO",
+                      text_redacted="something unrelated"))
+    assert len(linker._open) == 0, "an idle session was never expired"
+
+
+def test_an_unkeyed_guess_cannot_swallow_the_whole_log():
+    """A startup burst with no response line ran to 568 events in one log.
+
+    A synthetic session is a GUESS that a stretch of lines is one request;
+    past a plausible size the guess has failed and must be abandoned rather
+    than allowed to absorb the file.
+    """
+    from aegis.l2_normalization.tracelinker import (
+        TraceLinker, MAX_SYNTHETIC_EVENTS)
+    from aegis.contracts.events import Event
+
+    linker = TraceLinker()
+    linker.link(Event(id="o1", ts="10:00:00", service="s", level="INFO",
+                      text_redacted="[api] /chat request received"))
+    for i in range(MAX_SYNTHETIC_EVENTS + 40):
+        linker.link(Event(id=f"d{i}", ts="10:00:01", service="s", level="INFO",
+                          text_redacted=f"[db] connected {i}"))
+
+    assert len(linker._open) == 0, "the runaway guess was never abandoned"
+
+
 if __name__ == "__main__":
     import sys
 
