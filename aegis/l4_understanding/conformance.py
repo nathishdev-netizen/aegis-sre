@@ -158,8 +158,16 @@ class ConformanceEngine:
 
     @staticmethod
     def _span(events: list[Event]) -> float:
-        start = _seconds(events[0].ts) if events and events[0].ts else None
-        end = _seconds(events[-1].ts) if events and events[-1].ts else None
-        if start is None or end is None or end < start:
+        """How long the run took: its latest event minus its earliest.
+
+        Not last-minus-first. A connector returns rows newest-first, so the
+        last event in the list was the earliest in time - the subtraction came
+        out negative and every connector run reported 0.0s. Taking the extremes
+        is also robust to a run whose events interleave, which any concurrent
+        service produces.
+        """
+        stamps = [t for t in (_seconds(e.ts) for e in events if e.ts)
+                  if t is not None]
+        if len(stamps) < 2:
             return 0.0
-        return end - start
+        return max(stamps) - min(stamps)

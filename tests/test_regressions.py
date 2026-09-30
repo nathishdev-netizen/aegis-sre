@@ -1261,6 +1261,76 @@ def test_report_html_escapes_evidence_content():
     assert "&lt;script&gt;" in out
 
 
+def test_a_connector_record_keeps_its_own_timestamp():
+    """A connector returns the time as a field, not inside the message text.
+
+    Reading only the text left every provider-backed run with no time at all,
+    so the Runs page showed "@ · 0s" on every verdict.
+    """
+    from aegis.l2_normalization.normalizer import Normalizer
+
+    stamp = "2026-09-29T19:55:19.190251197Z"
+    norm = Normalizer(service="proj")
+    event = norm.feed("info request completed status=200", "payments", stamp)
+    event = event or norm.flush()
+    assert event is not None
+    assert event.ts == stamp, f"timestamp was dropped: {event.ts!r}"
+
+    # A line carrying its OWN time still wins: watched files must not change.
+    norm2 = Normalizer(service="proj")
+    own = norm2.feed("2026-09-30T08:00:00Z INFO started", "", stamp)
+    own = own or norm2.flush()
+    assert own is not None and own.ts != stamp, (
+        "the collector's time overwrote the one printed in the line")
+
+
+def test_an_iso_instant_is_measurable():
+    """_seconds only understood a bare clock, so ISO instants returned None."""
+    from aegis.l4_understanding.flowspec import _seconds
+
+    assert _seconds("2026-09-30T05:43:38.345687552Z") is not None
+    assert _seconds("10:12:04") is not None
+    assert _seconds("") is None and _seconds("not a time") is None
+
+    start = _seconds("2026-09-30T05:43:38.000000000Z")
+    end = _seconds("2026-09-30T05:43:41.500000000Z")
+    assert abs((end - start) - 3.5) < 0.01
+
+    # A run crossing midnight: the date is why this can be measured at all.
+    before = _seconds("2026-09-29T23:59:58Z")
+    after = _seconds("2026-09-30T00:00:05Z")
+    assert abs((after - before) - 7.0) < 0.01
+
+
+def test_a_run_is_measured_even_when_its_events_arrive_newest_first():
+    """SigNoz returns rows newest-first.
+
+    Taking last-minus-first made every duration negative, so it clamped to
+    0.0 and no connector run could be told fast from slow.
+    """
+    from aegis.l4_understanding.conformance import ConformanceEngine
+    from aegis.server import _in_time_order
+
+    class _E:
+        def __init__(self, ts):
+            self.ts = ts
+
+    newest_first = [_E("2026-09-30T05:43:38.400000Z"),
+                    _E("2026-09-30T05:43:38.000000Z"),
+                    _E("2026-09-30T05:43:37.200000Z")]
+
+    span = ConformanceEngine._span(newest_first)
+    assert abs(span - 1.2) < 0.01, f"duration collapsed to {span}"
+
+    ordered = _in_time_order(newest_first)
+    assert ordered[0].ts.endswith("37.200000Z"), (
+        "the run opened at its EARLIEST event, not its newest")
+
+    # An unstamped line is kept, not dropped.
+    kept = _in_time_order([_E(""), _E("2026-09-30T05:43:38Z")])
+    assert len(kept) == 2
+
+
 if __name__ == "__main__":
     import sys
 

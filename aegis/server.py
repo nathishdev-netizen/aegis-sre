@@ -30,7 +30,7 @@ load_env()
 from aegis.l3_storage.store import AEGIS_HOME  # noqa: E402
 from aegis.l4_understanding.conformance import ConformanceEngine  # noqa: E402
 from aegis.l4_understanding.flowspec import (  # noqa: E402
-    FlowMiner, FlowSpec, synthesize_critical)
+    FlowMiner, FlowSpec, synthesize_critical, _seconds)
 from aegis.l7_reasoning.explainer import Explainer  # noqa: E402
 from aegis.l7_reasoning.governance import Budget  # noqa: E402
 from aegis.l7_reasoning.router import ModelRouter  # noqa: E402
@@ -60,6 +60,23 @@ def _v1_runtime():
     """
     from app.server import runtime
     return runtime
+
+
+def _in_time_order(events: list) -> list:
+    """A run's events oldest-first, whatever shape their timestamps are.
+
+    Sorted on parsed seconds rather than the raw string, because a bare clock
+    ("10:12:04") and an ISO instant ("2026-09-30T05:43:38Z") do not sort
+    against each other as text. Events with no usable timestamp keep their
+    arrival order, after the stamped ones, so nothing is silently dropped.
+    """
+    stamped, bare = [], []
+    for index, event in enumerate(events):
+        seconds = _seconds(event.ts) if getattr(event, "ts", "") else None
+        (bare if seconds is None else stamped).append(
+            (seconds, index, event))
+    stamped.sort(key=lambda row: (row[0], row[1]))
+    return [row[2] for row in stamped] + [row[2] for row in bare]
 
 
 class AegisApp:
@@ -634,6 +651,12 @@ class AegisApp:
             engine = ConformanceEngine(mode="shadow")
             judged = getattr(self.pipeline, "_judged", set())
             for trace_id, events in traces.items():
+                # Chronological order, once, here - every consumer below
+                # assumes it. A connector returns rows newest-first, which
+                # made "when did this run open" report its LAST event and
+                # every duration come out negative (so: 0.0s). Events with no
+                # timestamp keep their arrival order, after the stamped ones.
+                events = _in_time_order(events)
                 # A short trace is only skipped while it may still be
                 # running. Once the live path has judged it (it went quiet),
                 # its verdict is shown however few events it has - a run
