@@ -1473,6 +1473,32 @@ def test_a_patch_that_breaks_the_file_is_named_as_such():
     assert _first_unparsable(work, patch) is None, "a healthy file was flagged"
 
 
+def test_a_rate_limit_waits_as_long_as_the_provider_asked():
+    """A fixed 20s guess under-waited, so the one retry failed for nothing.
+
+    Free tiers meter TOKENS per minute and one Propose-fix call carrying code
+    excerpts can exhaust a minute by itself, so the raw "HTTP Error 429"
+    reached the user mid-demo.
+    """
+    from aegis.l7_reasoning.router import _retry_after
+
+    class _WithHeader(Exception):
+        headers = {"retry-after": "41.9"}
+
+    assert _retry_after(_WithHeader(), "", 20.0) == 41.9, (
+        "the provider's own Retry-After was ignored")
+    # Groq also states it in the body.
+    assert _retry_after(Exception(), "Please try again in 33.2s", 20.0) > 33.0
+    # No signal at all falls back to the caller's default.
+    assert _retry_after(Exception(), "", 20.0) == 20.0
+
+    class _Absurd(Exception):
+        headers = {"retry-after": "9999"}
+
+    assert _retry_after(_Absurd(), "", 20.0) <= 90.0, (
+        "a bad header could park an interactive click for minutes")
+
+
 if __name__ == "__main__":
     import sys
 

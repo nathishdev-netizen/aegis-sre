@@ -16,6 +16,7 @@ is None and the caller carries on. Detection never depended on this layer.
 
 from __future__ import annotations
 
+import re
 import time
 
 import json
@@ -96,6 +97,35 @@ def _http_transport(url: str, headers: dict[str, str], body: dict[str, Any],
         return json.loads(response.read().decode("utf-8"))
 
 
+def _retry_after(exc: Exception, body: str, default: float) -> float:
+    """How long the provider asked us to wait, in seconds.
+
+    Groq returns Retry-After, and states the wait in the body besides
+    ("Please try again in 41.9s"). Guessing a fixed delay under-waited and
+    burned the one retry for nothing. Capped so a bad header cannot park an
+    interactive click for minutes.
+    """
+    headers = getattr(exc, "headers", None)
+    raw = ""
+    if headers is not None:
+        try:
+            raw = headers.get("retry-after") or ""
+        except Exception:
+            raw = ""
+    if raw:
+        try:
+            return max(1.0, min(90.0, float(raw)))
+        except ValueError:
+            pass
+    match = re.search(r"try again in ([\d.]+)\s*s", body or "", re.I)
+    if match:
+        try:
+            return max(1.0, min(90.0, float(match.group(1)) + 1.0))
+        except ValueError:
+            pass
+    return max(1.0, min(90.0, default))
+
+
 class ModelRouter:
     def __init__(self, budget: Budget | None = None, audit: AuditLog | None = None,
                  transport: Callable[..., dict[str, Any]] | None = None,
@@ -135,7 +165,7 @@ class ModelRouter:
         # Free tiers meter tokens per minute, and a multi-step investigation
         # will hit that ceiling mid-loop. One patient retry turns a hard
         # failure into a pause, which is what the user actually wants.
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 response = self._transport(
                     spec["url"], {"Authorization": f"Bearer {key}"},
@@ -161,11 +191,19 @@ class ModelRouter:
                 status = getattr(exc, "code", None)
                 limited = status == 429 or "rate limit" in body.lower() \
                     or "too many requests" in str(exc).lower()
-                if attempt == 0 and limited:
-                    self.audit.record(task=task, provider=provider, model=model,
-                                      purpose=purpose, allowed=True,
-                                      reason="rate limited - waiting once")
-                    time.sleep(20)
+                if attempt < 2 and limited:
+                    # The provider says how long to wait; a fixed 20s guess
+                    # was often short of it, so the retry failed and the
+                    # raw "HTTP Error 429" reached the user. Free tiers meter
+                    # TOKENS per minute, and one Propose-fix call carrying
+                    # code excerpts can exhaust a minute's budget by itself.
+                    wait = _retry_after(exc, body, default=20.0 * (attempt + 1))
+                    self.audit.record(
+                        task=task, provider=provider, model=model,
+                        purpose=purpose, allowed=True,
+                        reason=f"rate limited - waiting {wait:.0f}s "
+                               f"(attempt {attempt + 1} of 2)")
+                    time.sleep(wait)
                     continue
                 raise
         try:
