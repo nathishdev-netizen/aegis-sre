@@ -52,6 +52,16 @@ POLL_S = 1.0
 RECENT_PATH = AEGIS_HOME / "recent.json"
 
 
+def _v1_runtime():
+    """v1's RuntimeState - the thing that writes the Live Brief.
+
+    Imported lazily: aegis must still start when app/ is absent or partly
+    broken, and a module-level import would make that fatal.
+    """
+    from app.server import runtime
+    return runtime
+
+
 class AegisApp:
     """The product shell: starts empty, attaches to any project's log from
     the UI, and can switch sources without a restart. One pipeline at a time;
@@ -273,6 +283,16 @@ class AegisApp:
                 if event is not None:
                     self.pipeline._commit(event)
                     fresh += 1
+                # The Live Brief is written by v1's runtime, which reads a FILE
+                # and so never saw a connector's records: a streaming connector
+                # showed incidents and verdicts while the brief stayed "No logs
+                # yet" forever. Feed it the same line, so a connector gets the
+                # same one-sentence account of what is happening that a watched
+                # file gets. Best effort - v1 failing must not stop ingestion.
+                try:
+                    _v1_runtime().ingest_line(record.payload, source="provider")
+                except Exception:
+                    pass
             # The normalizer holds the last line pending, waiting to see
             # whether the next one continues it (a traceback, a folded dump).
             # A file keeps arriving so that resolves itself; a provider poll
