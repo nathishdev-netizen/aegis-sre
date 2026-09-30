@@ -191,6 +191,38 @@ class AegisApp:
         self.pull_provider()
         return {"ok": True, "streaming_from": name, "project": project}
 
+    def _pull_every_service(self, provider, window: int, budget: int) -> list:
+        """One query PER SERVICE, so a quiet service is not drowned out.
+
+        A single unfiltered query returns the newest N records, and the busy
+        services fill them: measured on a live backend, one 200-record poll
+        carried 7 of 12 services, and payment-ms (42 records in a WEEK) would
+        never have appeared. "Everything" that silently means "the loudest
+        seven" is worse than not offering it.
+
+        Each service gets an equal share of the budget instead. That costs one
+        query per service per poll, which is why connectors are polled every
+        twenty ticks rather than every one.
+        """
+        listed = self.registry.services(self.provider_source)
+        names = [s["name"] for s in (listed.get("services") or []) if s.get("name")]
+        if not names:
+            # Cannot enumerate - fall back to the old single query rather than
+            # return nothing.
+            return provider.query_logs(LogFilter(
+                service="", since_minutes=window, limit=budget))
+        # A floor of 20: an equal split across many services can round down to
+        # a handful of records each, which is too few to see a run in.
+        share = max(20, budget // max(1, len(names)))
+        records = []
+        for name in names:
+            try:
+                records.extend(provider.query_logs(LogFilter(
+                    service=name, since_minutes=window, limit=share)))
+            except Exception:
+                continue  # one unreachable service must not stop the rest
+        return records
+
     def pull_provider(self) -> dict:
         """One query; new records only. De-duplicated, because a provider
         returns the same window each time it is asked."""
@@ -205,10 +237,14 @@ class AegisApp:
             # page the vendor happened to return; later polls only need the
             # new arrivals. A backend with no history simply returns less.
             first = not self._provider_seen
-            records = provider.query_logs(LogFilter(
-                service=getattr(self, "provider_service", ""),
-                since_minutes=1440 if first else 30,
-                limit=500 if first else 200))
+            service = getattr(self, "provider_service", "")
+            window = 1440 if first else 30
+            budget = 500 if first else 200
+            if service:
+                records = provider.query_logs(LogFilter(
+                    service=service, since_minutes=window, limit=budget))
+            else:
+                records = self._pull_every_service(provider, window, budget)
         finally:
             close = getattr(getattr(provider, "client", None), "close", None)
             if close:
