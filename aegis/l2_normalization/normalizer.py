@@ -122,8 +122,15 @@ class Normalizer:
 
     # -- pipeline ------------------------------------------------------------
 
-    def feed(self, raw_line: str) -> Event | None:
-        """Offer one raw line; returns the previous event if this line closed it."""
+    def feed(self, raw_line: str, service: str = "") -> Event | None:
+        """Offer one raw line; returns the previous event if this line closed it.
+
+        `service` overrides this normalizer's own name for THIS line. A file has
+        one service, so it never needs it; a connector holds many, and stamping
+        every record with the project name collapsed twelve systems into one -
+        incidents read "service: test" (the connector) instead of payment-ms,
+        and grouping, which keys on service, could no longer tell them apart.
+        """
         if not raw_line.strip():
             return None
         self.lines_in += 1
@@ -149,7 +156,8 @@ class Normalizer:
             return None
 
         completed = self._finalize()
-        self._pending = _Pending(parsed=parsed, extra_lines=[], service=self.service)
+        self._pending = _Pending(parsed=parsed, extra_lines=[],
+                                 service=service or self.service)
         return completed
 
     def flush(self) -> Event | None:
