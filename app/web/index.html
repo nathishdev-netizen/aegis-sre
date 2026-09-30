@@ -297,39 +297,11 @@
       letter-spacing: .14em; text-transform: uppercase; color: var(--text-3);
       margin: 26px 0 11px;
     }
-    .now-feed { display: flex; flex-direction: column; gap: 11px; }
-    .nf {
-      background: var(--surface); border: 1px solid var(--line);
-      border-left: 3px solid var(--line-soft);
-      border-radius: 12px; padding: 16px 18px;
-      transition: border-color .14s ease, transform .14s ease;
-    }
-    .nf:hover { border-color: var(--line-strong, var(--line)); }
-    .nf.sev-P1 { border-left-color: var(--bad); }
-    .nf.sev-P2 { border-left-color: var(--warn); }
-    .nf.sev-P3 { border-left-color: var(--text-3); }
-    .nf-top {
-      display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
-      margin-bottom: 7px;
-    }
-    .nf-what {
-      font-family: "Space Grotesk", ui-sans-serif, sans-serif;
-      font-size: 16.5px; font-weight: 600; color: var(--text);
-      letter-spacing: -.01em;
-    }
-    .nf-when {
-      font-family: ui-monospace, Menlo, monospace; font-size: 11px;
-      color: var(--text-3); margin-left: auto;
-    }
-    .nf-why { font-size: 14.5px; line-height: 1.58; color: var(--text-2); margin: 0; }
-    .nf-why b { color: var(--text); font-weight: 600; }
-    .nf-ev {
-      font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
-      color: var(--text-3); background: var(--bg-raised);
-      border-radius: 7px; padding: 8px 11px; margin-top: 10px;
-      overflow-x: auto; white-space: pre;
-    }
-    .nf-acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    /* Now no longer lists incidents - it names the one that needs you and
+       points at the page that handles the rest. */
+    .now-more { text-align: center; margin-top: 16px; font-size: 14px; }
+    .now-more a { color: var(--text-2); }
+    .now-more a:hover { color: var(--text); }
     .now-quiet {
       text-align: center; padding: 34px 20px; color: var(--text-3);
       font-size: 14.5px; border: 1px dashed var(--line);
@@ -878,9 +850,12 @@
           <div class="v-acts" id="nowActs"></div>
         </div>
         <div class="now-metrics" id="nowMetrics" hidden></div>
-        <div class="now-head" id="nowFeedHead" hidden>What needs you</div>
-        <div class="now-feed" id="nowFeed"></div>
+        <!-- Now answers ONE question: what needs you right now. The full list
+             of open incidents lives on Incidents, where each one can be
+             expanded, explained and fixed - listing them here too meant two
+             pages showing the same thing and neither being the answer. -->
         <div class="now-quiet" id="nowQuiet" hidden></div>
+        <div class="now-more" id="nowMore" hidden></div>
       </div>
 
       <!-- ============ OVERVIEW ============ -->
@@ -2479,38 +2454,28 @@
       }).join("");
     }
 
-    // The feed: every open incident, said in a sentence, worst first.
-    var feed = aegisEl("nowFeed");
-    var feedHead = aegisEl("nowFeedHead");
+    // Now answers one question, so it does not repeat the list. When other
+    // incidents are open it says so in a line and sends you to the page that
+    // actually handles them.
     var quiet = aegisEl("nowQuiet");
-    if (!feed) return;
-    feedHead.hidden = !live.length;
-    quiet.hidden = !!live.length || !attached;
-    if (!live.length && attached) {
-      quiet.textContent = stats.events
-        ? "No open incidents. Baselines keep learning while you are away."
-        : "Waiting for the first events to arrive.";
+    var more = aegisEl("nowMore");
+    if (quiet) {
+      quiet.hidden = !!live.length || !attached;
+      if (!live.length && attached) {
+        quiet.textContent = stats.events
+          ? "No open incidents. Baselines keep learning while you are away."
+          : "Waiting for the first events to arrive.";
+      }
     }
-    feed.innerHTML = live.map(function (inc) {
-      var hyp = inc.hypothesis || {};
-      var why = hyp.statement ||
-        "Not investigated yet - open this incident and I will run the tools.";
-      var evidence = (inc.evidence || [])[0] || "";
-      return '<div class="nf sev-' + aegisEsc(inc.severity) + '">' +
-        '<div class="nf-top"><span class="nf-what">' +
-          aegisEsc(nowHeadline(inc)) + "</span>" +
-          '<span class="nf-when">' + aegisEsc(nowAgo(inc.opened_at)) + "</span></div>" +
-        '<p class="nf-why">' + aegisEsc(why) + "</p>" +
-        (evidence ? '<div class="nf-ev">' + aegisEsc(evidence.slice(0, 160)) + "</div>" : "") +
-        '<div class="nf-acts">' +
-          '<a class="btn" href="#/incidents" data-aegis-goto="' + aegisEsc(inc.id) +
-            '">Open ' + aegisEsc(inc.id) + "</a>" +
-          (hyp.immediate_action
-            ? '<span class="hint" style="align-self:center">next: ' +
-              aegisEsc(String(hyp.immediate_action).slice(0, 90)) + "</span>"
-            : "") +
-        "</div></div>";
-    }).join("");
+    if (more) {
+      var others = Math.max(0, live.length - 1);
+      more.hidden = !others;
+      if (others) {
+        more.innerHTML = '<a href="#/incidents">' + others + " other " +
+          (others === 1 ? "incident" : "incidents") +
+          " open \u2192</a>";
+      }
+    }
 
     var badge = document.getElementById("navNowBadge");
     if (badge) { badge.textContent = live.length || ""; badge.hidden = !live.length; }
