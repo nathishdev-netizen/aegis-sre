@@ -109,6 +109,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
+            # The page IS the application - all 196KB of markup, styles and
+            # script in one file. Served without these, a browser reuses its
+            # cached copy and runs yesterday's JavaScript against today's
+            # backend, which looks like the fix never landed.
+            self.send_header("Cache-Control",
+                             "no-store, no-cache, must-revalidate")
+            self.send_header("Pragma", "no-cache")
             self.end_headers()
             self.wfile.write(html)
             return
