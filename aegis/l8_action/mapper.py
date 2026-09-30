@@ -21,6 +21,19 @@ MAX_FILES = 2000
 _TRACEBACK_FRAME = re.compile(r'File "([^"]+)", line (\d+)')
 
 
+# Frames from the interpreter, a virtualenv or an installed package. EVERY
+# traceback contains these and they are never the user's own code, so they
+# must not be read as "the repository path is wrong".
+_LIBRARY_MARKERS = (
+    "/site-packages/", "/dist-packages/", "/lib/python", "/Cellar/",
+    "/.venv/", "/venv/", "/node_modules/", "/Frameworks/Python.framework/",
+)
+
+
+def _is_library_path(path: str) -> bool:
+    return any(marker in path for marker in _LIBRARY_MARKERS)
+
+
 @dataclass
 class Location:
     file: str          # repo-relative
@@ -81,6 +94,10 @@ def _fragments(evidence_line: str) -> list[str]:
 class TraceToCodeMapper:
     def __init__(self, repo_path: str | Path) -> None:
         self.repo = Path(repo_path).resolve()
+        # Traceback frames pointing at source OUTSIDE this repo, kept so the
+        # caller can say "the path looks wrong" instead of silently mapping
+        # by text search.
+        self.foreign_frames: list[str] = []
 
     def _source_files(self) -> list[Path]:
         found = []
@@ -93,6 +110,20 @@ class TraceToCodeMapper:
                 continue
             found.append(path)
         return found
+
+    def foreign_frame_warning(self) -> str:
+        """Why the traceback was unusable, if it named another tree entirely.
+
+        Empty when frames were used, or when there were none to begin with.
+        """
+        if not self.foreign_frames:
+            return ""
+        sample = self.foreign_frames[0]
+        return (f"the traceback names {len(self.foreign_frames)} file(s) "
+                f"outside the repository path given - e.g. {sample} - so none "
+                "of it could be used and the fix was mapped by text search "
+                "instead. Check the repository path points at the checkout "
+                "that produced these logs.")
 
     def _frame_locations(self, evidence_lines: list[str]) -> list[Location]:
         """Locations read straight off Python traceback frames.
@@ -113,7 +144,18 @@ class TraceToCodeMapper:
                 try:
                     relative = path.resolve().relative_to(self.repo)
                 except ValueError:
-                    continue  # a frame outside this repo cannot be patched here
+                    # A frame outside this repo cannot be patched here. Worth
+                    # REMEMBERING though: when the traceback names a project
+                    # tree and the repo path is a different checkout of it,
+                    # every frame is dropped and the mapper falls back to
+                    # text-matching the log line - which lands on whatever
+                    # file happens to contain that string, usually the
+                    # `except` that logged it. Two attempts were spent that
+                    # way before anyone could see the path was wrong.
+                    if (path.suffix in SOURCE_SUFFIXES
+                            and not _is_library_path(str(path))):
+                        self.foreign_frames.append(str(path))
+                    continue
                 number = int(match.group(2))
                 key = (str(relative), number)
                 if key in seen:

@@ -1527,6 +1527,43 @@ def test_a_patch_targets_the_raise_not_the_handler():
         f"anchored on {located[0].file} - the handler, not the raise")
 
 
+def test_a_repo_path_that_does_not_match_the_traceback_is_named():
+    """Pointed at another checkout of the same project, every frame is dropped.
+
+    The mapper then falls back to text-matching the logged string, which lands
+    on the `except` that wrote it rather than the raise. Two real attempts
+    were spent that way before the path could be seen to be wrong.
+    """
+    import tempfile
+    from pathlib import Path
+    from aegis.l8_action.mapper import TraceToCodeMapper
+
+    real = Path(tempfile.mkdtemp())
+    (real / "worker.py").write_text("def run():\n    raise ValueError('boom')\n")
+    other = Path(tempfile.mkdtemp())          # a different checkout
+    (other / "worker.py").write_text("def run():\n    return 1\n")
+
+    frame = [f'  File "{real / "worker.py"}", line 2, in run']
+
+    mismatched = TraceToCodeMapper(str(other))
+    mismatched.locate(frame)
+    assert mismatched.foreign_frame_warning(), (
+        "a traceback naming a different checkout was accepted silently")
+
+    matched = TraceToCodeMapper(str(real))
+    matched.locate(frame)
+    assert not matched.foreign_frame_warning(), "a correct repo path warned"
+
+    # EVERY traceback holds interpreter and package frames; they must never
+    # be read as a wrong repository path.
+    for library in ("/opt/homebrew/lib/python3.11/asyncio/base_events.py",
+                    "/x/.venv/lib/python3.11/site-packages/langgraph/pregel.py"):
+        noisy = TraceToCodeMapper(str(real))
+        noisy.locate([f'  File "{library}", line 654, in run'])
+        assert not noisy.foreign_frame_warning(), (
+            f"a library frame ({library}) was mistaken for a wrong repo path")
+
+
 if __name__ == "__main__":
     import sys
 

@@ -346,6 +346,17 @@ class RemediationAgent:
 
         evidence = list(incident.get("evidence") or [])
         locations = self._locate_via_code(evidence) or self.mapper.locate(evidence)
+        # The traceback named a source tree, and NONE of it is under the repo
+        # path given - so every frame was discarded and whatever mapped did so
+        # by text search, which lands on the file that happens to contain the
+        # logged string (usually the `except` that wrote it, not the raise).
+        # Stop here: a patch built on that is guesswork, and two real attempts
+        # were spent this way before the path could be seen to be wrong.
+        mismatch = self.mapper.foreign_frame_warning()
+        if mismatch:
+            return self._bundle(Proposal(
+                incident_id, "advise",
+                mismatch + " Nothing was patched."))
         # How far a change here reaches. A patch to a leaf helper and a patch
         # to something nine callers depend on are different risks, and the
         # bundle should say which one the reviewer is holding.
