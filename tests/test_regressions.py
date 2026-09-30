@@ -1499,6 +1499,34 @@ def test_a_rate_limit_waits_as_long_as_the_provider_asked():
         "a bad header could park an interactive click for minutes")
 
 
+def test_a_patch_targets_the_raise_not_the_handler():
+    """A traceback prints outermost to innermost; the LAST frame raised it.
+
+    Returned in that order, the entry point came first, so the patch was
+    written for the `except Exception:` that LOGS the error while the raise
+    sat in another file. No patch to a handler can make the reproducer pass,
+    so the whole attempt was spent on the wrong file.
+    """
+    import tempfile
+    from pathlib import Path
+    from aegis.l8_action.mapper import TraceToCodeMapper
+
+    repo = Path(tempfile.mkdtemp())
+    (repo / "api.py").write_text(
+        "def chat():\n    try:\n        run()\n    except Exception:\n"
+        "        log('failed')\n")
+    (repo / "worker.py").write_text("def run():\n    raise ValueError('boom')\n")
+
+    evidence = [
+        f'  File "{repo / "api.py"}", line 3, in chat',
+        f'  File "{repo / "worker.py"}", line 2, in run',
+    ]
+    located = TraceToCodeMapper(str(repo)).locate(evidence)
+    assert located, "no frame was mapped"
+    assert located[0].file == "worker.py", (
+        f"anchored on {located[0].file} - the handler, not the raise")
+
+
 if __name__ == "__main__":
     import sys
 

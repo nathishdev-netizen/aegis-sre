@@ -126,6 +126,14 @@ class TraceToCodeMapper:
                     source = ""
                 found.append(Location(file=str(relative), line=number,
                                       source=source, fragment=text.strip()[:160]))
+        # Deepest frame FIRST. A Python traceback prints outermost to
+        # innermost, and the LAST frame is where the exception was actually
+        # raised - but returning them in that order put the entry point at the
+        # top, so a patch was written for api.py's `except Exception:` (the
+        # code that LOGS the error) while the raise sat in orchestrator.py.
+        # No patch to the handler can make the reproducer pass, so the whole
+        # attempt was spent on the wrong file.
+        found.reverse()
         return found
 
     def locate(self, evidence_lines: list[str]) -> list[Location]:
