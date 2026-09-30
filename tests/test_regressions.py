@@ -1421,6 +1421,58 @@ def test_an_unkeyed_guess_cannot_swallow_the_whole_log():
     assert len(linker._open) == 0, "the runaway guess was never abandoned"
 
 
+def test_two_hunks_cannot_delete_the_same_block():
+    """A model asked for one edit sometimes emits two hunks over one block.
+
+    With "@@" carrying no line numbers nothing distinguishes them, so the
+    second deletes what the first already removed. One real patch left a
+    `try:` with no body; the file stopped parsing and it surfaced as a
+    reproducer crash blamed on the test.
+    """
+    from aegis.l8_action.gate import AutonomyGate
+
+    gate = AutonomyGate("T1")
+    doubled = (
+        "--- a/x.py\n+++ b/x.py\n@@\n"
+        "-    result = call()\n+    try:\n+        result = call()\n"
+        "+    except Exception:\n+        return None\n"
+        "@@\n-    result = call()\n+    # handled above\n"
+    )
+    verdict = gate.validate_patch(doubled, ["x.py"])
+    assert not verdict.allowed, "a patch deleting the same line twice was allowed"
+    assert "same lines" in verdict.reason
+
+    # Two hunks in genuinely different places stay allowed.
+    distinct = ("--- a/x.py\n+++ b/x.py\n@@\n-    a = 1\n+    a = 2\n"
+                "@@\n-    b = 1\n+    b = 2\n")
+    assert gate.validate_patch(distinct, ["x.py"]).allowed
+
+
+def test_a_patch_that_breaks_the_file_is_named_as_such():
+    """patch(1) will happily leave a file that no longer compiles.
+
+    Reported through the reproducer it read as "possibly the patch removed
+    something the reproducer still needs" - which sends the reader to inspect
+    a test that was fine.
+    """
+    import tempfile
+    from pathlib import Path
+    from aegis.l8_action.runner import _first_unparsable
+
+    work = Path(tempfile.mkdtemp())
+    target = work / "pkg" / "mod.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    patch = "--- a/pkg/mod.py\n+++ b/pkg/mod.py\n@@\n-    x = 1\n+    x = 2\n"
+
+    target.write_text("def run():\n    try:\n    except Exception:\n        pass\n")
+    broken = _first_unparsable(work, patch)
+    assert broken is not None, "a file left unparsable was not detected"
+    assert broken[0] == "pkg/mod.py"
+
+    target.write_text("def run():\n    try:\n        x = 1\n    except Exception:\n        pass\n")
+    assert _first_unparsable(work, patch) is None, "a healthy file was flagged"
+
+
 if __name__ == "__main__":
     import sys
 

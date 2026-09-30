@@ -8,6 +8,8 @@ test), a hard timeout, and their exit code is the only thing believed.
 
 from __future__ import annotations
 
+import ast
+import re
 import os
 import shutil
 import subprocess
@@ -54,6 +56,32 @@ def _is_skippable_dir(path: Path) -> bool:
 # narrow enough that two occurrences in DIFFERENT functions of a normal-
 # sized file essentially never both fall inside it.
 PROXIMITY_LINES = 15
+
+_PATCHED_FILE = re.compile(r"^(?:---|\+\+\+)\s+(?:[ab]/)?(\S+)", re.M)
+
+
+def _first_unparsable(work: Path, patch_text: str) -> tuple[str, str] | None:
+    """The first patched Python file that no longer compiles, and why.
+
+    Only files the patch touched, and only Python. A patch that corrupts a
+    .py file is the tool's own bug and must never be reported as a test
+    failure.
+    """
+    for name in _PATCHED_FILE.findall(patch_text or ""):
+        if name == "/dev/null" or not name.endswith(".py"):
+            continue
+        target = work / name
+        if not target.exists():
+            continue
+        try:
+            ast.parse(target.read_text())
+        except SyntaxError as exc:
+            return name, f"{exc.__class__.__name__}: {exc.msg} (line {exc.lineno})"
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 
 
 @dataclass
@@ -391,6 +419,19 @@ class TestRunner:
                         return RunResult(False, patched.returncode,
                                          patched.stdout + patched.stderr,
                                          f"patch did not apply ({detail})")
+            # Does every file the patch touched still PARSE? patch(1) is happy
+            # to leave a file that no longer compiles - one real patch removed
+            # the only statement under a `try:` and re-added it nested a level
+            # deeper, leaving the try with no body. Without this check the
+            # breakage surfaced as the reproducer crashing, reported as
+            # "possibly the patch removed something the reproducer still
+            # needs" - which sends the reader to inspect a test that was fine.
+            if patch_text:
+                broken = _first_unparsable(work, patch_text)
+                if broken:
+                    return RunResult(
+                        False, 1, broken[1],
+                        f"the patch left {broken[0]} unparsable: {broken[1]}")
             # A monorepo service is usually its own import root: paideia's
             # chatbot holds agents/ and config/ beside api.py and a
             # pytest.ini of its own, so `from agents.orchestrator import x`

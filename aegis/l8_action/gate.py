@@ -36,6 +36,36 @@ _TEST_PATH = re.compile(r"(^|/)(tests?/|test_[^/]*$|[^/]*_test\.[a-z]+$)")
 _DIFF_FILE = re.compile(r"^(?:---|\+\+\+)\s+(?:[ab]/)?(\S+)", re.M)
 
 
+def _repeated_removal(diff: str) -> str:
+    """The first line a later hunk deletes for a second time, if any.
+
+    A model asked for one edit sometimes emits the change AND a tidy-up of the
+    same block as two hunks. With "@@" carrying no line numbers, nothing says
+    they are different places, so the second deletes text the first already
+    removed. Applied loosely it corrupts the file - one real patch left a
+    `try:` with no body and the file stopped parsing, which surfaced only when
+    the reproducer crashed with an error that read like a broken test.
+    """
+    seen: set[str] = set()
+    hunks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in (diff or "").splitlines():
+        if line.startswith("@@"):
+            current = []
+            hunks.append(current)
+            continue
+        if current is not None and line.startswith("-") and not line.startswith("---"):
+            body = line[1:].strip()
+            if body:
+                current.append(body)
+    for hunk in hunks:
+        for body in hunk:
+            if body in seen:
+                return body[:60]
+        seen.update(hunk)
+    return ""
+
+
 def changed_files(diff: str) -> list[str]:
     files = []
     for name in _DIFF_FILE.findall(diff or ""):
@@ -105,6 +135,12 @@ class AutonomyGate:
         if lines > MAX_CHANGED_LINES:
             return Verdict(False, f"{lines} changed lines > {MAX_CHANGED_LINES} - "
                                   "not a minimal fix")
+        repeated = _repeated_removal(diff)
+        if repeated:
+            return Verdict(False, "two hunks remove the same lines "
+                                  f"({repeated}) - the second cannot apply "
+                                  "once the first has run, and unanchored "
+                                  "@@ headers give no way to tell them apart")
         return Verdict(True, f"{len(files)} file(s), {lines} line(s) - within scope")
 
     def validate_reproducer(self, filename: str, existing_files: set[str]) -> Verdict:
