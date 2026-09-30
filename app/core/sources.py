@@ -179,6 +179,7 @@ def log_files_for_pid(pid: int) -> list[str]:
         return []
 
     candidates: list[str] = []
+    redirected: set[str] = set()
     for line in result.stdout.splitlines():
         parts = line.split()
         if len(parts) < 9:
@@ -189,9 +190,18 @@ def log_files_for_pid(pid: int) -> list[str]:
         # Skip the OS and other apps' logs - we want this project's own output.
         if any(path.startswith(prefix) for prefix in ("/private/var/", "/var/", "/System/", "/Library/")):
             continue
+        # FD 1 and 2 are stdout and stderr: a shell redirect, not a file the
+        # app chose to open. It usually holds a few startup lines while the
+        # app's real logger writes somewhere else entirely.
+        fd = parts[3].rstrip("rwu") if len(parts) > 3 else ""
+        if fd in ("1", "2"):
+            redirected.add(path)
         if path not in candidates:
             candidates.append(path)
-    return candidates
+    # A file reached ONLY through stdout/stderr ranks below one the app opened
+    # for itself. Both can sit in .logs/ with near-identical names.
+    return ([p for p in candidates if p not in redirected]
+            + [p for p in candidates if p in redirected])
 
 
 def best_log_file_for_pid(pid: int) -> str | None:
@@ -200,6 +210,11 @@ def best_log_file_for_pid(pid: int) -> str | None:
     if not files:
         return None
     # A file under a .logs/ or logs/ directory is almost certainly the app's own.
+    # log_files_for_pid already puts app-opened files ahead of stdout/stderr
+    # redirects, so the FIRST such match is the better one - "chatbot.log"
+    # (uvicorn's stdout, two lines) and "chatbot.app.log" (the application's
+    # own logger, thousands) both live in .logs/, and picking by directory
+    # alone returned whichever the OS happened to list first.
     for path in files:
         if "/.logs/" in path or "/logs/" in path:
             return path

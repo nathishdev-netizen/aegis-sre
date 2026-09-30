@@ -314,25 +314,25 @@ def suggest_ports(ports: list[dict[str, Any]], *,
 
     # A service forked into workers listens once but appears per process.
     # Two identical rows for :8020 is a listing bug, not two services.
+    #
+    # Parent and worker score the same, so the tie used to break on nothing
+    # and the winner varied between runs. The worker is the one that opened
+    # the application's own log; the parent usually holds only the stdout the
+    # shell redirected. Prefer whoever has a log we can read, and the longer
+    # path when both do - "chatbot.app.log" over "chatbot.log".
+    def _pick(row: dict[str, Any]) -> tuple:
+        path = row.get("log_path") or ""
+        return (-row["score"], not bool(path), -len(path), row["port"])
+
     seen_ports: set[int] = set()
     unique: list[dict[str, Any]] = []
-    for row in sorted(ranked, key=lambda r: (-r["score"], r["port"])):
+    for row in sorted(ranked, key=_pick):
         if row["port"] in seen_ports:
             continue
         seen_ports.add(row["port"])
         unique.append(row)
     ranked = unique
 
-    # A service forked into workers listens once but appears per process.
-    # Two identical rows for :8020 is a listing bug, not two services.
-    seen_ports: set[int] = set()
-    unique: list[dict[str, Any]] = []
-    for row in sorted(ranked, key=lambda r: (-r["score"], r["port"])):
-        if row["port"] in seen_ports:
-            continue
-        seen_ports.add(row["port"])
-        unique.append(row)
-    ranked = unique
 
     ranked.sort(key=lambda r: (-r["score"], r["port"]))
     for row in ranked:
