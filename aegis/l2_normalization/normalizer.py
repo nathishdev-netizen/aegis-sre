@@ -122,8 +122,14 @@ class Normalizer:
 
     # -- pipeline ------------------------------------------------------------
 
-    def feed(self, raw_line: str, service: str = "") -> Event | None:
+    def feed(self, raw_line: str, service: str = "",
+             timestamp: str = "") -> Event | None:
         """Offer one raw line; returns the previous event if this line closed it.
+
+        `timestamp` supplies the time for a line that does not carry one. A log
+        FILE writes the time into the line; a connector returns it as a separate
+        field, and discarding it left every provider-backed run with no time at
+        all - "@ · 0s" on every verdict, and runs that could not be ordered.
 
         `service` overrides this normalizer's own name for THIS line. A file has
         one service, so it never needs it; a connector holds many, and stamping
@@ -143,7 +149,13 @@ class Normalizer:
         # is real only if the line actually contains it; otherwise the line
         # inherits the last real one, like a reader would assume.
         if parsed["timestamp"] and parsed["timestamp"] not in raw_line:
-            parsed["timestamp"] = self._last_real_ts
+            # The parser stamped a time the line does not actually contain.
+            # An explicit one from the collector beats both that invention and
+            # inheriting the previous line's.
+            parsed["timestamp"] = timestamp or self._last_real_ts
+        elif not parsed["timestamp"] and timestamp:
+            parsed["timestamp"] = timestamp
+            self._last_real_ts = timestamp
         else:
             self._last_real_ts = parsed["timestamp"]
         if self._pending is not None \

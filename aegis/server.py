@@ -278,8 +278,8 @@ class AegisApp:
                 del self.provider_recent[25:]
                 # Keep the record's OWN service: a connector holds many, and
                 # without this every one of them became the project name.
-                event = self.pipeline.normalizer.feed(record.payload,
-                                                      record.service)
+                event = self.pipeline.normalizer.feed(
+                    record.payload, record.service, record.collected_at)
                 if event is not None:
                     self.pipeline._commit(event)
                     fresh += 1
