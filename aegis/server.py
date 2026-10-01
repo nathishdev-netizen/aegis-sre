@@ -1379,6 +1379,26 @@ class AegisApp:
 
 
 
+    def retry_fix(self, incident_id: str) -> dict:
+        """Clear the attempt counter so Propose fix can run again.
+
+        The circuit breaker stops after two failed attempts and nothing could
+        reset it - resume_auto_fix() existed but was reachable from no API or
+        button, so the only way back was deleting the proposal directory by
+        hand. Two attempts spent on a wrong repo path left an incident
+        permanently un-retryable.
+        """
+        from aegis.l8_action.remediate import resume_auto_fix
+
+        project = self.project or ""
+        if not project or not incident_id:
+            return {"ok": False, "detail": "no project or incident"}
+        try:
+            resume_auto_fix(project, incident_id)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "detail": f"{exc.__class__.__name__}: {exc}"}
+        return {"ok": True, "detail": f"{incident_id} can be retried"}
+
     def proposal(self, incident_id: str) -> dict:
         """Read back a proposal bundle so the UI can show all of it.
 

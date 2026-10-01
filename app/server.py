@@ -243,6 +243,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 write_json(self, HTTPStatus.OK, app.remediate(
                     str(body.get("incident_id", "")), str(body.get("repo_path", ""))))
                 return
+            if name == "retry-fix":
+                write_json(self, HTTPStatus.OK,
+                           app.retry_fix(str(body.get("incident_id", ""))))
+                return
             if name == "simulate":
                 write_json(self, HTTPStatus.OK,
                            app.simulate(str(body.get("target", ""))))

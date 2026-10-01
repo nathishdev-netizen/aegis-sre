@@ -199,10 +199,6 @@ class _PyVisitor(ast.NodeVisitor):
     def _visit_func(self, node) -> None:
         name = node.name
         self.analysis.defined.add(name)
-        self.analysis.defined.add(name)
-        self.analysis.defined.add(name)
-        self.analysis.defined.add(name)
-        self.analysis.defined.add(name)
         for deco in node.decorator_list:
             self._maybe_route(deco, name, node.lineno)
         self.func_stack.append(name)
@@ -402,9 +398,6 @@ def analyze_repo(root: str | Path) -> CodeAnalysis:
             visitor = _PyVisitor(analysis, rel)
             visitor.visit(tree)
             _resolve_module_urls(analysis, tree, rel)
-            _config_urls(analysis, tree, rel)
-            _config_urls(analysis, tree, rel)
-            _config_urls(analysis, tree, rel)
             _config_urls(analysis, tree, rel)
             if any(isinstance(n, ast.FunctionDef) and n.name == "main"
                    for n in ast.walk(tree)):

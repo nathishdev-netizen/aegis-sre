@@ -1598,6 +1598,39 @@ def test_the_repo_field_starts_at_the_checkout_that_made_the_logs():
     assert _repo_root_from_evidence(["[api] plain log line"]) == ""
 
 
+def test_a_stopped_incident_can_be_retried_without_deleting_files():
+    """The breaker stops after two failures and nothing could reset it.
+
+    resume_auto_fix() existed but was reachable from no API or button, so two
+    attempts spent on a wrong repo path left an incident permanently
+    un-retryable short of deleting its directory by hand.
+    """
+    import json
+    import tempfile
+    from pathlib import Path
+    from unittest import mock
+    from aegis.l8_action import remediate
+
+    home = Path(tempfile.mkdtemp())
+    with mock.patch.object(remediate, "AEGIS_HOME", home):
+        path = remediate._attempts_path("proj", "INC-1")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(
+            {"count": 2, "stopped": True, "stop_reason": "gave up",
+             "history": []}))
+
+        remediate.resume_auto_fix("proj", "INC-1")
+        state = json.loads(path.read_text())
+        assert state["count"] == 0, "the attempt counter was not cleared"
+        assert state["stopped"] is False
+        assert not state["stop_reason"]
+
+    # And it is reachable from the app, not just the module.
+    from aegis.server import AegisApp
+    assert hasattr(AegisApp, "retry_fix"), (
+        "no API reaches resume_auto_fix - the only way back is rm -rf")
+
+
 if __name__ == "__main__":
     import sys
 
