@@ -222,7 +222,13 @@ class ProjectStore:
                 "   pattern = excluded.pattern",
                 (
                     event.template_id,
-                    _first_line(event),
+                    # The TEMPLATE, not the line that happened to arrive. The
+                    # masked form is what makes two lines one story, and it is
+                    # the only form in which a status class survives - an
+                    # access log's 200s and 502s read identically otherwise.
+                    # `example` below keeps a real line for the reader.
+                    str(event.fields.get("template_pattern")
+                        or _first_line(event)),
                     event.service,
                     event.ts,
                     event.ts,
