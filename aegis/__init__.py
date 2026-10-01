@@ -18,4 +18,21 @@ This package is additive. Nothing in `app/` imports from here, so v1 and v2
 behaviour are unchanged by its presence.
 """
 
-__version__ = "0.1.0"
+# Read from the installed package metadata so pyproject.toml is the single
+# source of truth. Hardcoding it here meant `--version` printed 0.1.0 while
+# pyproject said 1.0.0, and nothing caught the disagreement.
+try:  # installed
+    from importlib.metadata import version as _version
+
+    __version__ = _version("log-intelligence-agent")
+except Exception:  # running from a checkout, not installed
+    import re as _re
+    from pathlib import Path as _Path
+
+    try:
+        _toml = (_Path(__file__).resolve().parent.parent
+                 / "pyproject.toml").read_text()
+        _found = _re.search(r'^version\s*=\s*"([^"]+)"', _toml, _re.M)
+        __version__ = _found.group(1) if _found else "0+unknown"
+    except Exception:
+        __version__ = "0+unknown"

@@ -27,6 +27,22 @@ BACKFILL_MAX_BYTES = int(os.environ.get("AEGIS_BACKFILL_MB", "10")) * 1024 * 102
 MAX_LINE_BYTES = int(os.environ.get("AEGIS_MAX_LINE_BYTES", "65536"))
 
 
+
+def _size(num_bytes: int) -> str:
+    """A byte count a person can read, at whatever unit fits.
+
+    Integer-dividing into whole MB printed "the last 0MB of a 0MB file" for
+    anything under a megabyte, which is most test fixtures and plenty of real
+    logs.
+    """
+    value = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{value:.0f}{unit}" if unit == "B" else f"{value:.1f}{unit}"
+        value /= 1024
+    return f"{value:.1f}GB"
+
+
 class FileCollector:
     """Tail one log file, yielding a tagged RawRecord per complete new line."""
 
@@ -48,8 +64,8 @@ class FileCollector:
                 self._offset = stat.st_size - BACKFILL_MAX_BYTES
                 self._skip_partial_first = True
                 self.backfill_note = (
-                    f"backfilled the last {BACKFILL_MAX_BYTES // (1024 * 1024)}MB"
-                    f" of a {stat.st_size // (1024 * 1024)}MB file")
+                    f"backfilled the last {_size(BACKFILL_MAX_BYTES)}"
+                    f" of a {_size(stat.st_size)} file")
         self._skip_partial_first = getattr(self, "_skip_partial_first", False)
 
     def poll(self) -> Iterator[RawRecord]:
@@ -87,9 +103,26 @@ class FileCollector:
         lines = text.split("\n")
         self._partial = lines.pop()  # incomplete tail; next poll completes it
 
+        # A capped backfill starts mid-file, so the first line is whatever the
+        # byte offset landed inside - "ine number 1759" with the 'l' cut off.
+        # The flag was set but never read here, so every capped attach emitted
+        # one fabricated record, breaking this module's own promise that half a
+        # line is never handed to L2.
+        if self._skip_partial_first:
+            self._skip_partial_first = False
+            if lines:
+                lines.pop(0)
+
         collected_at = datetime.now().isoformat(timespec="seconds")
         for line in lines:
             if line.strip():
+                # MAX_LINE_BYTES was declared and never applied, so a single
+                # pathological line - a dumped request body, a base64 blob, a
+                # minified stack - went through whole, into templating, storage
+                # and every prompt built from it. Truncating says so in the
+                # payload rather than silently losing the tail.
+                if len(line) > MAX_LINE_BYTES:
+                    line = line[:MAX_LINE_BYTES] + "\u2026[truncated]"
                 yield RawRecord(
                     source_id=self.source_id,
                     payload=line,

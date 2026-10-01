@@ -83,6 +83,15 @@ def _in_time_order(events: list) -> list:
 _TRACE_FILE = re.compile(r'File "([^"]+)", line \d+')
 
 
+def _aegis_version() -> str:
+    try:
+        import aegis
+
+        return aegis.__version__
+    except Exception:
+        return "unknown"
+
+
 def _repo_root_from_evidence(evidence: list) -> str:
     """The project directory a traceback's own frames point at, if they agree.
 
@@ -1437,10 +1446,12 @@ def make_handler(app: AegisApp):
                 self._json(app.providers())
             elif self.path.startswith("/api/sources"):
                 self._json(app.sources())
-            elif self.path.startswith("/api/sources"):
-                self._json(app.sources())
-            elif self.path.startswith("/api/sources"):
-                self._json(app.sources())
+            elif self.path == "/healthz":
+                # Anything running this as a service needs a liveness probe,
+                # and the version it answers with is how a deploy confirms
+                # WHICH build is up.
+                self._json({"ok": True, "service": "aegis",
+                            "version": _aegis_version()})
             elif self.path.startswith("/api/sources"):
                 self._json(app.sources())
             elif self.path == "/" or self.path.startswith("/index"):
