@@ -262,15 +262,25 @@ Which step IDs represent the run's actual PURPOSE - the work the run exists to d
 {{"critical_step_ids": ["..."], "flow_purpose": "one sentence"}}"""
 
 
-def synthesize_critical(spec: FlowSpec, router: Any) -> str:
+def synthesize_critical(spec: FlowSpec, router: Any, context: str = "",
+                        guidance: str = "") -> str:
     """The doc's FlowSynthesizer - C6's ONLY model step. The model may only
     flag steps that exist in the spec; anything else it says is discarded.
-    Returns a one-line summary of what happened, for the audit trail."""
+    Returns a one-line summary of what happened, for the audit trail.
+
+    `context` describes the project when something is known about it, and
+    `guidance` carries a human's hint. Both are optional - the prompt names
+    them, and leaving them out of the .format() call raised KeyError on EVERY
+    call, so this entire step could never run.
+    """
     listing = "\n".join(f"  {s.template_id}  presence={s.presence:.2f}  {s.label}"
                         for s in spec.steps)
     raw = router.chat("synthesize_flow",
                       [{"role": "user", "content": _SYNTH_PROMPT.format(
-                          name=spec.name, n=spec.traces_mined, steps=listing)}],
+                          name=spec.name, n=spec.traces_mined, steps=listing,
+                          context=(context or "").rstrip(),
+                          guidance=(f"{guidance.rstrip()}\n\n"
+                                    if guidance else ""))}],
                       purpose=f"mark critical steps of {spec.name}")
     if raw is None:
         return "model unavailable - critical flags left for a human to set"

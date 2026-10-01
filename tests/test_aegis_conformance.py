@@ -126,7 +126,11 @@ def test_no_critical_steps_means_unknown_not_a_guess():
         step.critical = False
     report, _ = ConformanceEngine().check("t-0", traces["t-0"], spec)
     assert report.verdict == "unknown"
-    assert "cannot be judged" in report.reason
+    # The WORDING is user-facing and has been rewritten for the page; what
+    # must hold is that it says nobody has defined the purpose, rather than
+    # implying the run itself did something wrong.
+    assert "FOR" in report.reason or "cannot be judged" in report.reason
+    assert "fail" not in report.reason.lower()
 
 
 def test_optional_steps_absent_produce_no_noise():
