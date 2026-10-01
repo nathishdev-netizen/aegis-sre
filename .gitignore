@@ -26,3 +26,11 @@ desktop-app/dist/
 node_modules/
 .agent.log
 .venv/
+
+# Screenshots and local exports - never part of the project
+*.png
+*.jpg
+*.jpeg
+data_exported_*.jsonl
+.claude/settings.local.json
+.claude/settings.json

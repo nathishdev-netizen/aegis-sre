@@ -9,7 +9,7 @@ Two programs in one repo:
 
 | | What | Start |
 |---|---|---|
-| **v1 — Log Agent** (`app/`) | live single-file watcher with an AI brief | `python3 run.py` → :8500 |
+| **v1 — Log Agent** (`app/`) | live single-file watcher with an AI brief | `python3 run.py` → :3000 |
 | **v2 — Aegis** (`aegis/`) | the layered platform below | `python3 -m aegis.server <logfile>` → :8600 |
 
 ## Aegis in one run
