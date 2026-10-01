@@ -38,28 +38,10 @@ def test_page_carries_the_run_quality_section():
                        "aegisGaps", "aegisSpec", "aegisPatterns", "aegisNotes",
                        "data-aegis-fix", "data-aegis-explain", "aegisMarkBtn"):
         assert element_id in page, f"missing from the v1 UI: {element_id}"
-    # every v2 capability has a home on this page
-    for element_id in ("aegisFunnel", "aegisVerdicts", "aegisIncidents",
-                       "aegisGaps", "aegisSpec", "aegisPatterns", "aegisNotes",
-                       "data-aegis-fix", "data-aegis-explain", "aegisMarkBtn"):
-        assert element_id in page, f"missing from the v1 UI: {element_id}"
-    # every v2 capability has a home on this page
-    for element_id in ("aegisFunnel", "aegisVerdicts", "aegisIncidents",
-                       "aegisGaps", "aegisSpec", "aegisPatterns", "aegisNotes",
-                       "data-aegis-fix", "data-aegis-explain", "aegisMarkBtn"):
-        assert element_id in page, f"missing from the v1 UI: {element_id}"
-    # every v2 capability has a home on this page
-    for element_id in ("aegisFunnel", "aegisVerdicts", "aegisIncidents",
-                       "aegisGaps", "aegisSpec", "aegisPatterns", "aegisNotes",
-                       "data-aegis-fix", "data-aegis-explain", "aegisMarkBtn"):
-        assert element_id in page, f"missing from the v1 UI: {element_id}"
-    # every v2 capability has a home on this page
-    for element_id in ("aegisFunnel", "aegisVerdicts", "aegisIncidents",
-                       "aegisGaps", "aegisSpec", "aegisPatterns", "aegisNotes",
-                       "data-aegis-fix", "data-aegis-explain", "aegisMarkBtn"):
-        assert element_id in page, f"missing from the v1 UI: {element_id}"
-    # the section hides itself when the bridge is absent - v1 look preserved
-    assert 'id="aegisPanel" hidden' in page
+    # The bolted-on panel is gone by intent (see above): the tabbed shell
+    # replaced it, so asserting its id contradicted this test's own comment.
+    assert "aegisPanel" not in page, (
+        "the pre-redesign panel is back - the shell was replaced, not wrapped")
 
 
 def test_v1_engine_never_imports_aegis():
