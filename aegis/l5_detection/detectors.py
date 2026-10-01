@@ -260,6 +260,9 @@ class DetectionEngine:
         self._latency_last_fire: dict[str, float] = {}
         self._gaps: deque = deque(maxlen=200)
         self._last_event_at: float | None = None
+        # The longest quiet already reported for this service: the bar a new
+        # one must clear to be worth saying again.
+        self._longest_quiet: float = 0.0
         self._events_seen = 0
         self._day_offset = 0.0
         # C8 SuppressionRules: template ids muted by the operator.
@@ -515,9 +518,17 @@ class DetectionEngine:
         emitted: list[Signal] = []
         if self._last_event_at is not None:
             gap = now - self._last_event_at
+            # The bar is the longest quiet this service has ALREADY shown.
+            # Judged against the median alone, a call-based service that is
+            # normally idle between calls fired on every routine gap - ten
+            # alarms in one file - because the median gap is ~1s and any pause
+            # beats it. A quiet no longer than one already reported is this
+            # service's rhythm, not an outage.
             if (len(self._gaps) >= self.SILENCE_MIN_GAPS
                     and gap >= max(self.SILENCE_FACTOR * median(self._gaps),
-                                   self.SILENCE_MIN_S)):
+                                   self.SILENCE_MIN_S,
+                                   self._longest_quiet * 1.05)):
+                self._longest_quiet = max(self._longest_quiet, gap)
                 # Detected retrospectively, when the stream resumes: a silent
                 # source emits nothing to detect WITH. The absence of logs is
                 # a signal; naive systems read it as health.
