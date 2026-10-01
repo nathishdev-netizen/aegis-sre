@@ -715,6 +715,9 @@ class AegisApp:
             notes = [s.to_dict() for s in self.pipeline.incidents.notes[-15:]]
             traces = self.pipeline.trace_index.traces()
             templates = self.pipeline.store.templates(limit=10)
+            # Newest last, as a stream reads. Bounded: the page shows a window,
+            # not the history.
+            recent_events = list(self.pipeline.hot.recent(60))
             patterns = self.pipeline.memory.patterns()[:5]
 
         spec = self.spec()
@@ -803,6 +806,15 @@ class AegisApp:
             "verdicts": verdicts,
             "incidents": incidents,
             "notes": notes,
+            # The live stream, in the ONLY form that may leave this process:
+            # text_redacted. The browser showing raw lines would make the page
+            # the leak, which is why a test guards this key's presence.
+            "events": [
+                {"ts": e.ts, "service": e.service, "level": e.level,
+                 "text": e.text_redacted.splitlines()[0][:400]
+                 if e.text_redacted else ""}
+                for e in recent_events
+            ],
             "templates": templates,
             "patterns": patterns,
             "spec": {

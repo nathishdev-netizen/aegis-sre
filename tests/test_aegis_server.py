@@ -37,9 +37,11 @@ CALLS = "".join(
 def test_state_carries_everything_the_page_renders():
     app = _app(CALLS)
     state = app.state()
+    # "gaps" belongs to a FIX RESULT, not to state - the page reads it from
+    # the proposal reply. Asserting it here outlived the API it described.
     for key in ("project", "funnel", "verdicts", "incidents", "notes",
                 "templates", "patterns", "spec", "model", "updated_at",
-                "events", "gaps"):
+                "events"):
         assert key in state, f"page would render without {key!r}"
     assert state["funnel"][0][1] == 16     # log lines
     assert state["model"]["calls_made"] == 0, "state() must never spend a model call"
@@ -83,9 +85,11 @@ def test_stream_events_are_redacted():
 
 
 def test_ask_rejects_empty_questions_without_spending():
+    """`ask` is now `explain`; the guarantee it protects is unchanged - a
+    blank input must not cost a model call."""
     app = _app(CALLS)
     before = app.router.budget.calls_made
-    result = app.ask("   ")
+    result = app.explain("   ")
     assert result["ok"] is False
     assert app.router.budget.calls_made == before, "an empty question cost a call"
     app.close()
