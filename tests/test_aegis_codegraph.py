@@ -50,9 +50,16 @@ def test_aegis_never_builds_the_index_itself():
     import inspect
     from aegis.l4_understanding import codegraph
 
+    # Behaviour, not prose: the word "init" appears in this module's own
+    # docstring explaining the rule, and in `def __init__`. Grepping for it
+    # failed on the documentation of the very promise it checks. What must
+    # hold is that nothing here SHELLS OUT to build an index.
     source = inspect.getsource(codegraph)
-    assert "init" not in source.replace("_INDEX_DIR", ""), \
-        "the bridge module can trigger an index build"
+    for runner in ("subprocess.run", "subprocess.Popen", "os.system",
+                   "check_output", "check_call"):
+        assert runner not in source, (
+            f"the bridge module can run {runner} - an index build is a side "
+            "effect away")
 
     from aegis.server import AegisApp
     build = inspect.getsource(AegisApp.build_code_graph)
@@ -68,9 +75,11 @@ def test_the_tool_is_offered_only_when_a_graph_exists():
     import inspect
     from aegis.server import AegisApp
     source = inspect.getsource(AegisApp._investigation_tools)
-    assert "index_present" in source
-    assert 'tools["explore_code"] = explore_code' in source, \
-        "explore_code is registered unconditionally"
+    # A code-reading tool is only worth a step when there is code to read.
+    assert 'if self._load_code():' in source, (
+        "the code tool is registered unconditionally - it will spend a step "
+        "to answer 'not available'")
+    assert 'tools["get_code_for"] = get_code_for' in source
 
 
 def test_a_graph_reply_is_returned_and_capped():

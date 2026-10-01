@@ -928,10 +928,19 @@ class AegisApp:
                 f"{m['id']} (similarity {m['similarity']}) cause then: "
                 f"{m['cause'][:80]} - outcome: {m['outcome']}" for m in matches)
 
-        return {"search_logs": search_logs, "get_baseline": get_baseline,
-                "get_code_for": get_code_for, "get_dependencies": get_dependencies,
-                "get_run_verdicts": get_run_verdicts,
-                "get_similar_past": get_similar_past}
+        tools = {"search_logs": search_logs, "get_baseline": get_baseline,
+                 "get_dependencies": get_dependencies,
+                 "get_run_verdicts": get_run_verdicts,
+                 "get_similar_past": get_similar_past}
+        # A tool that can only answer "not available" still costs one of six
+        # investigation steps to find that out. On a real incident the model
+        # spent steps 2 AND 5 on get_code_for, both returning "this project
+        # has not been analyzed", then had to rule out its own hypothesis for
+        # lack of the facts it had just failed twice to fetch. Offer it only
+        # when there is code to read.
+        if self._load_code():
+            tools["get_code_for"] = get_code_for
+        return tools
 
     def investigate(self, incident_id: str) -> dict:
         """Run the full investigation loop on one incident."""
