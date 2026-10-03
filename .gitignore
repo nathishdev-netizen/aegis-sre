@@ -34,3 +34,7 @@ node_modules/
 data_exported_*.jsonl
 .claude/settings.local.json
 .claude/settings.json
+private/
+tmp/
+vtest2.js
+pipe.py
