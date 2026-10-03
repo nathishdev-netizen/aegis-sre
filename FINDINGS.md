@@ -3,12 +3,16 @@
 Things seen while running Aegis against a real project (paideia chatbot,
 667 events). Not yet fixed; parked deliberately to keep testing.
 
-## 1. Library noise opens incidents  [HIGH]
+## 1. Library noise opens incidents  [FIXED]
 A pydantic deprecation warning from `venv/lib/.../site-packages/` opened an
-incident, ranked above a genuine failure. Lines from venv/, site-packages/,
-node_modules/, .venv/ are not the user's system - a third-party warning must
-never open an incident. One useless card above a real one teaches the user to
-ignore the list, which costs more than the missed signal ever would.
+incident, ranked above a genuine failure. One useless card above a real one
+teaches the user to ignore the list, which costs more than the missed signal
+ever would.
+
+Fixed: `_VENDOR_PATH` in l5_detection filters vendor trees for Python, Node,
+Ruby, Go, Java and Rust. The filter was Python-only at first, which did not
+match the "any project" claim. Guarded by
+`test_third_party_noise_cannot_open_an_incident_in_any_language`.
 
 ## 2. The incident card explains the mechanism, not the consequence  [HIGH]
 Card reads "NoveltyDetector @16:52:50 · RANKED CAUSE · why ranked: earliest

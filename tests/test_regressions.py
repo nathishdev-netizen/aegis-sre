@@ -1631,6 +1631,32 @@ def test_a_stopped_incident_can_be_retried_without_deleting_files():
         "no API reaches resume_auto_fix - the only way back is rm -rf")
 
 
+def test_third_party_noise_cannot_open_an_incident_in_any_language():
+    """A pydantic warning from site-packages opened an incident and ranked
+    ABOVE a genuine failure. The filter covered Python vendor trees only,
+    while the product claim is "any project".
+    """
+    from aegis.l5_detection.detectors import _VENDOR_PATH
+
+    vendor = (
+        "/x/venv/lib/python3.11/site-packages/pydantic/_migration.py",
+        "/x/node_modules/express/index.js",
+        "/x/vendor/bundle/gems/rails-7/lib/a.rb",
+        "/home/u/go/pkg/mod/github.com/pkg/errors/e.go",
+        "/u/.cargo/registry/src/index/tokio/lib.rs",
+        "/u/.m2/repository/org/springframework/core.jar",
+    )
+    for path in vendor:
+        assert _VENDOR_PATH.search(path), f"third-party path not filtered: {path}"
+
+    mine = ("/Users/me/project/app/api.py",
+            "/srv/myapp/services/chatbot/agents/orchestrator.py",
+            "/opt/app/vendors/pricing.py")
+    for path in mine:
+        assert not _VENDOR_PATH.search(path), (
+            f"the user's own code was filtered as third-party: {path}")
+
+
 if __name__ == "__main__":
     import sys
 

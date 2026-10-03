@@ -106,7 +106,16 @@ _COST_LABEL = re.compile(r"\b(?:node|step|operation|op|model)[=:]\s*([\w.\-/]+)"
 _TRACEBACK_FRAME = re.compile(r'File "([^"]+)", line (\d+)')
 # Frames inside a virtualenv or the stdlib belong to somebody else's code; a
 # fix proposal has to land in the project's own source, so those are dropped.
-_VENDOR_PATH = re.compile(r"/(?:site-packages|dist-packages|venv|\.venv|lib/python[\d.]+)/")
+# Third-party code is not the user's system: a pydantic deprecation warning
+# from site-packages once opened an incident and ranked ABOVE a genuine
+# failure. One useless card above a real one teaches people to ignore the
+# list, which costs more than the missed signal ever would. Covers Python,
+# Node, Ruby, Go, Java and Rust vendor trees - the claim is "any project", so
+# the filter cannot be Python-only.
+_VENDOR_PATH = re.compile(
+    r"/(?:site-packages|dist-packages|venv|\.venv|lib/python[\d.]+"
+    r"|node_modules|bower_components|vendor/bundle|\.bundle"
+    r"|\.cargo/registry|go/pkg/mod|\.m2/repository|\.gradle/caches)/")
 # Enough frames to reach the project's own call site without pasting a whole
 # 40-line traceback into an incident a human has to read.
 _MAX_FRAMES = 3
