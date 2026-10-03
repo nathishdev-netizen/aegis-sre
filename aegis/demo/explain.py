@@ -57,8 +57,22 @@ def main(argv: list[str]) -> int:
     if "--n" in argv:
         count = max(1, min(3, int(argv[argv.index("--n") + 1])))
     path = Path(args[0]) if args else Path(DEFAULT_LOG)
-    if not path.exists():
-        print(f"No such log file: {path}")
+    # A FILE, not just something that exists. DEFAULT_LOG is empty unless
+    # AEGIS_DEMO_LOG is set, and Path("") is ".", which exists - so running
+    # any demo with no argument passed this check and then died on
+    # IsADirectoryError deep in the collector.
+    if not path.is_file():
+        if not str(path) or str(path) == ".":
+            print(
+                "Usage: python3 -m aegis.demo.explain <logfile>\n"
+                "   or: AEGIS_DEMO_LOG=/path/to/app.log "
+                "python3 -m aegis.demo.explain\n\n"
+                "No log file given. Make one with:\n"
+                "  python3 demo/log_generator.py --scenario mixed "
+                "--count 120 --file /tmp/demo.log --seed 7"
+            )
+        else:
+            print(f"No such log file: {path}")
         return 1
 
     pipeline = Pipeline(path.stem, path, store_root=tempfile.mkdtemp())

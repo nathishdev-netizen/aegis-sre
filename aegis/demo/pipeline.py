@@ -28,8 +28,9 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 1
     log = Path(args[0]).expanduser()
-    if not log.exists():
-        print(f"No such log file: {log}")
+    if not log.is_file():
+        print(f"No such log file: {log}" if str(log) not in ("", ".")
+              else "Usage: python3 -m aegis.demo.pipeline <logfile>")
         return 1
     project = args[1] if len(args) > 1 else log.stem
 

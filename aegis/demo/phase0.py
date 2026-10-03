@@ -31,9 +31,15 @@ def rule(title: str) -> None:
 
 def main(argv: list[str]) -> int:
     path = Path(argv[1]) if len(argv) > 1 else Path(DEFAULT_LOG)
-    if not path.exists():
-        print(f"No such log file: {path}")
-        print("Usage: python3 -m aegis.demo.phase0 [path/to/logfile]")
+    # A FILE, not just something that exists: Path("") is ".", which exists.
+    if not path.is_file():
+        if str(path) in ("", "."):
+            print("Usage: python3 -m aegis.demo.phase0 <logfile>\n"
+                  "No log file given. Make one with:\n"
+                  "  python3 demo/log_generator.py --scenario mixed "
+                  "--count 120 --file /tmp/demo.log --seed 7")
+        else:
+            print(f"No such log file: {path}")
         return 1
 
     fingerprinter = Fingerprinter()
