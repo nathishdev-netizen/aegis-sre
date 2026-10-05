@@ -1657,6 +1657,37 @@ def test_third_party_noise_cannot_open_an_incident_in_any_language():
             f"the user's own code was filtered as third-party: {path}")
 
 
+def test_a_business_key_correlates_a_run():
+    """Plenty of commercial systems have no trace id at all.
+
+    They correlate on the thing being processed - order_id, payment_id,
+    job_id. None of those were recognised, so such a system produced NO runs
+    whatsoever and nothing above L3 could see it.
+    """
+    from aegis.l2_normalization.tracelinker import TraceLinker
+
+    linker = TraceLinker()
+    for line, expected in (
+        ("order.received order_id=ORD-88412 items=3", "ORD-88412"),
+        ("job.started job_id=jb_7741aa queue=default", "jb_7741aa"),
+        ("payment.authorised payment_id=pay_31f9ab", "pay_31f9ab"),
+        ('{"orderId":"ORD-5","status":"ok"}', "ORD-5"),
+    ):
+        assert linker._extract_key(line) == expected, (
+            f"business key not read from: {line}")
+
+    # An id naming who or what the run BELONGS to is not the run. Correlating
+    # on customer_id would merge every order that customer ever placed.
+    for line in ("user_id=c_7741", "customer_id=9120", "tenant_id=t_1",
+                 "sku_id=SKU-114"):
+        assert linker._extract_key(line) is None, (
+            f"{line} would merge unrelated runs")
+
+    # A real trace id still outranks a business key on the same line.
+    both = "order.received trace_id=tr_abcdef12 order_id=ORD-88412"
+    assert linker._extract_key(both) == "tr_abcdef12"
+
+
 if __name__ == "__main__":
     import sys
 

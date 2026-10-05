@@ -40,6 +40,17 @@ _KEY_PATTERNS = (
     # JSON ("reqId":"req-9f1c") - the world's most common structured formats,
     # and the first corpus run showed neither was being read at all.
     re.compile(r"\b(?:req|request|correlation|session)[_-]?id[\"']?\s*[=:]\s*[\"']?([\w-]{6,})", re.I),
+    # A BUSINESS key, last because it is the weakest claim: two services can
+    # legitimately log the same order_id hours apart, where a request id is
+    # one request by construction. But a commercial system very often has no
+    # trace id at all and correlates on the thing it is actually processing -
+    # order_id, payment_id, job_id - and without this such a system produced
+    # NO runs whatsoever, so nothing above L3 could see it. Deliberately a
+    # fixed list rather than `\w+_id`: matching any *_id would join two
+    # unrelated runs that happen to touch the same customer_id or user_id.
+    re.compile(r"\b(?:order|payment|invoice|booking|shipment|job|task|batch"
+               r"|transaction|txn|workflow|run)[_-]?id[\"']?\s*[=:]\s*"
+               r"[\"']?([\w-]{4,})", re.I),
 )
 
 # Session boundaries, learned from the project's own vocabulary rather than
