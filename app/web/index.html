@@ -634,9 +634,6 @@
       border-color: var(--accent); }
     .sw[aria-checked="true"] .sw-track::after { transform: translateX(14px);
       background: #0a0a0b; }
-    .brief-stub { display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; padding: 11px 15px; margin-bottom: 12px;
-      background: var(--surface-2); color: var(--text-3); font-size: 12px; }
 
     .hero .why { color: var(--text); margin-top: 14px; font-size: 20px; line-height: 1.6;
       font-weight: 500; letter-spacing: -.005em; }
@@ -826,6 +823,11 @@
       <span class="chip" id="backendBadge" hidden>pattern matches only</span>
       <span class="chip" id="profilePill" hidden></span>
       <span class="chip" id="liveStatus">Waiting</span>
+      <button class="sw" id="devModeSw" type="button" role="switch"
+              aria-checked="true"
+              title="The live brief is generated prose. Off, no model call is made to narrate the run - every measurement stays.">
+        <span class="sw-track"></span><span id="devModeSwLabel">Live brief</span>
+      </button>
       <button class="btn ghost" id="resetBtn">Clear run</button>
       <button class="btn ghost" id="demoBtn" hidden>Demo</button>
     </header>
@@ -878,21 +880,8 @@
         </section>
 
         <div id="briefBlock">
-          <div class="brief-stub" id="briefStub" hidden>
-            <span>Live brief off — measurements only, no model call to narrate.</span>
-            <button class="sw" id="devModeSwOff" type="button" role="switch"
-                    aria-checked="false" title="Turn the generated brief back on">
-              <span class="sw-track"></span><span>off</span>
-            </button>
-          </div>
           <section class="hero" id="heroBrief">
-            <div class="eyebrow">Live brief <span id="toolbarHint"></span>
-              <button class="sw" id="devModeSw" type="button" role="switch"
-                      aria-checked="true" style="float:right"
-                      title="The brief is generated prose. Off, no model call is made to narrate the run - every measurement stays.">
-                <span class="sw-track"></span><span id="devModeSwLabel">on</span>
-              </button>
-            </div>
+            <div class="eyebrow">Live brief <span id="toolbarHint"></span></div>
             <h1 id="headline">Reading the logs…</h1>
             <div class="why" id="summary"></div>
             <div class="why" id="reason"></div>
@@ -3927,10 +3916,8 @@
       // The brief is prose; the funnel, stats and quality cards below it are
       // measurements. Turning the brief off must not take them with it.
       var hero = document.getElementById("heroBrief");
-      var stub = document.getElementById("briefStub");
       var on = (both[0].state || {}).dev_mode !== false;
       if (hero) hero.hidden = !on;
-      if (stub) stub.hidden = on || !attached;
       // The switch shows the SERVER's state, so a failed request leaves the
       // control telling the truth rather than what was clicked.
       var sw = document.getElementById("devModeSw");
@@ -3952,7 +3939,7 @@
   // One switch, either instance of it: read the state off the control rather
   // than hardcoding a direction per button.
   document.addEventListener("click", function (event) {
-    var sw = event.target.closest("#devModeSw, #devModeSwOff");
+    var sw = event.target.closest("#devModeSw");
     if (!sw) return;
     setDevMode(sw.getAttribute("aria-checked") !== "true");
   });
