@@ -26,7 +26,7 @@ actually did its job, is not.
 - **Language:** Python 3.10+
 - **Dependencies:** none. The standard library only, by design.
 - **Licence:** MIT
-- **Size:** ~17,700 lines, 371 tests across 30 suites, all passing.
+- **Size:** ~17,700 lines, 374 tests across 30 suites, all passing.
 
 ---
 
@@ -877,7 +877,7 @@ Nothing is written outside `~/.aegis/` unless you click Apply on a fix.
 for t in tests/test_*.py; do python3 "$t"; done
 ```
 
-371 tests, 30 suites, no dependencies, no network, no API keys required.
+374 tests, 30 suites, no dependencies, no network, no API keys required.
 
 ---
 

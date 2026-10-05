@@ -17,7 +17,7 @@ Storage and search are solved problems. Deciding which five of a thousand lines
 matter, and whether the run they describe actually did its job, is not.
 
 - **Python 3.10+**, **zero dependencies** — the standard library only, by design
-- **373 tests**, 30 suites, no network and no API key needed to run them
+- **374 tests**, 30 suites, no network and no API key needed to run them
 - **MIT licensed**
 
 ## Install and run
@@ -94,7 +94,7 @@ and its honest limits.
 ## Verify it yourself
 
 ```bash
-for t in tests/test_*.py; do python3 "$t"; done        # 373 tests, no network
+for t in tests/test_*.py; do python3 "$t"; done        # 374 tests, no network
 python3 -m aegis.demo.conformance examples/shipyard.log # the verdicts above
 python3 -m aegis.demo.remediate                        # the fix loop, sandboxed
 ```
