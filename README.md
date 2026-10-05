@@ -3,9 +3,16 @@
 **Every observability tool tells you what happened. None of them tell you
 whether it worked.**
 
-Aegis reads the logs you already produce, learns what normal looks like without
-being configured, and gives every run a verdict — including the one nobody else
-computes: *finished cleanly, achieved nothing*.
+Aegis reads the logs you already produce, reads the code that wrote them, and
+closes the loop from *"something is wrong"* to *"here is a fix, and here is the
+test that proves it"* — then keeps measuring whether that fix actually held.
+
+| | What it does |
+|---|---|
+| **Judges every run** | Including the verdict nobody else computes: *finished cleanly, achieved nothing*. |
+| **Reads your codebase** | Maps log lines to source lines, finds unguarded calls, names the log line you failed to write. |
+| **Proves a fix first** | A failing test, a patch, the same test passing. 15 of its 16 outcomes are refusals. |
+| **Grades its own work** | Re-measures every fix, downgrades the ones that stopped holding, reports how often it was right. |
 
 ```
 175 log lines → 175 events → 9 templates → 3 signals → 2 incidents

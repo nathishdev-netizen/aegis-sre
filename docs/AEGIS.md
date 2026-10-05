@@ -1,10 +1,22 @@
 # Aegis
 
-**Every observability tool tells you what happened. None of them tell you whether it worked.**
+**Every observability tool tells you what happened. None of them tell you
+whether it worked — and none of them do anything about it.**
 
-Aegis reads the logs you already produce, learns what normal looks like without
-being configured, and gives every run a verdict — including the one nobody else
-computes: *finished cleanly, achieved nothing*.
+Aegis reads the logs you already produce, reads the code that wrote them, and
+closes the loop from *"something is wrong"* to *"here is a fix, and here is the
+test that proves it"* — then keeps measuring whether that fix actually held.
+
+Four things, in one tool, with no dependencies:
+
+| | What it does |
+|---|---|
+| **1. Judges every run** | Including the verdict nobody else computes: *finished cleanly, achieved nothing*. |
+| **2. Reads your codebase** | Maps log lines to source lines, finds unguarded external calls, names the log line you failed to write. |
+| **3. Proves a fix before proposing it** | A failing test, a patch, the same test passing. No proof, no proposal — 15 of its 16 outcomes are refusals. |
+| **4. Grades its own work** | Re-measures every fix, downgrades the ones that stopped holding, and reports how often it was right. |
+
+### 1 — it judges every run
 
 ```
 175 log lines → 175 events → 9 templates → 3 signals → 2 incidents
@@ -13,15 +25,71 @@ computes: *finished cleanly, achieved nothing*.
 ```
 
 Those three `hollow` runs returned HTTP 200, charged the customer, emailed a
-confirmation — and never reserved the stock. No error was logged because
-nothing errored. Every dashboard renders them green.
+confirmation — and never reserved the stock. No error was logged because nothing
+errored. Every dashboard renders them green.
 
-That funnel is the product, and those are real numbers from
-[`examples/shipyard.log`](../examples/shipyard.log) in this repo, which the
-[tutorial](#4-tutorial-from-zero-to-a-proven-fix) walks through end to end. On a
-production service the same funnel reads 1288 → 776 → 94 → 73 → 13. Storage and search are solved problems. Deciding
-which five of a thousand lines matter, and whether the run they describe
-actually did its job, is not.
+Real numbers from [`examples/shipyard.log`](../examples/shipyard.log) in this
+repo, which the [tutorial](#4-tutorial-from-zero-to-a-proven-fix) walks through
+end to end. On a production service the same funnel reads
+1288 → 776 → 94 → 73 → 13.
+
+### 2 — it reads your codebase, not just your logs
+
+Point it at the repository and it parses the AST: 73 log statements mapped to
+their source lines on one real service, which external calls are unguarded, and
+what each component depends on. That is what makes the next two possible — and
+what lets it say this when the trail goes cold:
+
+```
+GAP  reserve.py:89
+  This is the last thing logged in this function. Whatever it calls next
+  says nothing about itself, so a run that stops there cannot be told
+  from one that never got there.
+  → Log one line when this function finishes, with how long it took.
+```
+
+**26.9% of root-cause failures are caused by evidence that was never captured.**
+No amount of model quality recovers a line nobody wrote. Naming it requires the
+repository, not just the logs.
+
+### 3 — it proves a fix before proposing one
+
+```
+incident → map to the exact line → write a test that FAILS
+         → write a patch → the same test PASSES → draft
+```
+
+> **No patch reaches your code without a test that failed before it and passes
+> after.**
+
+Not a model saying "I fixed it" — a measurement. Applying it runs only the tests
+that touch the changed code: on a production Python service, **38 of 136 tests
+in 1.6 seconds, no API cost.** It refuses to apply while your tree is dirty,
+never commits, and every change is revertible.
+
+### 4 — it grades its own work
+
+Every other tool in this category stops at the fix.
+
+```
+mark a fix as working  →  the numbers at that moment are kept
+                       →  every 5 min: did the problem come back?
+                       →  it did: downgraded, with the count that proves it
+
+7 of 11 judged incident(s) were diagnosed correctly (64%)
+```
+
+A survey of the open-source field (October 2026) found **nothing that asks
+whether a fix held, nothing that learns from recorded outcomes, and nothing that
+reports its own accuracy on your incidents.** The one project with a real
+learning loop marks it `Open Source: ⛔️` in its own documentation. Sources in
+[§9](#on-the-three-rows-above).
+
+---
+
+Storage and search are solved problems. Deciding which five of a thousand lines
+matter, whether the run they describe did its job, what in the code caused it,
+and whether the fix worked — is not.
 
 - **Language:** Python 3.10+
 - **Dependencies:** none. The standard library only, by design.
