@@ -201,6 +201,17 @@ class AegisApp:
                     self.pull_provider()
                 except Exception:
                     pass
+            # Every five minutes, re-check the fixes that were marked as
+            # working. The outcome label was the one thing in this whole
+            # pipeline that required a human to come back later and tell us -
+            # and nobody ever does, so every precedent in memory read
+            # "outcome: not recorded" forever and similar() handed out
+            # unverified diagnoses with a precedent's authority.
+            if ticks % 300 == 0:
+                try:
+                    self.watch_fixes()
+                except Exception:
+                    pass
             self._stop.wait(POLL_S)
 
     # -- connectors ----------------------------------------------------------
@@ -1032,6 +1043,43 @@ class AegisApp:
                 "recurrence": recur,
                 "headline": headline,
                 "measured_at": snapshot.get("at", "")}
+
+    def watch_fixes(self) -> dict:
+        """Re-measure every fix that was marked as working.
+
+        A fix whose problem came back is downgraded from "worked" to
+        "did_not_work" with the measurement that says so, so memory stops
+        offering that diagnosis as a precedent that succeeded. This is the
+        self-correcting half: Aegis grading its own past work against what
+        the logs did afterwards, rather than against what anyone believed at
+        the time.
+
+        Only ever downgrades. A verdict of "held" is not promoted to proof,
+        because a problem that has not recurred YET is not the same as a
+        problem that is fixed - and overstating that is the failure mode this
+        whole project exists to avoid.
+        """
+        if self.pipeline is None:
+            return {"ok": False, "detail": "no source attached"}
+        changed = []
+        for row in self.pipeline.store.archived_incidents():
+            if (row.get("outcome") or "") != "worked":
+                continue
+            if not row.get("fix_snapshot"):
+                continue
+            incident_id = str(row.get("id", "")).split("@")[0]
+            result = self.verify_fix(incident_id)
+            if not result.get("ok"):
+                continue
+            if result.get("headline") != "recurred":
+                continue
+            detail = (result.get("recurrence") or {}).get("detail", "")
+            self.pipeline.memory.record_outcome(
+                str(row["id"]), "did_not_work",
+                f"auto-verified: {detail}")
+            self.outcomes[incident_id] = "did_not_work"
+            changed.append({"incident": incident_id, "detail": detail})
+        return {"ok": True, "downgraded": changed}
 
     def _fix_snapshot_for(self, incident_id: str) -> str:
         """The snapshot for this incident, by archive key or bare id.

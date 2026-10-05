@@ -1774,6 +1774,56 @@ def test_a_fix_that_did_not_hold_is_caught_by_recurrence():
     assert partial["verdict"] == "recurred" and "T-b" in partial["detail"]
 
 
+def test_a_fix_that_stopped_holding_downgrades_itself():
+    """The outcome label was the one thing needing a human to come back later.
+
+    Nobody ever does, so every precedent read "outcome: not recorded" forever
+    and similar() handed out unverified diagnoses with a precedent's
+    authority. The watch re-measures and downgrades, with the measurement
+    that justifies it.
+    """
+    import tempfile
+    import time
+    from pathlib import Path
+    from aegis.server import AegisApp
+
+    log = Path(tempfile.mkdtemp()) / "svc.log"
+    log.write_text("".join(
+        f"10:0{i // 6}:{i % 60:02d} ERROR svc: boom call=abc1234{i % 3} failed\n"
+        for i in range(40)))
+    app = AegisApp()
+    try:
+        app.attach(str(log), "watchdown")
+        time.sleep(2)
+        incident_id = [i.to_dict() for i in
+                       app.pipeline.incidents.incidents][0]["id"]
+        app.record_outcome(incident_id, "worked", "applied")
+
+        def outcome() -> str:
+            for row in app.pipeline.store.archived_incidents():
+                if str(row["id"]).split("@")[0] == incident_id:
+                    return str(row.get("outcome") or "")
+            return ""
+
+        # Quiet: a working fix must not be touched.
+        assert app.watch_fixes()["downgraded"] == []
+        assert outcome() == "worked"
+
+        # The same problem comes back.
+        with log.open("a") as handle:
+            for i in range(14):
+                handle.write(
+                    f"10:40:{i:02d} ERROR svc: boom call=yyy8888{i % 3} failed\n")
+        time.sleep(3)
+
+        downgraded = app.watch_fixes()["downgraded"]
+        assert len(downgraded) == 1, downgraded
+        assert outcome() == "did_not_work", (
+            "a fix whose problem returned is still recorded as working")
+    finally:
+        app.close()
+
+
 if __name__ == "__main__":
     import sys
 
