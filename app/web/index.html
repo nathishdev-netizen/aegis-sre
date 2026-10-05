@@ -634,6 +634,11 @@
       border-color: var(--accent); }
     .sw[aria-checked="true"] .sw-track::after { transform: translateX(14px);
       background: #0a0a0b; }
+    /* The eyebrow is already a flex row (see above); the switch just needs
+       pushing to its right edge. */
+    .hero .eyebrow .sw { margin-left: auto; }
+    .brief-off-note { margin-top: 12px; font-size: 13px; color: var(--text-3);
+      line-height: 1.5; }
 
     .hero .why { color: var(--text); margin-top: 14px; font-size: 20px; line-height: 1.6;
       font-weight: 500; letter-spacing: -.005em; }
@@ -823,11 +828,6 @@
       <span class="chip" id="backendBadge" hidden>pattern matches only</span>
       <span class="chip" id="profilePill" hidden></span>
       <span class="chip" id="liveStatus">Waiting</span>
-      <button class="sw" id="devModeSw" type="button" role="switch"
-              aria-checked="true"
-              title="The live brief is generated prose. Off, no model call is made to narrate the run - every measurement stays.">
-        <span class="sw-track"></span><span id="devModeSwLabel">Live brief</span>
-      </button>
       <button class="btn ghost" id="resetBtn">Clear run</button>
       <button class="btn ghost" id="demoBtn" hidden>Demo</button>
     </header>
@@ -881,12 +881,23 @@
 
         <div id="briefBlock">
           <section class="hero" id="heroBrief">
-            <div class="eyebrow">Live brief <span id="toolbarHint"></span></div>
-            <h1 id="headline">Reading the logs…</h1>
-            <div class="why" id="summary"></div>
-            <div class="why" id="reason"></div>
-            <div class="row" id="focusChips" style="margin-top:12px;flex-wrap:wrap"></div>
-            <div class="meter"><span id="confidenceBar" style="width:0%"></span></div>
+            <div class="eyebrow">Live brief <span id="toolbarHint"></span>
+              <button class="sw" id="devModeSw" type="button" role="switch"
+                      aria-checked="true"
+                      title="The live brief is generated prose. Off, no model call is made to narrate the run - every measurement stays.">
+                <span class="sw-track"></span><span id="devModeSwLabel">on</span>
+              </button>
+            </div>
+            <div id="briefBody">
+              <h1 id="headline">Reading the logs…</h1>
+              <div class="why" id="summary"></div>
+              <div class="why" id="reason"></div>
+              <div class="row" id="focusChips" style="margin-top:12px;flex-wrap:wrap"></div>
+              <div class="meter"><span id="confidenceBar" style="width:0%"></span></div>
+            </div>
+            <div class="brief-off-note" id="briefOffNote" hidden>
+              Off — measurements only. No model call is made to narrate the run.
+            </div>
           </section>
 
           <div class="funnel" id="aegisFunnel"></div>
@@ -3915,9 +3926,14 @@
       if (brief) brief.hidden = !attached;
       // The brief is prose; the funnel, stats and quality cards below it are
       // measurements. Turning the brief off must not take them with it.
-      var hero = document.getElementById("heroBrief");
       var on = (both[0].state || {}).dev_mode !== false;
-      if (hero) hero.hidden = !on;
+      // The CARD stays either way - it holds the switch, and a control that
+      // disappears with the thing it controls needs a second control
+      // somewhere else. Only the generated body hides.
+      var body = document.getElementById("briefBody");
+      var offNote = document.getElementById("briefOffNote");
+      if (body) body.hidden = !on;
+      if (offNote) offNote.hidden = on;
       // The switch shows the SERVER's state, so a failed request leaves the
       // control telling the truth rather than what was clicked.
       var sw = document.getElementById("devModeSw");
