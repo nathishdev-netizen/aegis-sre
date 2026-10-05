@@ -1,16 +1,90 @@
 # Aegis
 
 **Every observability tool tells you what happened. None of them tell you
-whether it worked — and none of them do anything about it.**
+whether it worked.**
 
-Aegis reads the logs you already produce, reads the code that wrote them, and
-closes the loop from *"something is wrong"* to *"here is a fix, and here is the
-test that proves it"* — then keeps measuring whether that fix actually held.
+Here is one order from a live checkout service. Every tool on the market renders
+it green:
 
-Four things, in one tool, with no dependencies:
+```
+09:08:28.605 INFO  checkout-api   order.received order_id=ORD-88409 cart_items=4
+09:08:28.625 INFO  checkout-api   cart.validated order_id=ORD-88409 subtotal=12790
+09:08:28.695 INFO  payment-svc    payment.authorised order_id=ORD-88409 amount=17490
+09:08:28.995 INFO  notify-svc     email.queued order_id=ORD-88409 template=order_confirmed
+09:08:29.015 INFO  checkout-api   order.completed order_id=ORD-88409 status=200 in 495ms
+```
 
-| | What it does |
-|---|---|
+Zero errors. HTTP 200. 495ms. The card was charged and the customer has an email
+saying their order is confirmed.
+
+**No stock was ever reserved.** No warehouse knows to ship anything. There is no
+error to alert on, because nothing errored — and in that one log it happens
+three times in twenty-six orders.
+
+Aegis calls that run **`hollow`**: completed cleanly, achieved nothing. It is
+the failure no error can show you, and the verdict no other tool computes.
+
+### And then it does something about it
+
+Aegis does not stop at telling you. It reads the code that wrote those log
+lines, maps the failure to the line that caused it, **writes a test that fails,
+patches it, and refuses to show you anything until that same test passes.**
+
+> **No patch reaches your code without a test that failed before it and passes
+> after.**
+
+That is not a model saying "I fixed it" — it is a measurement you can check.
+And it refuses far more often than it succeeds: **fifteen of the sixteen
+outcomes in that protocol are refusals**, each one naming what it tried and why
+it stopped. Published benchmarks put AI root-cause accuracy at 3.9–12.5% while
+vendors claim 82–90%, so a tool that always has an answer is the liability. This
+one tells you when it does not.
+
+### Then it checks whether the fix actually held
+
+Every other tool in this category stops at the fix. Aegis keeps measuring —
+every five minutes, with arithmetic rather than a model:
+
+```
+mark a fix as working  →  the numbers at that moment are kept
+                       →  did the problem come back?
+                       →  it did: downgraded, with the count that proves it
+
+7 of 11 judged incident(s) were diagnosed correctly (64%)
+```
+
+That last number is its own hit rate on *your* incidents, and it is published
+rather than claimed. A survey of the open-source field in October 2026 found
+nothing that asks whether a fix held, nothing that learns from recorded
+outcomes, and nothing that reports its own accuracy. The one project with a real
+learning loop marks it `Open Source: ⛔️` in its own documentation
+([sources](#on-the-three-rows-above)).
+
+---
+
+### What that looks like running
+
+```
+175 log lines → 175 events → 9 templates → 3 signals → 2 incidents
+                   ↳ grouped into 26 runs
+                     20 achieved · 3 HOLLOW · 2 failed · 1 degraded
+```
+
+Real numbers from [`examples/shipyard.log`](../examples/shipyard.log) in this
+repo, which the [tutorial](#4-tutorial-from-zero-to-a-proven-fix) walks through
+end to end. On a production service the same funnel reads
+1288 → 776 → 94 → 73 → 13.
+
+Storage and search are solved problems. Deciding which five of a thousand lines
+matter, whether the run they describe did its job, what in the code caused it,
+and whether the fix worked — is not.
+
+- **Language:** Python 3.10+
+- **Dependencies:** none. The standard library only, by design.
+- **Licence:** MIT
+- **Size:** ~18,200 lines, 378 tests across 30 suites, all passing.
+
+---|---|
 | **1. Judges every run** | Including the verdict nobody else computes: *finished cleanly, achieved nothing*. |
 | **2. Reads your codebase** | Maps log lines to source lines, finds unguarded external calls, names the log line you failed to write. |
 | **3. Proves a fix before proposing it** | A failing test, a patch, the same test passing. No proof, no proposal — 15 of its 16 outcomes are refusals. |
