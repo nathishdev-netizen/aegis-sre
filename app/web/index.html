@@ -41,35 +41,13 @@
       --glow:      radial-gradient(130% 100% at 50% -15%, #26344f 0%, #172032 30%, #0c1018 58%, #070709 100%);
       --btn-edge:  rgba(255,255,255,.22);
       --num-font:  'Chakra Petch', sans-serif;
+      /* Used by a handful of rules that were written against names this
+         block never defined, so they silently inherited the surrounding
+         colour instead of the one intended. Aliased rather than renamed at
+         every usage, which is the smaller change. */
+      --good:      var(--ok);
+      --mono:      ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    [data-theme="light"] {
-      color-scheme: light;
-      --bg:        #f4f5f7;
-      --bg-raised: #ffffff;
-      --surface:   #ffffff;
-      --surface-2: #f2f5fa;
-      --line:      rgba(0,0,0,.09);
-      --line-soft: rgba(0,0,0,.05);
-      --text:      #14161a;
-      --text-2:    #52525b;
-      --text-3:    #8a8a93;
-      --accent:    #2563eb;
-      --accent-bg: rgba(37,99,235,.09);
-      --ok:        #0f9d63;
-      --ok-bg:     rgba(15,157,99,.10);
-      --warn:      #b7791f;
-      --warn-bg:   rgba(183,121,31,.11);
-      --bad:       #dc2626;
-      --bad-bg:    rgba(220,38,38,.09);
-      --hollow:    #7c3aed;
-      --hollow-bg: rgba(124,58,237,.10);
-      --shadow:    0 1px 2px rgba(15,23,42,.05), 0 8px 24px rgba(15,23,42,.06);
-      --radius:    14px;
-      --glow:      radial-gradient(130% 100% at 50% -15%, #ffffff 0%, #eef1f6 42%, #e7eaf0 100%);
-      --btn-edge:  rgba(0,0,0,.22);
-      --num-font:  'Chakra Petch', sans-serif;
-    }
-
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body {
@@ -827,7 +805,6 @@
         <span class="nav-badge" id="navConnBadge" hidden></span></a>
     </nav>
     <div class="rail-foot">
-      <button class="icon-btn" id="themeBtn" title="Switch theme">◐ Theme</button>
     </div>
   </aside>
 
@@ -3985,28 +3962,6 @@
     location.hash = "#/settings";
   });
 })();
-
-  /* --- theme: both are first-class, the choice is remembered --- */
-  (function () {
-    var root = document.documentElement;
-    function apply(name) {
-      root.setAttribute("data-theme", name);
-      try { localStorage.setItem("liq.theme", name); } catch (err) {}
-      var btn = document.getElementById("themeBtn");
-      if (btn) btn.textContent = name === "dark" ? "◐ Light" : "◑ Dark";
-    }
-    var saved = null;
-    try { saved = localStorage.getItem("liq.theme"); } catch (err) {}
-    if (!saved) {
-      saved = window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-    }
-    apply(saved);
-    var btn = document.getElementById("themeBtn");
-    if (btn) btn.addEventListener("click", function () {
-      apply(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
-    });
-  })();
 </script>
 </body>
 </html>
