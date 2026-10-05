@@ -1688,6 +1688,29 @@ def test_a_business_key_correlates_a_run():
     assert linker._extract_key(both) == "tr_abcdef12"
 
 
+def test_marking_too_many_steps_cannot_hide_a_hollow_run():
+    """A run is hollow only when NONE of its purpose steps ran.
+
+    That rule is right - one logical step often mines into several template
+    variants - but it means marking MORE steps makes hollowness harder to
+    detect, which is backwards. On a real log the model marked six of nine
+    steps, including the first line of every run, and all three hollow runs
+    came back `achieved`.
+
+    The fix belongs in the prompt: a step present in nearly every run happens
+    in the runs that FAILED too, so it cannot be what distinguishes success.
+    """
+    from aegis.l4_understanding.flowspec import _SYNTH_PROMPT
+
+    lowered = _SYNTH_PROMPT.lower()
+    assert "presence" in lowered and "1.00" in _SYNTH_PROMPT, (
+        "the prompt does not tell the model that a near-ubiquitous step "
+        "cannot be the purpose - the one signal that distinguishes them")
+    assert "smallest set" in lowered or "one step" in lowered, (
+        "the prompt does not ask for the smallest set; marking many steps "
+        "makes a hollow run undetectable")
+
+
 if __name__ == "__main__":
     import sys
 

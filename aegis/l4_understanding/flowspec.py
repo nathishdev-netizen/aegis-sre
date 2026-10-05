@@ -256,7 +256,12 @@ _SYNTH_PROMPT = """These are the steps of one operation ("{name}"), mined from {
 {context}
 {steps}
 
-Which step IDs represent the run's actual PURPOSE - the work the run exists to do, without which a run that completed cleanly still achieved nothing? Greetings, prompts, setup and teardown are not the purpose.
+Which step IDs represent the run's actual PURPOSE - the work the run exists to do, without which a run that completed cleanly still achieved nothing?
+
+Rules:
+- Setup, validation, lookups, logging, notifications and teardown are NOT the purpose. Neither is the line that reports the run finished.
+- A step with presence at or near 1.00 is almost never the purpose: it happens in the runs that FAILED too, so it cannot be what distinguishes a successful run. The purpose usually shows a presence BELOW 1.00, because the runs that achieved nothing are missing exactly it.
+- Prefer the smallest set that answers "what did the caller actually get out of this run?" - usually ONE step, rarely more than two. Marking many steps makes a hollow run undetectable, because a run is only hollow when NONE of them ran.
 
 {guidance}Reply with ONLY JSON:
 {{"critical_step_ids": ["..."], "flow_purpose": "one sentence"}}"""

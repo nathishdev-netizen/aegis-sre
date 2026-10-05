@@ -7,8 +7,9 @@ being configured, and gives every run a verdict — including the one nobody els
 computes: *finished cleanly, achieved nothing*.
 
 ```
-175 log lines → 26 runs → 9 templates → 3 signals → 2 incidents
-                        ↳ 20 achieved · 3 HOLLOW · 2 failed · 1 degraded
+175 log lines → 175 events → 9 templates → 3 signals → 2 incidents
+                   ↳ grouped into 26 runs
+                     20 achieved · 3 HOLLOW · 2 failed · 1 degraded
 ```
 
 Those three `hollow` runs returned HTTP 200, charged the customer, emailed a
@@ -207,7 +208,8 @@ log lines 175 → events 175 → templates 9 → signals 3 → incidents 2
 
 Read it as a sequence of narrowings. 175 raw lines became 9 distinct *shapes* of
 line. Three of those shapes were statistically unusual. Those three grouped into
-two stories.
+two stories. Separately, the 175 events were correlated into **26 runs** by
+their `order_id` — no trace id required.
 
 **You are now reading two incidents instead of 175 lines.**
 

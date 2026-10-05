@@ -8,8 +8,9 @@ being configured, and gives every run a verdict — including the one nobody els
 computes: *finished cleanly, achieved nothing*.
 
 ```
-175 log lines → 26 runs → 9 templates → 3 signals → 2 incidents
-                        ↳ 20 achieved · 3 HOLLOW · 2 failed · 1 degraded
+175 log lines → 175 events → 9 templates → 3 signals → 2 incidents
+                   ↳ grouped into 26 runs
+                     20 achieved · 3 HOLLOW · 2 failed · 1 degraded
 ```
 
 Storage and search are solved problems. Deciding which five of a thousand lines
