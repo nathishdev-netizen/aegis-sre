@@ -114,3 +114,58 @@ def load(raw: str | None) -> dict[str, Any] | None:
         return json.loads(raw) if raw else None
     except (ValueError, TypeError):
         return None
+
+# -- did the PROBLEM come back? ----------------------------------------------
+#
+# The latency check above answers "is this operation faster now". That is the
+# right question for a slow-flow incident and the wrong one for every other
+# kind: a novelty, an error spike or a run of hollow checkouts can be fixed
+# without any timing moving at all. The question that generalises is whether
+# the incident's own signature fired again, and that is pure arithmetic over
+# counts this store has always kept.
+#
+# A fix is not credited for silence alone. A template that fired twice in its
+# whole history and has not fired since proves nothing, so a verdict needs
+# the problem to have been frequent enough before that its absence means
+# something.
+MIN_BEFORE = 3
+
+
+def recurrence(template_ids: list[str], before: dict[str, int],
+               after: dict[str, int]) -> dict[str, Any]:
+    """Whether the templates an incident was made of have fired again.
+
+    `before` is the count at the moment the fix was marked, `after` the count
+    now. Returns one verdict for the incident, plus the per-template numbers
+    it was derived from, because a claim without its evidence is the thing
+    this project refuses to ship.
+    """
+    rows = []
+    for template_id in sorted(set(template_ids)):
+        was = int(before.get(template_id, 0) or 0)
+        now = int(after.get(template_id, 0) or 0)
+        rows.append({"template_id": template_id, "before": was,
+                     "since": max(now - was, 0)})
+    if not rows:
+        return {"verdict": "unknown",
+                "detail": "this incident names no template to watch",
+                "templates": []}
+
+    watchable = [r for r in rows if r["before"] >= MIN_BEFORE]
+    recurred = [r for r in rows if r["since"] > 0]
+
+    if recurred:
+        worst = max(recurred, key=lambda r: r["since"])
+        return {"verdict": "recurred",
+                "detail": (f"{worst['template_id']} has fired "
+                           f"{worst['since']} more time(s) since the fix"),
+                "templates": rows}
+    if not watchable:
+        return {"verdict": "too-early",
+                "detail": (f"none of these fired {MIN_BEFORE}+ times before "
+                           "the fix, so silence since proves nothing"),
+                "templates": rows}
+    return {"verdict": "held",
+            "detail": (f"none of {len(watchable)} template(s) has fired again "
+                       "since the fix"),
+            "templates": rows}

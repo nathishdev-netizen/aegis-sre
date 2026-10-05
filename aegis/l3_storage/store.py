@@ -385,6 +385,31 @@ class ProjectStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def template_activity(self, template_ids: list[str],
+                          since_minute: str = "") -> dict[str, int]:
+        """How many times each template has fired, optionally since a minute.
+
+        template_minutes has been written on every single event since this
+        store existed and read by nothing. It is what answers the only
+        question that matters after a fix: did this exact problem come back?
+        Latency cannot answer it - most incidents are an error, a novelty or
+        a hollow run, where the timing never moved.
+        """
+        if not template_ids:
+            return {}
+        marks = ",".join("?" for _ in template_ids)
+        sql = ("SELECT template_id, SUM(count) AS total FROM template_minutes"
+               f" WHERE template_id IN ({marks})")
+        args: list[Any] = list(template_ids)
+        if since_minute:
+            sql += " AND minute > ?"
+            args.append(since_minute)
+        sql += " GROUP BY template_id"
+        with self._lock:
+            self._conn.commit()
+            rows = self._conn.execute(sql, args).fetchall()
+        return {row["template_id"]: int(row["total"] or 0) for row in rows}
+
     def template_count(self) -> int:
         with self._lock:
             self._conn.commit()

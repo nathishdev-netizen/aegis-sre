@@ -1711,6 +1711,69 @@ def test_marking_too_many_steps_cannot_hide_a_hollow_run():
         "makes a hollow run undetectable")
 
 
+def test_marking_a_fix_keeps_the_numbers_to_judge_it_by():
+    """verify_fix was unreachable: nothing ever wrote a fix snapshot.
+
+    Its own error message said "mark an incident as worked and the numbers at
+    that moment are kept for comparison" - and marking it worked kept
+    nothing, so every call answered "nothing was measured". The whole
+    verification stage was dead code.
+    """
+    import tempfile
+    import time
+    from pathlib import Path
+    from aegis.server import AegisApp
+
+    log = Path(tempfile.mkdtemp()) / "svc.log"
+    log.write_text("".join(
+        f"10:0{i // 6}:{i % 60:02d} ERROR svc: boom call=abc1234{i % 3} failed\n"
+        for i in range(40)))
+    app = AegisApp()
+    try:
+        app.attach(str(log), "fixsnap")
+        time.sleep(2)
+        incidents = [i.to_dict() for i in app.pipeline.incidents.incidents]
+        assert incidents, "no incident to mark"
+        incident_id = incidents[0]["id"]
+
+        assert app.record_outcome(incident_id, "worked", "applied")["ok"]
+        assert app._fix_snapshot_for(incident_id), (
+            "marking a fix worked kept no numbers to judge it by")
+
+        result = app.verify_fix(incident_id)
+        assert result["ok"], f"verification still cannot speak: {result}"
+        assert result["headline"] == "held", result["headline"]
+    finally:
+        app.close()
+
+
+def test_a_fix_that_did_not_hold_is_caught_by_recurrence():
+    """Latency cannot judge most incidents.
+
+    An error, a novelty or a run of hollow checkouts can be fixed with no
+    timing moving at all, so the measure that generalises is whether the
+    incident's own templates fired again.
+    """
+    from aegis.l6_correlation.verify import recurrence, MIN_BEFORE
+
+    back = recurrence(["T-a"], {"T-a": 10}, {"T-a": 14})
+    assert back["verdict"] == "recurred" and "4 more" in back["detail"]
+
+    held = recurrence(["T-a"], {"T-a": 10}, {"T-a": 10})
+    assert held["verdict"] == "held"
+
+    # Silence is not evidence when the thing was rare to begin with.
+    rare = recurrence(["T-a"], {"T-a": MIN_BEFORE - 1}, {"T-a": MIN_BEFORE - 1})
+    assert rare["verdict"] == "too-early", rare
+
+    assert recurrence([], {}, {})["verdict"] == "unknown"
+
+    # One of several coming back is still a recurrence.
+    partial = recurrence(["T-a", "T-b"], {"T-a": 9, "T-b": 9},
+                         {"T-a": 9, "T-b": 12})
+    assert partial["verdict"] == "recurred" and "T-b" in partial["detail"]
+
+
 if __name__ == "__main__":
     import sys
 

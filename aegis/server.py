@@ -996,8 +996,9 @@ class AegisApp:
         history, not asked of anyone."""
         if self.pipeline is None:
             return {"ok": False, "detail": "no source attached"}
-        from aegis.l6_correlation.verify import load, verify
-        snapshot = load(self.pipeline.store.fix_snapshot(incident_id))
+        from aegis.l6_correlation.verify import load, recurrence, verify
+
+        snapshot = load(self._fix_snapshot_for(incident_id))
         if snapshot is None:
             return {"ok": False,
                     "detail": "nothing was measured when this was marked - "
@@ -1006,7 +1007,46 @@ class AegisApp:
         with self._lock:
             operations = [b for b in self.pipeline.detect._latency.summary()
                           if b["ready"]]
-        return verify(snapshot, operations)
+            templates = snapshot.get("templates") or []
+            now_counts = (self.pipeline.store.template_activity(templates)
+                          if templates else {})
+        result = verify(snapshot, operations)
+        # Latency is the right measure for a slow-flow incident and the wrong
+        # one for every other kind. Whether the problem itself came back is
+        # the measure that generalises, so both are reported and the headline
+        # is whichever one can actually speak.
+        recur = recurrence(templates, snapshot.get("template_counts") or {},
+                           now_counts)
+        headline = recur["verdict"]
+        if headline in ("unknown", "too-early"):
+            speaking = [r for r in (result.get("operations") or [])
+                        if r.get("verdict") in ("held", "worse")]
+            if speaking:
+                headline = speaking[0]["verdict"]
+        # verify() reports ok=False when it has no TIMINGS to compare, which
+        # for an error or novelty incident is the normal case rather than a
+        # failure. The answer is ok as long as either measure spoke.
+        return {**result,
+                "ok": bool(result.get("ok")) or headline not in
+                      ("unknown", "too-early"),
+                "recurrence": recur,
+                "headline": headline,
+                "measured_at": snapshot.get("at", "")}
+
+    def _fix_snapshot_for(self, incident_id: str) -> str:
+        """The snapshot for this incident, by archive key or bare id.
+
+        Archive rows are keyed "INC-1@<opened_at>" so a new day's INC-1 does
+        not overwrite yesterday's, but callers hold the bare id.
+        """
+        raw = self.pipeline.store.fix_snapshot(incident_id)
+        if raw:
+            return raw
+        for row in self.pipeline.store.archived_incidents():
+            if str(row.get("id", "")).split("@")[0] == incident_id:
+                if row.get("fix_snapshot"):
+                    return str(row["fix_snapshot"])
+        return ""
 
 
     def record_outcome(self, incident_id: str, outcome: str,
@@ -1037,8 +1077,44 @@ class AegisApp:
             self.pipeline.memory.remember(incident,
                                           self.hypotheses.get(incident_id))
             self.pipeline.memory.record_outcome(incident_id, outcome, note)
+            # Keep the numbers as they stand RIGHT NOW, so "did it hold?" can
+            # be measured later instead of asked. Nothing wrote this before,
+            # which made verify_fix unreachable in every case: it always
+            # answered "nothing was measured when this was marked".
+            if outcome == "worked":
+                self._capture_fix_snapshot(incident_id, incident)
         self.outcomes[incident_id] = outcome
         return {"ok": True, "incident": incident_id, "outcome": outcome}
+
+    def _capture_fix_snapshot(self, incident_id: str, incident: dict) -> None:
+        """Baselines and signature counts at the moment a fix was marked.
+
+        Two measures, because one does not generalise. Latency answers a
+        slow-flow incident; for a novelty, an error spike or a run of hollow
+        checkouts the timing never moves and the question that still works is
+        whether the incident's own templates fired again.
+        """
+        import json
+
+        from aegis.l6_correlation.verify import snapshot_operations
+
+        try:
+            operations = [b for b in self.pipeline.detect._latency.summary()
+                          if b.get("ready")]
+            snapshot = snapshot_operations(operations)
+            templates = sorted({s.get("template_id", "")
+                                for s in (incident.get("signals") or [])}
+                               - {""})
+            snapshot["templates"] = templates
+            snapshot["template_counts"] = (
+                self.pipeline.store.template_activity(templates)
+                if templates else {})
+            key = f"{incident_id}@{incident.get('opened_at', '')}"
+            self.pipeline.store.set_fix_snapshot(key, json.dumps(snapshot))
+        except Exception:
+            # A missing snapshot degrades verification to "not measured yet".
+            # It must never fail the outcome the user just recorded.
+            pass
 
     def explain(self, incident_id: str) -> dict:
         if self.pipeline is None:
