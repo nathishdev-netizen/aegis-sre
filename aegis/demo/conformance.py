@@ -118,8 +118,12 @@ def main(argv: list[str]) -> int:
     rule("HOW TO CHECK THIS YOURSELF")
     print("  Pick a HOLLOW trace id and read its lines in the raw file:")
     print(f"    grep '<trace-id>' {path}")
-    print("  You should find a greeting, a prompt, a hangup - and no completed")
-    print("  turn. Then edit the spec file above (mark steps critical/not) and")
+    # Said in terms of the SPEC rather than one domain's vocabulary: this
+    # printed "a greeting, a prompt, a hangup", which is a voice service's
+    # words and means nothing to someone watching an order pipeline.
+    print("  You should find its setup steps present and the steps marked")
+    print("  critical absent - a run that completed without doing the work.")
+    print("  Then edit the spec file above (mark steps critical/not) and")
     print("  rerun: the verdicts must follow YOUR spec, not the model's.")
     print("\n  Conformance ran in SHADOW mode: verdicts recorded, nothing paged.")
     print()

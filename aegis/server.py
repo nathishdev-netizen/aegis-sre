@@ -609,7 +609,20 @@ class AegisApp:
     # -- flow spec -----------------------------------------------------------
 
     def _spec_path(self) -> Path:
-        return AEGIS_HOME / "projects" / self.project / "flows" / f"{self.project}-call.json"
+        """Where this project's flow spec lives.
+
+        Named "-flow", not "-call": "call" is a voice service's word for a run,
+        and an order pipeline or a job queue has no calls in it. An existing
+        "-call.json" is still read, so a spec written before this rename and
+        hand-edited since is not silently ignored.
+        """
+        flows = AEGIS_HOME / "projects" / self.project / "flows"
+        current = flows / f"{self.project}-flow.json"
+        if not current.exists():
+            legacy = flows / f"{self.project}-call.json"
+            if legacy.exists():
+                return legacy
+        return current
 
     def spec(self) -> FlowSpec | None:
         """The saved (possibly human-edited) spec wins over a fresh mine."""
