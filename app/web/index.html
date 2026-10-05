@@ -617,18 +617,26 @@
       line-height: 1.45; color: var(--text-2);
       font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .story-line > span { color: var(--text-3); flex: none; }
-    /* The brief is the one generated-prose part of this page, so turning it
-       off has to be one click away and coming back has to be obvious. */
-    .brief-off { float: right; font: inherit; font-size: 10px; letter-spacing: .1em;
-      text-transform: uppercase; background: none; border: 0; cursor: pointer;
-      color: var(--text-3); padding: 0 0 0 10px; }
-    .brief-off:hover { color: var(--text); }
+    /* One switch, in one place, reading its own state - rather than a "hide"
+       link on the card and a different "show" button on the stub, which is
+       two affordances for one setting. */
+    .sw { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+      font-size: 11px; letter-spacing: .04em; color: var(--text-3);
+      background: none; border: 0; padding: 0; font-family: inherit; }
+    .sw:hover { color: var(--text-2); }
+    .sw-track { position: relative; width: 30px; height: 16px; flex: none;
+      background: var(--surface-2); border: 1px solid var(--btn-edge);
+      transition: background .15s ease, border-color .15s ease; }
+    .sw-track::after { content: ""; position: absolute; top: 2px; left: 2px;
+      width: 10px; height: 10px; background: var(--text-3);
+      transition: transform .15s ease, background .15s ease; }
+    .sw[aria-checked="true"] .sw-track { background: var(--accent);
+      border-color: var(--accent); }
+    .sw[aria-checked="true"] .sw-track::after { transform: translateX(14px);
+      background: #0a0a0b; }
     .brief-stub { display: flex; align-items: center; justify-content: space-between;
       gap: 12px; padding: 11px 15px; margin-bottom: 12px;
       background: var(--surface-2); color: var(--text-3); font-size: 12px; }
-    .brief-on { font: inherit; font-size: 11px; background: none; cursor: pointer;
-      border: 1px solid var(--btn-edge); color: var(--text-2); padding: 4px 11px; }
-    .brief-on:hover { color: var(--text); }
 
     .hero .why { color: var(--text); margin-top: 14px; font-size: 20px; line-height: 1.6;
       font-weight: 500; letter-spacing: -.005em; }
@@ -872,12 +880,18 @@
         <div id="briefBlock">
           <div class="brief-stub" id="briefStub" hidden>
             <span>Live brief off — measurements only, no model call to narrate.</span>
-            <button class="brief-on" id="devModeOn" type="button">show brief</button>
+            <button class="sw" id="devModeSwOff" type="button" role="switch"
+                    aria-checked="false" title="Turn the generated brief back on">
+              <span class="sw-track"></span><span>off</span>
+            </button>
           </div>
           <section class="hero" id="heroBrief">
             <div class="eyebrow">Live brief <span id="toolbarHint"></span>
-              <button class="brief-off" id="devModeOff" type="button"
-                      title="Turn the generated brief off - measurements stay">hide</button>
+              <button class="sw" id="devModeSw" type="button" role="switch"
+                      aria-checked="true" style="float:right"
+                      title="The brief is generated prose. Off, no model call is made to narrate the run - every measurement stays.">
+                <span class="sw-track"></span><span id="devModeSwLabel">on</span>
+              </button>
             </div>
             <h1 id="headline">Reading the logs…</h1>
             <div class="why" id="summary"></div>
@@ -3917,6 +3931,12 @@
       var on = (both[0].state || {}).dev_mode !== false;
       if (hero) hero.hidden = !on;
       if (stub) stub.hidden = on || !attached;
+      // The switch shows the SERVER's state, so a failed request leaves the
+      // control telling the truth rather than what was clicked.
+      var sw = document.getElementById("devModeSw");
+      if (sw) sw.setAttribute("aria-checked", on ? "true" : "false");
+      var swLabel = document.getElementById("devModeSwLabel");
+      if (swLabel) swLabel.textContent = on ? "on" : "off";
     });
   }
   uxPoll();
@@ -3929,9 +3949,12 @@
       body: JSON.stringify({ enabled: enabled }),
     }).then(function () { uxPoll(); }).catch(function () {});
   }
+  // One switch, either instance of it: read the state off the control rather
+  // than hardcoding a direction per button.
   document.addEventListener("click", function (event) {
-    if (event.target.closest("#devModeOff")) setDevMode(false);
-    else if (event.target.closest("#devModeOn")) setDevMode(true);
+    var sw = event.target.closest("#devModeSw, #devModeSwOff");
+    if (!sw) return;
+    setDevMode(sw.getAttribute("aria-checked") !== "true");
   });
 
   function onboardAttach(path) {
