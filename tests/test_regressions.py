@@ -1824,6 +1824,37 @@ def test_a_fix_that_stopped_holding_downgrades_itself():
         app.close()
 
 
+def test_dev_mode_off_stops_generating_the_brief_not_just_hiding_it():
+    """The live brief is the one generated-prose part of the page.
+
+    Hiding the card while still paying for the model call would be the worst
+    of both, so the gate is at the generator. Measurements - funnel,
+    verdicts, detection - are arithmetic and must be untouched.
+    """
+    import inspect
+    from app.core.state import RuntimeState
+
+    runtime = RuntimeState()
+    assert runtime.dev_mode is True, "the brief should be on by default"
+    assert runtime.wire_snapshot().get("dev_mode") is True, (
+        "the page cannot tell whether to render the brief")
+
+    # The gate is in the generator, not only in the view.
+    source = inspect.getsource(RuntimeState._request_interpretation)
+    assert "self.dev_mode" in source, (
+        "the brief is still generated when dev mode is off - the card would "
+        "be hidden while the model call is still paid for")
+
+    runtime.set_dev_mode(False)
+    assert runtime.wire_snapshot().get("dev_mode") is False
+    # Whatever was on screen is cleared, or the last brief written before the
+    # toggle sits there looking current.
+    assert not runtime.snapshot().get("summary")
+    assert not runtime.snapshot().get("reason")
+
+    assert runtime.set_dev_mode(True)["dev_mode"] is True
+
+
 if __name__ == "__main__":
     import sys
 

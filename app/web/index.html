@@ -639,6 +639,19 @@
       line-height: 1.45; color: var(--text-2);
       font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .story-line > span { color: var(--text-3); flex: none; }
+    /* The brief is the one generated-prose part of this page, so turning it
+       off has to be one click away and coming back has to be obvious. */
+    .brief-off { float: right; font: inherit; font-size: 10px; letter-spacing: .1em;
+      text-transform: uppercase; background: none; border: 0; cursor: pointer;
+      color: var(--text-3); padding: 0 0 0 10px; }
+    .brief-off:hover { color: var(--text); }
+    .brief-stub { display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 11px 15px; margin-bottom: 12px;
+      background: var(--surface-2); color: var(--text-3); font-size: 12px; }
+    .brief-on { font: inherit; font-size: 11px; background: none; cursor: pointer;
+      border: 1px solid var(--btn-edge); color: var(--text-2); padding: 4px 11px; }
+    .brief-on:hover { color: var(--text); }
+
     .hero .why { color: var(--text); margin-top: 14px; font-size: 20px; line-height: 1.6;
       font-weight: 500; letter-spacing: -.005em; }
     .hero .meter { height: 3px; border-radius: 3px; background: var(--surface-2);
@@ -880,8 +893,15 @@
         </section>
 
         <div id="briefBlock">
-          <section class="hero">
-            <div class="eyebrow">Live brief <span id="toolbarHint"></span></div>
+          <div class="brief-stub" id="briefStub" hidden>
+            <span>Live brief off — measurements only, no model call to narrate.</span>
+            <button class="brief-on" id="devModeOn" type="button">show brief</button>
+          </div>
+          <section class="hero" id="heroBrief">
+            <div class="eyebrow">Live brief <span id="toolbarHint"></span>
+              <button class="brief-off" id="devModeOff" type="button"
+                      title="Turn the generated brief off - measurements stay">hide</button>
+            </div>
             <h1 id="headline">Reading the logs…</h1>
             <div class="why" id="summary"></div>
             <div class="why" id="reason"></div>
@@ -3913,10 +3933,29 @@
       var brief = document.getElementById("briefBlock");
       if (onboard) onboard.hidden = !!attached;
       if (brief) brief.hidden = !attached;
+      // The brief is prose; the funnel, stats and quality cards below it are
+      // measurements. Turning the brief off must not take them with it.
+      var hero = document.getElementById("heroBrief");
+      var stub = document.getElementById("briefStub");
+      var on = (both[0].state || {}).dev_mode !== false;
+      if (hero) hero.hidden = !on;
+      if (stub) stub.hidden = on || !attached;
     });
   }
   uxPoll();
   setInterval(uxPoll, 3000);
+
+  function setDevMode(enabled) {
+    fetch("/api/dev-mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: enabled }),
+    }).then(function () { uxPoll(); }).catch(function () {});
+  }
+  document.addEventListener("click", function (event) {
+    if (event.target.closest("#devModeOff")) setDevMode(false);
+    else if (event.target.closest("#devModeOn")) setDevMode(true);
+  });
 
   function onboardAttach(path) {
     var err = document.getElementById("onboardErr");

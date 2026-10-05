@@ -129,6 +129,13 @@ def _stage_list() -> list[StageState]:
 class RuntimeState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        # Whether the live brief is written at all. On by default - it is the
+        # first thing a new reader sees and the quickest demonstration that
+        # the tool understands the log. Off, the page shows measurements only
+        # and no model call is made for narration.
+        self.dev_mode: bool = os.environ.get(
+            "LOG_AGENT_DEV_MODE", "true").strip().lower() not in (
+                "0", "false", "no", "off")
         self._clients: set[Any] = set()
         self._client_queues: dict[Any, Queue[str]] = {}
         self._demo_timer: threading.Timer | None = None
@@ -297,7 +304,28 @@ class RuntimeState:
         lines = payload.get("log_lines") or []
         if len(lines) > self.WIRE_LOG_LINES:
             payload["log_lines"] = lines[-self.WIRE_LOG_LINES:]
+        # The page needs to know whether to render the brief at all, and must
+        # not infer it from an empty summary - a brief that is merely still
+        # being written also looks empty.
+        payload["dev_mode"] = self.dev_mode
         return payload
+
+    def set_dev_mode(self, enabled: bool) -> dict[str, Any]:
+        """Turn the generated live brief on or off.
+
+        Off, no model call is made to narrate the run and the page shows
+        measurements only. Everything else - funnel, verdicts, incidents,
+        detection - is arithmetic and unaffected.
+        """
+        with self._lock:
+            self.dev_mode = bool(enabled)
+            if not self.dev_mode:
+                # Clear what is already on screen, or the last brief written
+                # before the toggle would sit there looking current.
+                self._snapshot.summary = ""
+                self._snapshot.reason = ""
+                self._snapshot.interpretation = ""
+        return {"ok": True, "dev_mode": self.dev_mode}
 
     def audit_report_object(self, window: str = "24h") -> Any:
         """The AuditReport itself, for callers that render it (e.g. as HTML)
@@ -1472,6 +1500,13 @@ class RuntimeState:
         Interpretation must never block ingestion or the SSE stream, and only one
         call is ever in flight - log lines arrive far faster than a model responds.
         """
+        # The live brief is the one part of this page that is generated prose
+        # rather than a measurement, and the only thing that spends model
+        # calls just by being watched. With dev mode off it is not written at
+        # all - hiding the card while still paying for it would be the worst
+        # of both.
+        if not self.dev_mode:
+            return
         if not llm.is_available():
             return
         with self._lock:

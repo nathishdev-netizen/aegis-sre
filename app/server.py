@@ -161,7 +161,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/state":
-            write_json(self, HTTPStatus.OK, {"state": runtime.snapshot()})
+            # wire_snapshot(), not snapshot(): the browser gets the trimmed
+            # payload and the flags that belong to the wire, dev_mode among
+            # them. The SSE stream already used this; the polled fallback did
+            # not, so a page that fell back to polling never learned whether
+            # the brief was on.
+            write_json(self, HTTPStatus.OK, {"state": runtime.wire_snapshot()})
             return
 
         if self.path == "/api/ports":
@@ -391,6 +396,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             write_json(self, HTTPStatus.OK, {"ok": True, "state": snapshot})
+            return
+
+        if self.path == "/api/dev-mode":
+            # Absent "enabled" means "flip it" - the button sends no body.
+            if "enabled" in body:
+                enabled = bool(body.get("enabled"))
+            else:
+                enabled = not runtime.dev_mode
+            write_json(self, HTTPStatus.OK, runtime.set_dev_mode(enabled))
             return
 
         if self.path == "/api/detach":
