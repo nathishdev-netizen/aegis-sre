@@ -743,6 +743,7 @@ class AegisApp:
             # not the history.
             recent_events = list(self.pipeline.hot.recent(60))
             patterns = self.pipeline.memory.patterns()[:5]
+            accuracy = self.pipeline.memory.accuracy()
 
         spec = self.spec()
         verdicts = []
@@ -841,6 +842,9 @@ class AegisApp:
             ],
             "templates": templates,
             "patterns": patterns,
+            # How often this project's own diagnoses turned out right. No
+            # tool in this category publishes this about itself.
+            "accuracy": accuracy,
             "spec": {
                 "exists": spec is not None,
                 "purpose_marked": purpose_marked,

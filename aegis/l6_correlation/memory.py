@@ -156,6 +156,56 @@ class IncidentMemory:
 
     # -- PatternMiner --------------------------------------------------------
 
+    def accuracy(self) -> dict[str, Any]:
+        """How often this project's diagnoses turned out to be right.
+
+        The one number no tool in this category publishes about itself.
+        Benchmarks measure AI root-cause accuracy at 3.9-12.5% while vendors
+        claim 82-90%, which makes a tool's own hit rate on YOUR incidents the
+        only honest version of the claim - and the only one that improves as
+        the loop closes.
+
+        Counted only over incidents whose outcome is actually known. An
+        unlabelled incident is not a miss and must never be scored as one;
+        "unknown" is reported separately so the denominator is visible.
+        """
+        rows = self.store.archived_incidents()
+        graded = {"worked": 0, "did_not_work": 0, "wrong_diagnosis": 0}
+        auto, unknown, with_hypothesis = 0, 0, 0
+        for row in rows:
+            outcome = (row.get("outcome") or "").strip()
+            if row.get("hypothesis"):
+                with_hypothesis += 1
+            if outcome in graded:
+                graded[outcome] += 1
+                if "auto-verified" in (row.get("outcome_note") or ""):
+                    auto += 1
+            else:
+                unknown += 1
+
+        judged = sum(graded.values())
+        # A right diagnosis is one whose fix held. "did_not_work" and
+        # "wrong_diagnosis" are both misses, and the second is the worse one:
+        # the fix failing can be a bad patch, the diagnosis being wrong means
+        # the reasoning was.
+        right = graded["worked"]
+        rate = (right / judged) if judged else None
+        return {
+            "incidents": len(rows),
+            "judged": judged,
+            "unknown": unknown,
+            "right": right,
+            "fix_did_not_work": graded["did_not_work"],
+            "wrong_diagnosis": graded["wrong_diagnosis"],
+            "auto_verified": auto,
+            "with_hypothesis": with_hypothesis,
+            "rate": round(rate, 3) if rate is not None else None,
+            "text": (
+                f"{right} of {judged} judged incident(s) were diagnosed "
+                f"correctly ({rate * 100:.0f}%)" if judged else
+                "no incident has a recorded outcome yet - nothing to score"),
+        }
+
     def patterns(self, min_count: int = 2) -> list[dict[str, Any]]:
         """Recurring themes across the archive - the report that turns the
         system from explaining incidents to preventing a category of them."""
