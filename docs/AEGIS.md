@@ -26,13 +26,13 @@ actually did its job, is not.
 - **Language:** Python 3.10+
 - **Dependencies:** none. The standard library only, by design.
 - **Licence:** MIT
-- **Size:** ~17,700 lines, 374 tests across 30 suites, all passing.
+- **Size:** ~18,200 lines, 378 tests across 30 suites, all passing.
 
 ---
 
 ## Table of contents
 
-1. [The problem, in one real log](#1-the-problem-in-one-real-log)
+1. [The problem, in one log](#1-the-problem-in-one-log)
 2. [What Aegis does differently](#2-what-aegis-does-differently)
 3. [Install and first run](#3-install-and-first-run)
 4. [Tutorial: from zero to a proven fix](#4-tutorial-from-zero-to-a-proven-fix)
@@ -621,7 +621,7 @@ know which one they are holding.
 | **Incident grouping** | Many signals, one story, one ranked cause. |
 | **Precedent memory** | "This happened before; here is what fixed it." |
 | **Run verdicts** | Including `hollow` — completed cleanly, achieved nothing. |
-| **Live brief** | What is happening right now, in plain English. |
+| **Live brief** | What is happening right now, in plain English — [a switch](#the-live-brief-is-a-switch), on by default. |
 
 ### Explaining
 
@@ -645,6 +645,52 @@ know which one they are holding.
 | **Clean-tree rule** | Refuses to apply while you have uncommitted changes. |
 | **Revert** | Every applied change is undoable. Nothing is ever committed. |
 | **Circuit breaker** | Two failed attempts and it stops, and says a person is needed. |
+| **Retry** | Clears the breaker so a stopped incident can be tried again. |
+
+### Learning
+
+The stage every other tool skips. See
+[section 8](#the-loop-that-closes) for why it matters.
+
+| Feature | What it does |
+|---|---|
+| **Fix verification** | Measures whether a fix held — latency *and* whether the problem itself recurred. |
+| **Automatic grading** | Every five minutes, a fix whose problem came back is downgraded, with the count that proves it. |
+| **Accuracy report** | How often this project's own diagnoses turned out right. |
+| **Precedent memory** | A past incident's outcome travels with it, so a diagnosis recorded as wrong is shown as wrong when it recurs. |
+
+### The live brief is a switch
+
+The brief is the one part of this page that is **generated prose rather than a
+measurement**, and the only thing that spends a model call just by being
+watched. So it is a switch, in the card's own header, on by default:
+
+```
+LIVE BRIEF                                    ●── on
+The run reached its end, but a step failed.
+```
+
+```
+LIVE BRIEF                                   ──○ off
+Off — measurements only. No model call is made to narrate the run.
+```
+
+**Off means not written, not merely not shown.** No model call is made to
+narrate the run, and whatever brief was on screen is cleared — the last one
+written before the switch would otherwise sit there looking current.
+
+Everything else is arithmetic and unaffected: funnel, templates, signals,
+incidents, verdicts, detection. With the brief off, the Shipyard log still
+reports all 175 events, 9 templates and 26 verdicts — nothing measured
+depends on the narration.
+
+Why this is a switch and not a setting buried in a menu: a controlled study
+(N=308) found that fluent explanations raise reliance on *wrong* answers as
+much as right ones, and that only sources calibrate trust. A reader who wants
+measurements without narration should be one click away from them.
+
+Start it off with `LOG_AGENT_DEV_MODE=false`, or toggle at
+`POST /api/dev-mode`.
 
 ### Interfaces
 
@@ -722,6 +768,52 @@ asks "will it fix any bug?", the honest answer is the strong one:
   monitored project.
 - Two failures and the **circuit breaker** stops it.
 
+### The loop that closes
+
+Every tool in this category stops at the fix. Aegis grades its own work
+afterwards, against what the logs did rather than what anyone believed at the
+time.
+
+```
+incident → diagnose → propose → apply → mark it worked
+                                            ↓
+                          the numbers at that moment are kept
+                                            ↓
+            every 5 min: did the problem come back?       ← arithmetic, no model
+                                            ↓
+         it did  →  downgrade to did_not_work, with the count
+                                            ↓
+                     accuracy report moves accordingly
+```
+
+**Two measures, because one does not generalise.** Latency answers a slow-flow
+incident. For an error, a novelty or a run of hollow checkouts the timing never
+moves at all, so the measure that always works is whether the incident's own
+templates fired again:
+
+```
+held      none of 1 template(s) has fired again since the fix
+recurred  T-65b79888 has fired 14 more time(s) since the fix
+too-early none of these fired 3+ times before the fix, so silence
+          since proves nothing
+```
+
+**It only ever downgrades.** A verdict of `held` is never promoted to proof: a
+problem that has not recurred *yet* is not a problem that is fixed, and
+overstating that is the failure this project exists to avoid.
+
+**And it reports its own hit rate.**
+
+```
+7 of 11 judged incident(s) were diagnosed correctly (64%)
+```
+
+That number is uncomfortable by design. Published benchmarks put AI root-cause
+accuracy at 3.9–12.5% while vendors claim 82–90%, which makes a tool's measured
+rate on *your* incidents the only honest version of the claim. Incidents with no
+recorded outcome are counted separately and never scored as misses, so the
+denominator is always visible.
+
 ---
 
 ## 9. Compared to other tools
@@ -734,6 +826,9 @@ asks "will it fix any bug?", the honest answer is the strong one:
 | **Catches "200 OK but wrong"** | ❌ | ❌ | ✅ |
 | **Proves a fix before proposing it** | ❌ | ❌ | ✅ the test must flip |
 | **Says what you failed to log** | ❌ | ❌ | ✅ named file and line |
+| **Checks whether the fix held** | ❌ | ❌ | ✅ measured, every 5 min |
+| **Learns from recorded outcomes** | ❌ | ❌ | ✅ |
+| **Reports its own accuracy** | ❌ | ❌ | ✅ |
 | Needs instrumentation work | ✅ usually | ❌ | ❌ reads what you already write |
 | Refuses when unsure | — | Rarely | ✅ 15 refusal points |
 | Cost to run | $$$ per GB | $$ per query | Free tier by default |
@@ -744,6 +839,31 @@ solved, expensive, and commoditising. Aegis computes the thing nobody computes.
 
 SigNoz's own documentation names the "200 OK but wrong" problem and does not
 solve it. They ingest `gen_ai.evaluation.score.value` and never compute it.
+
+### On the three rows above
+
+Those are the rows worth checking, because they are the ones the category
+leaves empty. A survey of the open-source field in October 2026 — Keep (12.4k
+stars), k8sgpt (8.2k), HolmesGPT (3.5k, CNCF Sandbox), Robusta (3.1k), SigNoz
+(32.3k) — found:
+
+- **Nothing asks whether the fix worked.** The nearest is Robusta marking an
+  alert resolved when it clears. Commercial tools have the *word* — "Monitoring"
+  in incident.io, "Mitigated" in FireHydrant — as a human status field, not a
+  measurement.
+- **Nothing in open source learns from outcomes.** Keep is the one project with
+  a real retraining loop, and its own documentation marks that feature
+  `Keep Open Source: ⛔️` — Cloud and Enterprise only. That a vendor chose this
+  specific capability as its commercial moat is the best available evidence of
+  which part is worth having.
+- **Nothing measures its own accuracy on your incidents.** One project treats
+  evaluation seriously and does it *offline*, against scripted failure
+  scenarios — which answers "is this agent any good in general?", not "did we
+  get better at our incidents?"
+
+Retrieval of past incidents is not the same as learning from them, and several
+projects blur the two. Aegis records an outcome, grades it against what the logs
+did afterwards, and lets that outcome travel with the precedent.
 
 ### What this deliberately does not build
 
@@ -847,6 +967,7 @@ Every one has a working default.
 | `GROQ_API_KEY` | — | Free-tier model key; used for everything by default |
 | `OPENAI_API_KEY` | — | Optional; touched only on explicit request |
 | `LOG_AGENT_LLM` | `true` | `false` forces pattern mode even with a key |
+| `LOG_AGENT_DEV_MODE` | `true` | `false` starts with the live brief off — see [the live brief](#the-live-brief-is-a-switch) |
 | `LOG_AGENT_HOST` | `127.0.0.1` | Bind address |
 | `LOG_AGENT_PORT` | `3000` | Port for `run.py` |
 | `AEGIS_BACKFILL_MB` | `10` | How much of an existing file to read on attach |
@@ -877,7 +998,7 @@ Nothing is written outside `~/.aegis/` unless you click Apply on a fix.
 for t in tests/test_*.py; do python3 "$t"; done
 ```
 
-374 tests, 30 suites, no dependencies, no network, no API keys required.
+378 tests, 30 suites, no dependencies, no network, no API keys required.
 
 ---
 

@@ -17,7 +17,7 @@ Storage and search are solved problems. Deciding which five of a thousand lines
 matter, and whether the run they describe actually did its job, is not.
 
 - **Python 3.10+**, **zero dependencies** — the standard library only, by design
-- **374 tests**, 30 suites, no network and no API key needed to run them
+- **378 tests**, 30 suites, no network and no API key needed to run them
 - **MIT licensed**
 
 ## Install and run
@@ -68,6 +68,26 @@ orders, while an error-based tool reports only the two declined payments.
 | `degraded` | achieved it, but abnormally |
 | `unknown` | nobody has said what this kind of run is for |
 
+## It grades its own work
+
+Every tool in this category stops at the fix. Aegis keeps measuring:
+
+```
+mark a fix as working  →  the numbers at that moment are kept
+                       →  every 5 min: did the problem come back?
+                       →  it did: downgraded, with the count that proves it
+```
+
+```
+7 of 11 judged incident(s) were diagnosed correctly (64%)
+```
+
+A survey of the open-source field (October 2026) found nothing that asks whether
+a fix held, nothing that learns from recorded outcomes, and nothing that reports
+its own accuracy on your incidents. The one project with a real learning loop
+marks it `Open Source: ⛔️` in its own docs. Details and sources in
+[docs/AEGIS.md](docs/AEGIS.md#on-the-three-rows-above).
+
 ## The claim worth checking
 
 > **No patch reaches your code without a test that failed before it and passes
@@ -94,7 +114,7 @@ and its honest limits.
 ## Verify it yourself
 
 ```bash
-for t in tests/test_*.py; do python3 "$t"; done        # 374 tests, no network
+for t in tests/test_*.py; do python3 "$t"; done        # 378 tests, no network
 python3 -m aegis.demo.conformance examples/shipyard.log # the verdicts above
 python3 -m aegis.demo.remediate                        # the fix loop, sandboxed
 ```
