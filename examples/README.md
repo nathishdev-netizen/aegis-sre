@@ -3,7 +3,7 @@
 ## `shipyard.log`
 
 A fictional order-fulfilment platform — five services, 26 orders, 175 lines.
-Used for every example in [docs/AEGIS.md](../docs/AEGIS.md) so the whole
+Used for every example in [the README](../README.md) so the whole
 document can be reproduced without access to any real system.
 
 ```bash
