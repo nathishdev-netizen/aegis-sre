@@ -24,6 +24,22 @@ times in twenty-six orders.
 Aegis calls that run **`hollow`**: completed cleanly, achieved nothing. It is
 the failure no error can show you.
 
+### See it run
+
+A 10-minute narrated walkthrough, built from real captured output — every
+number on screen comes from a live run against
+[`examples/shipyard.log`](examples/shipyard.log), not a mock-up:
+
+**[demo-video/out/aegis-demo.mp4](demo-video/out/aegis-demo.mp4)** · subtitles
+included ([.srt](demo-video/out/aegis-demo.srt))
+
+Or run the walkthrough yourself, scene by scene, against your own log:
+
+```bash
+./demo.sh              # eight scenes, pausing between each
+./demo.sh --check      # verify the environment, run nothing
+```
+
 **Then it does something about it, and then it checks whether that worked.**
 
 ```
