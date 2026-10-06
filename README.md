@@ -88,20 +88,24 @@ code is responsible, and what to change.
 ## Contents
 
 1. [The problem](#the-problem)
-2. [The loop, end to end](#the-loop-end-to-end)
+2. [What Aegis does differently](#what-aegis-does-differently)
 3. [Install](#install)
-4. [Stage 1 — Watch](#stage-1--watch)
-5. [Stage 2 — Notice](#stage-2--notice)
-6. [Stage 3 — Judge](#stage-3--judge)  
-7. [Stage 4 — Explain](#stage-4--explain)
-8. [Stage 5 — Fix](#stage-5--fix)
-9. [**Stage 6 — Learn**](#stage-6--learn) 
-10. [Tutorial: all six stages](#tutorial-all-six-stages)
-11. [Compared to other tools](#compared-to-other-tools)
-12. [Architecture and concepts](#architecture-and-concepts)
-13. [Honest limits](#honest-limits)
-14. [Reference](#reference)
-15. [Contributing](#contributing)
+4. [The loop, end to end](#the-loop-end-to-end)
+5. [Stage 1 — Watch](#stage-1--watch)
+6. [Stage 2 — Notice](#stage-2--notice)
+7. [Stage 3 — Judge](#stage-3--judge)
+8. [Stage 4 — Explain](#stage-4--explain)
+9. [Stage 5 — Fix](#stage-5--fix)
+10. [**Stage 6 — Learn**](#stage-6--learn) ← the stage nobody else has
+11. [How agentic it actually is](#how-agentic-it-actually-is)
+12. [Tutorial: from zero to a proven fix](#tutorial-from-zero-to-a-proven-fix)
+13. [Every feature, and what it is for](#every-feature-and-what-it-is-for)
+14. [Compared to other tools](#compared-to-other-tools)
+15. [Architecture and concepts](#architecture-and-concepts)
+16. [Design decisions worth defending](#design-decisions-worth-defending)
+17. [Honest limits](#honest-limits)
+18. [Reference](#reference)
+19. [Contributing](#contributing)
 
 ---
 
@@ -170,6 +174,31 @@ recovers a log line that was never written. Aegis is the only tool here that
 tells you which line to add.
 
 ---
+
+## What Aegis does differently
+
+Existing tools answer **"what happened?"** Aegis answers **"did it work?"** —
+and then acts on the answer. Four things follow from that, and no other tool in
+this category does all four:
+
+**1. A verdict on every run, not just the failed ones.** Including `hollow`:
+completed cleanly, achieved nothing. That is the failure no error can show you,
+and the verdict no other vendor computes.
+
+**2. It reads your code, not only your logs.** The AST is parsed to map log
+statements to the source lines that wrote them — which is what lets it point at
+`reserve.py:89` instead of saying "something went wrong in the checkout
+service", and what lets it name the log line you never wrote.
+
+**3. A fix has to prove itself.** A test that failed before the patch and passes
+after, or no proposal at all. Fifteen of its sixteen outcomes are refusals.
+
+**4. It grades its own past work.** Five minutes after you mark a fix as
+working, it checks whether the problem came back — and downgrades its own
+verdict if it did. It then publishes its hit rate on your incidents.
+
+The four build on each other: you cannot prove a fix without reading the code,
+and you cannot grade the fix without a verdict to measure against.
 
 ---
 
@@ -337,65 +366,6 @@ was never told. A run is judged only against a purpose a human confirmed.
 | **Simulation** | What would break if this component failed. |
 | **Audit report** | Downloadable record of what was found and what was claimed. |
 
-### Three agentic loops
-
-**1. The investigation loop.** Given an incident, the model chooses its own
-tools over up to six steps, from six available: `search_logs`, `get_baseline`,
-`get_code_for`, `get_dependencies`, `get_run_verdicts`, `get_similar_past`. It
-records every step, the reason for it, and the hypotheses it ruled out.
-
-A tool that cannot answer is not offered. `get_code_for` appears only when the
-project has been analysed — a tool that can only reply "not available" still
-costs one of six steps to find that out.
-
-**2. The remediation loop.** Evidence → map to code → write a failing test →
-write a patch → the test must pass → draft. Each stage can refuse.
-
-**3. The verification loop.** On apply: run the tests that touch the changed
-code, and revert if they fail.
-
-### Why it refuses, and how often
-
-**15 of the 16 outcomes in the fix protocol are refusals.** One is a draft.
-Four kinds:
-
-| Outcome | Meaning |
-|---|---|
-| **DRAFT** | Proven. The test failed before and passes after. |
-| **BLOCKED** | Could not get far enough to try. |
-| **STOPPED** | The diagnosis was wrong, or the test was backwards. |
-| **ADVISE** | A person is needed; here is what was tried. |
-
-This is the central design claim, and it is worth stating plainly:
-
-> **No patch reaches your code without a test that failed before it and passes
-> after.**
-
-That is not a model saying "I fixed it." It is a measurement.
-
-### Why a refusing tool is the right design
-
-Independent benchmarks measure AI root-cause accuracy at **3.9–12.5%**, where
-vendors claim 82–90% — across 1,675 runs and 1.38 billion tokens, with failures
-persisting across every model tier. That is a framework problem, not a model
-problem.
-
-In that light, a tool that always produces an answer is a liability. If someone
-asks "will it fix any bug?", the honest answer is the strong one:
-
-> *"No. It fixes bugs it can prove it fixed. When it can't, it says so and shows
-> you what it tried."*
-
-### Guardrails, concretely
-
-- Detection is **arithmetic** — statistics cannot hallucinate an alert.
-- Every claim is **checked against the logs** before display.
-- A patch is capped at **40 changed lines**; a rewritten function is rejected unread.
-- Test files, secrets, CI config and dependency manifests are **never patchable**.
-- **Read-only until a click.** Aegis writes only under `~/.aegis/`, never into a
-  monitored project.
-- Two failures and the **circuit breaker** stops it.
-
 ### The live brief is a switch
 
 The brief is the one part of this page that is **generated prose rather than a
@@ -471,26 +441,8 @@ target repo untouched: YES
 | **Circuit breaker** | Two failed attempts and it stops, and says a person is needed. |
 | **Retry** | Clears the breaker so a stopped incident can be tried again. |
 
-### Why it refuses, and how often
-
-**15 of the 16 outcomes in the fix protocol are refusals.** One is a draft:
-
-| Outcome | Meaning |
-|---|---|
-| **DRAFT** | Proven. The test failed before and passes after. |
-| **BLOCKED** | Could not get far enough to try. |
-| **STOPPED** | The diagnosis was wrong, or the test was backwards. |
-| **ADVISE** | A person is needed; here is what was tried. |
-
-Independent benchmarks measure AI root-cause accuracy at **3.9–12.5%** where
-vendors claim 82–90% — across 1,675 runs and 1.38 billion tokens, with failures
-persisting across every model tier. In that light a tool that always produces an
-answer is a liability.
-
-If someone asks *"will it fix any bug?"*, the honest answer is the strong one:
-
-> *"No. It fixes bugs it can prove it fixed. When it can't, it says so and shows
-> you what it tried."*
+See [How agentic it actually is](#how-agentic-it-actually-is)
+for the four outcomes and why refusing is the right design.
 
 ---
 
@@ -619,7 +571,75 @@ and engineering.
 
 ---
 
-## Tutorial: all six stages
+## How agentic it actually is
+
+"Agentic" is usually a claim about autonomy. Here it is a claim about
+**verification and refusal**, which is a different and more defensible
+thing: the agent decides what to look at, and then has to prove what it
+concluded.
+
+### Three agentic loops
+
+**1. The investigation loop.** Given an incident, the model chooses its own
+tools over up to six steps, from six available: `search_logs`, `get_baseline`,
+`get_code_for`, `get_dependencies`, `get_run_verdicts`, `get_similar_past`. It
+records every step, the reason for it, and the hypotheses it ruled out.
+
+A tool that cannot answer is not offered. `get_code_for` appears only when the
+project has been analysed — a tool that can only reply "not available" still
+costs one of six steps to find that out.
+
+**2. The remediation loop.** Evidence → map to code → write a failing test →
+write a patch → the test must pass → draft. Each stage can refuse.
+
+**3. The verification loop.** On apply: run the tests that touch the changed
+code, and revert if they fail.
+
+### Why it refuses, and how often
+
+**15 of the 16 outcomes in the fix protocol are refusals.** One is a draft.
+Four kinds:
+
+| Outcome | Meaning |
+|---|---|
+| **DRAFT** | Proven. The test failed before and passes after. |
+| **BLOCKED** | Could not get far enough to try. |
+| **STOPPED** | The diagnosis was wrong, or the test was backwards. |
+| **ADVISE** | A person is needed; here is what was tried. |
+
+This is the central design claim, and it is worth stating plainly:
+
+> **No patch reaches your code without a test that failed before it and passes
+> after.**
+
+That is not a model saying "I fixed it." It is a measurement.
+
+### Why a refusing tool is the right design
+
+Independent benchmarks measure AI root-cause accuracy at **3.9–12.5%**, where
+vendors claim 82–90% — across 1,675 runs and 1.38 billion tokens, with failures
+persisting across every model tier. That is a framework problem, not a model
+problem.
+
+In that light, a tool that always produces an answer is a liability. If someone
+asks "will it fix any bug?", the honest answer is the strong one:
+
+> *"No. It fixes bugs it can prove it fixed. When it can't, it says so and shows
+> you what it tried."*
+
+### Guardrails, concretely
+
+- Detection is **arithmetic** — statistics cannot hallucinate an alert.
+- Every claim is **checked against the logs** before display.
+- A patch is capped at **40 changed lines**; a rewritten function is rejected unread.
+- Test files, secrets, CI config and dependency manifests are **never patchable**.
+- **Read-only until a click.** Aegis writes only under `~/.aegis/`, never into a
+  monitored project.
+- Two failures and the **circuit breaker** stops it.
+
+---
+
+## Tutorial: from zero to a proven fix
 
 Fifteen minutes, on the log shipped in this repo, so you can follow along with
 no system of your own. Every number below is what the current code printed.
@@ -749,6 +769,87 @@ python3 run.py        # then attach /var/log/yourapp/app.log
 Then repeat steps 2 and 3: read the mined steps, mark the one your runs exist to
 produce. That is the whole setup — no parser to write, no schema to declare, no
 instrumentation to add.
+
+---
+
+## Every feature, and what it is for
+
+The stages above explain the mechanism. This is the whole surface in one place.
+
+### Watching
+
+| Feature | What it is for |
+|---|---|
+| **File watching** | Tails a log file. Rotation-safe by inode, backfill-capped, long lines truncated. |
+| **Port watching** | Finds a running service's real log from its process, preferring the app's own logger over redirected stdout. |
+| **SigNoz connector** | Reads logs and traces over the v5 query API. Your data stays where it is. |
+| **MCP connector** | Reads from anything exposing an MCP server. |
+| **Multi-service** | One connector holding 12 services polls each fairly, so a quiet service is not drowned out by a busy one. |
+
+### Understanding, without being configured
+
+| Feature | What it is for |
+|---|---|
+| **Template mining** | Discovers line shapes. No parser to write, no schema to declare. |
+| **Baselines** | p50/p95 per operation, from durations already in your logs. |
+| **Flow mining** | Derives what a run normally does, from your real runs. |
+| **Purpose marking** | You confirm which step is the run's reason to exist. One click, and every run after it is judged. |
+| **Code analysis** | Maps log lines to the source lines that wrote them, by parsing your repo's AST. |
+| **Dependency map** | Which external services this code calls, and whether those calls are guarded. |
+
+### Finding what matters
+
+| Feature | What it is for |
+|---|---|
+| **Seven detectors** | Novelty, rate spike, rate drop, silence, latency shift, error ratio, cost anomaly. |
+| **Incident grouping** | Twenty alerts about one outage become one story with a ranked cause. |
+| **Run verdicts** | Including `hollow` — completed cleanly, achieved nothing. |
+| **Precedent memory** | "This happened before, and here is what fixed it." |
+| **Live brief** | Plain English on what is happening now — [a switch](#the-live-brief-is-a-switch), on by default. |
+| **Ask about this run** | A question answered from your own log lines, cited, or refused. |
+
+### Explaining
+
+| Feature | What it is for |
+|---|---|
+| **Explain** | A diagnosis with its evidence, grounded against the logs before you see it. |
+| **Investigate** | Chooses its own tools over up to six steps, recording what it ruled out. |
+| **Gap reports** | Which missing log line stopped the analysis, named by file and line. |
+| **Simulation** | What would break if this component failed. |
+| **Audit report** | A downloadable record of what was found and what was claimed. |
+
+### Fixing, with proof
+
+| Feature | What it is for |
+|---|---|
+| **Propose fix** | The reproducer must fail, then pass. No proof, no proposal. |
+| **Scope gate** | ≤40 changed lines; never a test file, a secret, CI config or a dependency manifest. |
+| **Patch coherence** | A diff whose hunks would corrupt the file is rejected before it is applied. |
+| **Syntax check** | Every patched file must still parse, or the patch is named as the cause. |
+| **Relevant tests only** | Runs the tests that touch the changed code — 38 of 136, 1.6s, no API cost. |
+| **Clean-tree rule** | Refuses to apply while you have uncommitted changes, so its work stays separable from yours. |
+| **Revert** | Every applied change is undoable. Nothing is ever committed. |
+| **Circuit breaker** | Two failed attempts and it stops, and says a person is needed. |
+| **Retry** | Clears the breaker so a stopped incident can be tried again. |
+
+### Learning
+
+| Feature | What it is for |
+|---|---|
+| **Fix verification** | Measures whether a fix held — latency, and whether the problem itself recurred. |
+| **Automatic grading** | Every five minutes, a fix whose problem came back is downgraded, with the count that proves it. |
+| **Accuracy report** | How often this project's own diagnoses turned out right, on your incidents. |
+| **Pattern mining** | The same signature four times is a thing to design away, not to fix again. |
+
+### Interfaces
+
+| Feature | What it is for |
+|---|---|
+| **Web UI** | Now / Runs / Incidents / Audit. |
+| **HTTP API** | Everything the UI does, as JSON. |
+| **MCP server** | Aegis as a tool for your own agent. |
+| **CLI** | `log-agent`, `log-agent-mcp`. |
+| **/healthz** | Liveness and the running version. |
 
 ---
 
