@@ -93,6 +93,32 @@ class Settings:
         return bool(self.llm_enabled and self.openai_api_key)
 
 
+def _llm_base_url() -> str | None:
+    """Where the OpenAI-compatible calls go.
+
+    Explicit setting wins. Otherwise, if the only key present is Groq's, point
+    at Groq - a Groq key against api.openai.com fails on every call.
+    """
+    explicit = os.environ.get("LOG_AGENT_LLM_BASE_URL")
+    if explicit:
+        return explicit
+    if (os.environ.get("GROQ_API_KEY")
+            and not os.environ.get("LOG_AGENT_LLM_API_KEY")
+            and not os.environ.get("OPENAI_API_KEY")):
+        return "https://api.groq.com/openai/v1"
+    return None
+
+
+def _llm_model() -> str:
+    """The model name, which has to match the provider the key belongs to."""
+    explicit = os.environ.get("LOG_AGENT_MODEL")
+    if explicit:
+        return explicit
+    if _llm_base_url() == "https://api.groq.com/openai/v1":
+        return "openai/gpt-oss-120b"
+    return "gpt-4o-mini"
+
+
 def load_settings() -> Settings:
     load_env()
     raw_paths = os.environ.get("LOG_AGENT_PROBE_PATHS", "").strip()
@@ -104,10 +130,16 @@ def load_settings() -> Settings:
         # LOG_AGENT_LLM_API_KEY takes precedence so a temporary alternate
         # provider (e.g. Groq) never requires touching OPENAI_API_KEY, which
         # stays untouched and ready the moment the real key is restored.
+        # ...and GROQ_API_KEY after those, because the documented default is
+        # Groq's free tier. Without this, somebody who set only GROQ_API_KEY -
+        # which the README says is enough - got a working Aegis and a v1 ask
+        # box that silently fell back to keyword search and told them to set
+        # OPENAI_API_KEY instead.
         openai_api_key=os.environ.get("LOG_AGENT_LLM_API_KEY")
-                       or os.environ.get("OPENAI_API_KEY") or None,
-        model=os.environ.get("LOG_AGENT_MODEL", "gpt-4o-mini"),
-        llm_base_url=os.environ.get("LOG_AGENT_LLM_BASE_URL") or None,
+                       or os.environ.get("OPENAI_API_KEY")
+                       or os.environ.get("GROQ_API_KEY") or None,
+        model=_llm_model(),
+        llm_base_url=_llm_base_url(),
         llm_enabled=_get_bool("LOG_AGENT_LLM", True),
         max_log_lines=_get_int("LOG_AGENT_MAX_LOG_LINES", 200),
         max_timeline=_get_int("LOG_AGENT_MAX_TIMELINE", 60),

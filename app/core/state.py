@@ -642,7 +642,8 @@ class RuntimeState:
         if matches:
             answer = (
                 f"Found mentions of {', '.join(terms[:3])} in this run. "
-                "Keyword search cannot tell you the outcome - set OPENAI_API_KEY for a real answer."
+                "Keyword search cannot tell you the outcome - set GROQ_API_KEY "
+                "(free tier) or OPENAI_API_KEY for a real answer."
             )
         else:
             answer = f"No mention of {', '.join(terms[:3])} in this run's logs."

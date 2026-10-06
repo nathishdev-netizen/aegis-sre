@@ -1855,6 +1855,48 @@ def test_dev_mode_off_stops_generating_the_brief_not_just_hiding_it():
     assert runtime.set_dev_mode(True)["dev_mode"] is True
 
 
+def test_the_documented_groq_key_is_enough_for_the_ask_box():
+    """The README says GROQ_API_KEY is enough. For v1's ask box it was not.
+
+    llm_available checked OPENAI_API_KEY only, so somebody who followed the
+    setup got a working Aegis and an ask box that silently fell back to
+    keyword search - and told them to set a key the docs never mentioned.
+    A Groq key against api.openai.com also fails on every call, so the base
+    URL and model have to follow the key.
+    """
+    import os
+    import app.config as config
+
+    real = os.environ
+
+    class _Env(dict):
+        def get(self, key, default=None):
+            return dict.get(self, key, default)
+
+    def resolved(env):
+        os.environ = _Env(env)
+        try:
+            return config._llm_base_url(), config._llm_model()
+        finally:
+            os.environ = real
+
+    groq_url, groq_model = resolved({"GROQ_API_KEY": "gsk_x"})
+    assert groq_url and "groq.com" in groq_url, (
+        f"a Groq-only setup points at {groq_url} - every call would fail")
+    assert "gpt-4o" not in groq_model, (
+        f"model {groq_model} does not exist on Groq")
+
+    # An OpenAI key must behave exactly as before.
+    assert resolved({"OPENAI_API_KEY": "sk-x"}) == (None, "gpt-4o-mini")
+    # With both, OpenAI still wins - nobody's working setup changes.
+    assert resolved({"OPENAI_API_KEY": "sk-x", "GROQ_API_KEY": "gsk_x"}) == (
+        None, "gpt-4o-mini")
+    # An explicit setting always wins.
+    explicit, _ = resolved({"GROQ_API_KEY": "gsk_x",
+                            "LOG_AGENT_LLM_BASE_URL": "http://local"})
+    assert explicit == "http://local"
+
+
 if __name__ == "__main__":
     import sys
 
