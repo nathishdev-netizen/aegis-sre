@@ -49,7 +49,8 @@ pipe.py
 !demo-video/shots/*.jpg
 !demo-video/ui/vid/*.png
 
-# The rendered video ships as a GitHub release asset, not in the tree: a
-# 26MB binary in every clone is a tax on anyone who just wants the code.
-# Rebuild it with: python3 demo-video/build.py
+# The full-resolution render ships as a release asset; a 960px version small
+# enough to play inline lives in the tree, because a video the README cannot
+# actually play is just a link.
 demo-video/out/*.mp4
+!demo-video/aegis-demo.mp4
