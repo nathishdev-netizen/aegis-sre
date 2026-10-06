@@ -771,6 +771,49 @@ solved, expensive, and commoditising. Aegis computes the thing nobody computes.
 SigNoz's own documentation names the "200 OK but wrong" problem and does not
 solve it. They ingest `gen_ai.evaluation.score.value` and never compute it.
 
+### Running it on top of what you already have
+
+Aegis is a layer, not a replacement. You keep your storage, your search and
+your dashboards; Aegis reads from them and computes what they do not.
+
+**If your logs are already in SigNoz** — add a connector with the base URL and
+an API key, and that is the whole setup:
+
+```
+Sources → Connectors → SigNoz
+   base URL   http://your-signoz:8080
+   API key    SIGNOZ-API-KEY
+```
+
+It then polls `POST /api/v5/query_range` every twenty seconds, **one query per
+service** rather than one unfiltered query — because a single 200-record poll
+measured on a live backend carried only 7 of 12 services, and a service logging
+42 records a week would never have appeared at all. Calls are capped at 30 a
+minute with a 30-second cache, so it cannot run up a bill or trip a rate limit
+on a backend you share.
+
+Everything downstream is identical to watching a file: templates, baselines,
+runs, verdicts, incidents. Nothing about the pipeline knows which source the
+lines came from.
+
+**If your logs are somewhere else** — three routes, in order of effort:
+
+| Your setup | Route |
+|---|---|
+| Anything exposing an **MCP server** | Add it as a connector. Implemented, but see the limits — not verified against every server. |
+| **Datadog, Elastic, Loki, CloudWatch** | No native connector yet. Either tail the file the agent already writes, or write a `TelemetryProvider` — two methods, `query_logs` and `capabilities`, against a documented protocol. |
+| **Anything at all** | Point it at the log file or the port. This needs no integration work and is what the tutorial uses. |
+
+The file and port routes are worth saying plainly: **they require nothing from
+your observability vendor.** Aegis reads the log your service already writes,
+which is why there is no agent to deploy, no schema to declare and nothing to
+instrument.
+
+**What it does not do:** it does not forward, store or re-index your logs. It
+reads a window, computes over it, and keeps only what it derived —
+templates, baselines, verdicts and incidents — in a SQLite file per project
+under `~/.aegis/`. Your logs stay where they are.
+
 ### On the three rows above
 
 Those are the rows worth checking, because they are the ones the category
@@ -1064,6 +1107,18 @@ is the honest answer, but it is a setup cost.
 **The reproducer is as heavy as your code.** If a bug is only reachable through
 a live database and live model calls, the generated test needs them too, and may
 fail for environmental reasons rather than logical ones.
+
+**The fix loop is proven on a fixture, not yet on a large service.** Run
+`python3 -m aegis.demo.remediate` and you will see the whole sequence complete
+against a sample app: reproducer exit 1 before the patch, exit 0 after, status
+DRAFT, target repo untouched. On a real multi-service codebase the same loop has
+been driven repeatedly and has so far **always stopped at one of its refusal
+points** rather than producing a draft — a wrong repository path, a traceback
+frame mapped to the handler instead of the raise, a diff whose hunks would have
+corrupted the file, a rate limit. Each of those was a real defect, each is now
+fixed and tested, and none of them was the loop lying about a fix. But the
+honest claim is: **the refusals are well proven, the success path is proven
+small.**
 
 **One connector is verified live.** SigNoz is tested against a real instance.
 The MCP connector is implemented but not verified against every server.
