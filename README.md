@@ -41,10 +41,50 @@ WATCH  ──→  NOTICE  ──→  JUDGE  ──→  EXPLAIN  ──→  FIX  
 Six stages, one tool, **no dependencies**. The last one is the point: every
 other tool in this category stops at FIX.
 
+### What you actually get, in front of you
+
+**An analytics layer over logs that are still arriving.** Not a dashboard you
+configured — a live view that builds itself from the stream: templates, baselines,
+runs, verdicts, incidents, all recomputed as lines land. Point it at a file, a
+port or a connector and it is reading within two seconds, with no schema, no
+parser and no instrumentation added to your app.
+
+**A plain-English brief of what is happening right now**, written as the stream
+moves — and a switch to turn it off, because it is the one part that is
+generated prose rather than a measurement. Off, every number stays and no model
+call is made.
+
+**A chatbot over your own logs.** Ask *"did any order complete without
+reserving stock?"* and the answer comes back with **the log lines it is based
+on**, a confidence, and a stated source — or an honest refusal. Every claim
+cites evidence that is actually in your logs, or it is rejected rather than
+softened.
+
+It answers about **the run in front of you** — the latest run's last 60 lines,
+which is the window a model can reason over without losing the thread. With no
+model key it falls back to keyword search over the same window and says so,
+rather than guessing. Questions across the whole archive are
+[not built yet](#honest-limits).
+
+**Then the SRE loop on top of that layer**: an incident with its cause ranked,
+a diagnosis grounded in the lines that prove it, a fix with a test that had to
+fail before it could pass, and a grade on that fix five minutes later.
+
+### Where it fits in production
+
+It sits **beside** what you already run, not instead of it. Storage, search and
+dashboards are solved — Aegis reads *from* SigNoz as one of its sources. What it
+adds is the layer above: the per-run verdict, the ranked incident, the proven
+fix, and the measurement of whether that fix held.
+
+Concretely: your dashboards keep telling you the checkout API returns 200 in
+495ms. Aegis tells you three of those orders never reserved stock, which line of
+code is responsible, and what to change.
+
 - **Language:** Python 3.10+
 - **Dependencies:** none. The standard library only, by design.
 - **Licence:** MIT
-- **Size:** ~18,200 lines, 378 tests across 30 suites, all passing.
+- **Size:** ~18,200 lines, 379 tests across 30 suites, all passing.
 
 ---
 
@@ -1001,6 +1041,11 @@ dishonest limitations section.
 **It fixes bugs that leave a traceback.** A wrong *value* with no error gives
 nothing to map to code.
 
+**The chatbot answers about the run in front of you, not the archive.** The
+window is the latest run's last 60 lines. Incidents and verdicts are kept and
+matched across the whole history, but you cannot yet ask a question of
+last Tuesday — the retrieval layer for that is not built.
+
 **Failures that produce no log output are invisible.** This limit is not
 hypothetical. On a real service, a GPU driver bug corrupted memory and killed
 the process outright — no error, no traceback, nothing in any log. The only
@@ -1091,7 +1136,7 @@ Nothing is written outside `~/.aegis/` unless you click Apply on a fix.
 for t in tests/test_*.py; do python3 "$t"; done
 ```
 
-378 tests, 30 suites, no dependencies, no network, no API keys required.
+379 tests, 30 suites, no dependencies, no network, no API keys required.
 
 ---
 
