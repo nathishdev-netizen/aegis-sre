@@ -15,8 +15,8 @@ dependencies = []          # standard library only, by design
 dotenv = ["python-dotenv"]
 
 [project.scripts]
-log-agent = "app.cli:main"
-log-agent-mcp = "app.cli:mcp_main"
+aegis = "app.cli:main"
+aegis-mcp = "app.cli:mcp_main"
 
 [tool.setuptools.packages.find]
 include = ["app*", "aegis*"]

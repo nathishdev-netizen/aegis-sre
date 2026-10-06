@@ -94,7 +94,7 @@ def _http_post(url: str, headers: dict[str, str], body: dict[str, Any],
     request = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json",
-                 "User-Agent": "aegis-log-agent/0.1", **headers}, method="POST")
+                 "User-Agent": "aegis-sre/0.1", **headers}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 

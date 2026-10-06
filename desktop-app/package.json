@@ -1,5 +1,5 @@
 {
-  "name": "log-agent",
+  "name": "aegis-sre",
   "version": "1.0.0",
   "description": "Local AI agent that watches a running app and explains its logs",
   "main": "src/main.js",

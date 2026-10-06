@@ -97,14 +97,14 @@ def test_healthz_answers_with_a_version():
 
 def test_the_package_installs_its_entry_points():
     pyproject = Path("pyproject.toml").read_text()
-    assert 'log-agent = "app.cli:main"' in pyproject
-    assert 'log-agent-mcp = "app.cli:mcp_main"' in pyproject
+    assert 'aegis = "app.cli:main"' in pyproject
+    assert 'aegis-mcp = "app.cli:mcp_main"' in pyproject
     assert "dependencies = []" in pyproject, "stdlib-only is a product promise"
     from app import cli
     import io, contextlib
     buffer = io.StringIO()
     argv = sys.argv
-    sys.argv = ["log-agent", "--version"]
+    sys.argv = ["aegis", "--version"]
     try:
         with contextlib.redirect_stdout(buffer):
             code = cli.main()

@@ -30,8 +30,8 @@ A 10-minute narrated walkthrough, built from real captured output — every
 number on screen comes from a live run against
 [`examples/shipyard.log`](examples/shipyard.log), not a mock-up:
 
-**▶ [Watch the walkthrough](https://github.com/nathishdev-netizen/log-agent/releases/download/v0.1.0/aegis-demo.mp4)**
-(10 min, subtitled) · or [all releases](https://github.com/nathishdev-netizen/log-agent/releases)
+**▶ [Watch the walkthrough](https://github.com/nathishdev-netizen/aegis-sre/releases/download/v0.1.0/aegis-demo.mp4)**
+(10 min, subtitled) · or [all releases](https://github.com/nathishdev-netizen/aegis-sre/releases)
 
 It starts with an order every dashboard calls green, and ends with the fix
 being graded five minutes after it shipped.
@@ -867,7 +867,7 @@ The stages above explain the mechanism. This is the whole surface in one place.
 | **Web UI** | Now / Runs / Incidents / Audit. |
 | **HTTP API** | Everything the UI does, as JSON. |
 | **MCP server** | Aegis as a tool for your own agent. |
-| **CLI** | `log-agent`, `log-agent-mcp`. |
+| **CLI** | `aegis`, `aegis-mcp`. |
 | **/healthz** | Liveness and the running version. |
 
 ---

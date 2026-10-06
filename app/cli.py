@@ -1,9 +1,9 @@
 """Console entry points - how the product installs and starts.
 
     pip install .           # then:
-    log-agent               # the app (v1 UI + Aegis intelligence)
-    log-agent --version
-    log-agent-mcp <logfile> # the MCP server, for `claude mcp add`
+    aegis                   # the app (v1 UI + Aegis intelligence)
+    aegis --version
+    aegis-mcp <logfile> # the MCP server, for `claude mcp add`
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def main() -> int:
         print(f"log-intelligence-agent {_version()}")
         return 0
     if "--help" in sys.argv or "-h" in sys.argv:
-        print("log-agent [--version]  - start the Log Intelligence app "
+        print("aegis [--version]  - start the Log Intelligence app "
               "(LOG_AGENT_PORT to change the port, default 3000)")
         return 0
     from app.server import serve  # imported late: --version must not boot anything
