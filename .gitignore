@@ -17,6 +17,9 @@ venv/
 
 # Logs / scratch
 *.log
+# ...except the one example the README is built around. Every number in
+# that document comes from this file, so it has to ship with the repo.
+!examples/shipyard.log
 logs/
 
 # Build artifacts - rebuildable, and the .app bundles a copy of .env with the API key

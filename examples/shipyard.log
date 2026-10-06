@@ -1,0 +1,175 @@
+2026-10-05 09:00:00.000 INFO  checkout-api   order.received order_id=ORD-88401 cart_items=4 customer=c_8629
+2026-10-05 09:00:00.020 INFO  checkout-api   cart.validated order_id=ORD-88401 subtotal=25090
+2026-10-05 09:00:00.050 INFO  search-svc     catalogue.lookup order_id=ORD-88401 results=40 in 72ms
+2026-10-05 09:00:00.122 INFO  payment-svc    payment.authorised order_id=ORD-88401 amount=11690 provider_ref=pa_4025 in 385ms
+2026-10-05 09:00:00.422 INFO  inventory-svc  stock.reserved order_id=ORD-88401 sku=SKU-165 qty=4 warehouse=wh-3
+2026-10-05 09:00:00.522 INFO  notify-svc     email.queued order_id=ORD-88401 template=order_confirmed
+2026-10-05 09:00:00.542 INFO  checkout-api   order.completed order_id=ORD-88401 status=200 in 714ms
+2026-10-05 09:01:20.015 INFO  checkout-api   order.received order_id=ORD-88402 cart_items=1 customer=c_8316
+2026-10-05 09:01:20.035 INFO  checkout-api   cart.validated order_id=ORD-88402 subtotal=17490
+2026-10-05 09:01:20.065 INFO  search-svc     catalogue.lookup order_id=ORD-88402 results=8 in 49ms
+2026-10-05 09:01:20.114 INFO  payment-svc    payment.authorised order_id=ORD-88402 amount=29490 provider_ref=pa_1686 in 332ms
+2026-10-05 09:01:20.414 INFO  inventory-svc  stock.reserved order_id=ORD-88402 sku=SKU-150 qty=4 warehouse=wh-3
+2026-10-05 09:01:20.514 INFO  notify-svc     email.queued order_id=ORD-88402 template=order_confirmed
+2026-10-05 09:01:20.534 INFO  checkout-api   order.completed order_id=ORD-88402 status=200 in 778ms
+2026-10-05 09:02:26.701 INFO  checkout-api   order.received order_id=ORD-88403 cart_items=2 customer=c_1245
+2026-10-05 09:02:26.721 INFO  checkout-api   cart.validated order_id=ORD-88403 subtotal=28990
+2026-10-05 09:02:26.751 INFO  search-svc     catalogue.lookup order_id=ORD-88403 results=6 in 44ms
+2026-10-05 09:02:26.795 INFO  payment-svc    payment.authorised order_id=ORD-88403 amount=3790 provider_ref=pa_4116 in 405ms
+2026-10-05 09:02:27.095 INFO  inventory-svc  stock.reserved order_id=ORD-88403 sku=SKU-130 qty=1 warehouse=wh-2
+2026-10-05 09:02:27.195 INFO  notify-svc     email.queued order_id=ORD-88403 template=order_confirmed
+2026-10-05 09:02:27.215 INFO  checkout-api   order.completed order_id=ORD-88403 status=200 in 567ms
+2026-10-05 09:03:20.255 INFO  checkout-api   order.received order_id=ORD-88404 cart_items=2 customer=c_9505
+2026-10-05 09:03:20.275 INFO  checkout-api   cart.validated order_id=ORD-88404 subtotal=13890
+2026-10-05 09:03:20.305 INFO  search-svc     catalogue.lookup order_id=ORD-88404 results=21 in 80ms
+2026-10-05 09:03:20.385 INFO  payment-svc    payment.authorised order_id=ORD-88404 amount=27490 provider_ref=pa_1075 in 349ms
+2026-10-05 09:03:20.685 INFO  inventory-svc  stock.reserved order_id=ORD-88404 sku=SKU-110 qty=4 warehouse=wh-3
+2026-10-05 09:03:20.785 INFO  notify-svc     email.queued order_id=ORD-88404 template=order_confirmed
+2026-10-05 09:03:20.805 INFO  checkout-api   order.completed order_id=ORD-88404 status=200 in 542ms
+2026-10-05 09:04:11.314 INFO  checkout-api   order.received order_id=ORD-88405 cart_items=1 customer=c_5161
+2026-10-05 09:04:11.334 INFO  checkout-api   cart.validated order_id=ORD-88405 subtotal=18090
+2026-10-05 09:04:11.364 INFO  search-svc     catalogue.lookup order_id=ORD-88405 results=17 in 88ms
+2026-10-05 09:04:11.452 INFO  payment-svc    payment.authorised order_id=ORD-88405 amount=28190 provider_ref=pa_5735 in 187ms
+2026-10-05 09:04:11.752 INFO  inventory-svc  stock.reserved order_id=ORD-88405 sku=SKU-108 qty=1 warehouse=wh-2
+2026-10-05 09:04:11.852 INFO  notify-svc     email.queued order_id=ORD-88405 template=order_confirmed
+2026-10-05 09:04:11.872 INFO  checkout-api   order.completed order_id=ORD-88405 status=200 in 455ms
+2026-10-05 09:05:35.365 INFO  checkout-api   order.received order_id=ORD-88406 cart_items=4 customer=c_2094
+2026-10-05 09:05:35.385 INFO  checkout-api   cart.validated order_id=ORD-88406 subtotal=2790
+2026-10-05 09:05:35.415 INFO  search-svc     catalogue.lookup order_id=ORD-88406 results=3 in 83ms
+2026-10-05 09:05:35.498 INFO  payment-svc    payment.authorised order_id=ORD-88406 amount=12890 provider_ref=pa_4436 in 417ms
+2026-10-05 09:05:35.798 INFO  inventory-svc  stock.reserved order_id=ORD-88406 sku=SKU-106 qty=4 warehouse=wh-2
+2026-10-05 09:05:35.898 INFO  notify-svc     email.queued order_id=ORD-88406 template=order_confirmed
+2026-10-05 09:05:35.918 INFO  checkout-api   order.completed order_id=ORD-88406 status=200 in 762ms
+2026-10-05 09:06:25.725 INFO  checkout-api   order.received order_id=ORD-88407 cart_items=1 customer=c_4252
+2026-10-05 09:06:25.745 INFO  checkout-api   cart.validated order_id=ORD-88407 subtotal=15790
+2026-10-05 09:06:25.775 INFO  search-svc     catalogue.lookup order_id=ORD-88407 results=8 in 61ms
+2026-10-05 09:06:25.836 INFO  payment-svc    payment.authorised order_id=ORD-88407 amount=17890 provider_ref=pa_6449 in 183ms
+2026-10-05 09:06:26.136 INFO  inventory-svc  stock.reserved order_id=ORD-88407 sku=SKU-152 qty=1 warehouse=wh-1
+2026-10-05 09:06:26.236 INFO  notify-svc     email.queued order_id=ORD-88407 template=order_confirmed
+2026-10-05 09:06:26.256 INFO  checkout-api   order.completed order_id=ORD-88407 status=200 in 526ms
+2026-10-05 09:07:39.283 INFO  checkout-api   order.received order_id=ORD-88408 cart_items=1 customer=c_1981
+2026-10-05 09:07:39.303 INFO  checkout-api   cart.validated order_id=ORD-88408 subtotal=25790
+2026-10-05 09:07:39.333 INFO  search-svc     catalogue.lookup order_id=ORD-88408 results=14 in 71ms
+2026-10-05 09:07:39.404 INFO  payment-svc    payment.authorised order_id=ORD-88408 amount=11590 provider_ref=pa_8330 in 310ms
+2026-10-05 09:07:39.704 INFO  inventory-svc  stock.reserved order_id=ORD-88408 sku=SKU-124 qty=2 warehouse=wh-2
+2026-10-05 09:07:39.804 INFO  notify-svc     email.queued order_id=ORD-88408 template=order_confirmed
+2026-10-05 09:07:39.824 INFO  checkout-api   order.completed order_id=ORD-88408 status=200 in 729ms
+2026-10-05 09:08:28.605 INFO  checkout-api   order.received order_id=ORD-88409 cart_items=4 customer=c_7893
+2026-10-05 09:08:28.625 INFO  checkout-api   cart.validated order_id=ORD-88409 subtotal=12790
+2026-10-05 09:08:28.655 INFO  search-svc     catalogue.lookup order_id=ORD-88409 results=20 in 40ms
+2026-10-05 09:08:28.695 INFO  payment-svc    payment.authorised order_id=ORD-88409 amount=17490 provider_ref=pa_1321 in 233ms
+2026-10-05 09:08:28.995 INFO  notify-svc     email.queued order_id=ORD-88409 template=order_confirmed
+2026-10-05 09:08:29.015 INFO  checkout-api   order.completed order_id=ORD-88409 status=200 in 495ms
+2026-10-05 09:09:18.585 INFO  checkout-api   order.received order_id=ORD-88410 cart_items=1 customer=c_1689
+2026-10-05 09:09:18.605 INFO  checkout-api   cart.validated order_id=ORD-88410 subtotal=9390
+2026-10-05 09:09:18.635 INFO  search-svc     catalogue.lookup order_id=ORD-88410 results=31 in 53ms
+2026-10-05 09:09:18.688 INFO  payment-svc    payment.authorised order_id=ORD-88410 amount=15190 provider_ref=pa_1156 in 377ms
+2026-10-05 09:09:18.988 INFO  inventory-svc  stock.reserved order_id=ORD-88410 sku=SKU-178 qty=3 warehouse=wh-2
+2026-10-05 09:09:19.088 INFO  notify-svc     email.queued order_id=ORD-88410 template=order_confirmed
+2026-10-05 09:09:19.108 INFO  checkout-api   order.completed order_id=ORD-88410 status=200 in 597ms
+2026-10-05 09:09:44.613 INFO  checkout-api   order.received order_id=ORD-88411 cart_items=1 customer=c_4419
+2026-10-05 09:09:44.633 INFO  checkout-api   cart.validated order_id=ORD-88411 subtotal=14390
+2026-10-05 09:09:44.663 INFO  search-svc     catalogue.lookup order_id=ORD-88411 results=26 in 40ms
+2026-10-05 09:09:44.703 INFO  payment-svc    payment.authorised order_id=ORD-88411 amount=20990 provider_ref=pa_8425 in 212ms
+2026-10-05 09:09:45.003 INFO  inventory-svc  stock.reserved order_id=ORD-88411 sku=SKU-175 qty=4 warehouse=wh-3
+2026-10-05 09:09:45.103 INFO  notify-svc     email.queued order_id=ORD-88411 template=order_confirmed
+2026-10-05 09:09:45.123 INFO  checkout-api   order.completed order_id=ORD-88411 status=200 in 469ms
+2026-10-05 09:11:10.113 INFO  checkout-api   order.received order_id=ORD-88412 cart_items=2 customer=c_3525
+2026-10-05 09:11:10.133 INFO  checkout-api   cart.validated order_id=ORD-88412 subtotal=17890
+2026-10-05 09:11:10.163 INFO  search-svc     catalogue.lookup order_id=ORD-88412 results=18 in 54ms
+2026-10-05 09:11:10.217 INFO  payment-svc    payment.authorised order_id=ORD-88412 amount=11690 provider_ref=pa_3596 in 369ms
+2026-10-05 09:11:10.517 INFO  inventory-svc  stock.reserved order_id=ORD-88412 sku=SKU-180 qty=2 warehouse=wh-3
+2026-10-05 09:11:10.617 INFO  notify-svc     email.queued order_id=ORD-88412 template=order_confirmed
+2026-10-05 09:11:10.637 INFO  checkout-api   order.completed order_id=ORD-88412 status=200 in 886ms
+2026-10-05 09:11:59.753 INFO  checkout-api   order.received order_id=ORD-88413 cart_items=4 customer=c_2286
+2026-10-05 09:11:59.773 INFO  checkout-api   cart.validated order_id=ORD-88413 subtotal=23490
+2026-10-05 09:11:59.803 INFO  search-svc     catalogue.lookup order_id=ORD-88413 results=9 in 43ms
+2026-10-05 09:11:59.846 INFO  payment-svc    payment.authorised order_id=ORD-88413 amount=7490 provider_ref=pa_1634 in 311ms
+2026-10-05 09:12:00.146 INFO  inventory-svc  stock.reserved order_id=ORD-88413 sku=SKU-132 qty=2 warehouse=wh-3
+2026-10-05 09:12:00.246 INFO  notify-svc     email.queued order_id=ORD-88413 template=order_confirmed
+2026-10-05 09:12:00.266 INFO  checkout-api   order.completed order_id=ORD-88413 status=200 in 760ms
+2026-10-05 09:12:49.636 INFO  checkout-api   order.received order_id=ORD-88414 cart_items=4 customer=c_9044
+2026-10-05 09:12:49.656 INFO  checkout-api   cart.validated order_id=ORD-88414 subtotal=16990
+2026-10-05 09:12:49.686 INFO  search-svc     catalogue.lookup order_id=ORD-88414 results=14 in 73ms
+2026-10-05 09:12:49.759 INFO  payment-svc    payment.authorised order_id=ORD-88414 amount=5490 provider_ref=pa_3070 in 238ms
+2026-10-05 09:12:50.059 INFO  inventory-svc  stock.reserved order_id=ORD-88414 sku=SKU-161 qty=1 warehouse=wh-2
+2026-10-05 09:12:50.159 INFO  notify-svc     email.queued order_id=ORD-88414 template=order_confirmed
+2026-10-05 09:12:50.179 INFO  checkout-api   order.completed order_id=ORD-88414 status=200 in 508ms
+2026-10-05 09:14:18.981 INFO  checkout-api   order.received order_id=ORD-88415 cart_items=2 customer=c_1271
+2026-10-05 09:14:19.001 INFO  checkout-api   cart.validated order_id=ORD-88415 subtotal=5490
+2026-10-05 09:14:19.031 INFO  search-svc     catalogue.lookup order_id=ORD-88415 results=29 in 57ms
+2026-10-05 09:14:19.088 ERROR payment-svc    payment.declined order_id=ORD-88415 reason=insufficient_funds provider_ref=pa_8302
+2026-10-05 09:14:19.138 ERROR checkout-api   order.failed order_id=ORD-88415 status=402 in 838ms
+2026-10-05 09:14:20.138 INFO  checkout-api   order.received order_id=ORD-88416 cart_items=2 customer=c_1990
+2026-10-05 09:14:20.158 INFO  checkout-api   cart.validated order_id=ORD-88416 subtotal=4290
+2026-10-05 09:14:20.188 INFO  search-svc     catalogue.lookup order_id=ORD-88416 results=21 in 6160ms
+2026-10-05 09:14:26.348 INFO  payment-svc    payment.authorised order_id=ORD-88416 amount=20790 provider_ref=pa_9699 in 326ms
+2026-10-05 09:14:26.648 INFO  inventory-svc  stock.reserved order_id=ORD-88416 sku=SKU-116 qty=1 warehouse=wh-2
+2026-10-05 09:14:26.748 INFO  notify-svc     email.queued order_id=ORD-88416 template=order_confirmed
+2026-10-05 09:14:26.768 INFO  checkout-api   order.completed order_id=ORD-88416 status=200 in 470ms
+2026-10-05 09:15:53.589 INFO  checkout-api   order.received order_id=ORD-88417 cart_items=3 customer=c_9551
+2026-10-05 09:15:53.609 INFO  checkout-api   cart.validated order_id=ORD-88417 subtotal=9090
+2026-10-05 09:15:53.639 INFO  search-svc     catalogue.lookup order_id=ORD-88417 results=5 in 77ms
+2026-10-05 09:15:53.716 INFO  payment-svc    payment.authorised order_id=ORD-88417 amount=2890 provider_ref=pa_8779 in 413ms
+2026-10-05 09:15:54.016 INFO  inventory-svc  stock.reserved order_id=ORD-88417 sku=SKU-145 qty=3 warehouse=wh-1
+2026-10-05 09:15:54.116 INFO  notify-svc     email.queued order_id=ORD-88417 template=order_confirmed
+2026-10-05 09:15:54.136 INFO  checkout-api   order.completed order_id=ORD-88417 status=200 in 410ms
+2026-10-05 09:16:59.014 INFO  checkout-api   order.received order_id=ORD-88418 cart_items=1 customer=c_8900
+2026-10-05 09:16:59.034 INFO  checkout-api   cart.validated order_id=ORD-88418 subtotal=5390
+2026-10-05 09:16:59.064 INFO  search-svc     catalogue.lookup order_id=ORD-88418 results=22 in 86ms
+2026-10-05 09:16:59.150 INFO  payment-svc    payment.authorised order_id=ORD-88418 amount=18290 provider_ref=pa_3238 in 198ms
+2026-10-05 09:16:59.450 INFO  inventory-svc  stock.reserved order_id=ORD-88418 sku=SKU-109 qty=4 warehouse=wh-3
+2026-10-05 09:16:59.550 INFO  notify-svc     email.queued order_id=ORD-88418 template=order_confirmed
+2026-10-05 09:16:59.570 INFO  checkout-api   order.completed order_id=ORD-88418 status=200 in 588ms
+2026-10-05 09:18:14.845 INFO  checkout-api   order.received order_id=ORD-88419 cart_items=2 customer=c_6597
+2026-10-05 09:18:14.865 INFO  checkout-api   cart.validated order_id=ORD-88419 subtotal=19990
+2026-10-05 09:18:14.895 INFO  search-svc     catalogue.lookup order_id=ORD-88419 results=33 in 45ms
+2026-10-05 09:18:14.940 INFO  payment-svc    payment.authorised order_id=ORD-88419 amount=5890 provider_ref=pa_7834 in 382ms
+2026-10-05 09:18:15.240 INFO  inventory-svc  stock.reserved order_id=ORD-88419 sku=SKU-103 qty=4 warehouse=wh-3
+2026-10-05 09:18:15.340 INFO  notify-svc     email.queued order_id=ORD-88419 template=order_confirmed
+2026-10-05 09:18:15.360 INFO  checkout-api   order.completed order_id=ORD-88419 status=200 in 407ms
+2026-10-05 09:19:22.232 INFO  checkout-api   order.received order_id=ORD-88420 cart_items=4 customer=c_7212
+2026-10-05 09:19:22.252 INFO  checkout-api   cart.validated order_id=ORD-88420 subtotal=2590
+2026-10-05 09:19:22.282 INFO  search-svc     catalogue.lookup order_id=ORD-88420 results=7 in 78ms
+2026-10-05 09:19:22.360 INFO  payment-svc    payment.authorised order_id=ORD-88420 amount=6090 provider_ref=pa_2485 in 343ms
+2026-10-05 09:19:22.660 INFO  inventory-svc  stock.reserved order_id=ORD-88420 sku=SKU-114 qty=3 warehouse=wh-2
+2026-10-05 09:19:22.760 INFO  notify-svc     email.queued order_id=ORD-88420 template=order_confirmed
+2026-10-05 09:19:22.780 INFO  checkout-api   order.completed order_id=ORD-88420 status=200 in 772ms
+2026-10-05 09:20:07.542 INFO  checkout-api   order.received order_id=ORD-88421 cart_items=4 customer=c_8217
+2026-10-05 09:20:07.562 INFO  checkout-api   cart.validated order_id=ORD-88421 subtotal=25590
+2026-10-05 09:20:07.592 INFO  search-svc     catalogue.lookup order_id=ORD-88421 results=8 in 74ms
+2026-10-05 09:20:07.666 INFO  payment-svc    payment.authorised order_id=ORD-88421 amount=28490 provider_ref=pa_9430 in 187ms
+2026-10-05 09:20:07.966 INFO  inventory-svc  stock.reserved order_id=ORD-88421 sku=SKU-139 qty=1 warehouse=wh-2
+2026-10-05 09:20:08.066 INFO  notify-svc     email.queued order_id=ORD-88421 template=order_confirmed
+2026-10-05 09:20:08.086 INFO  checkout-api   order.completed order_id=ORD-88421 status=200 in 411ms
+2026-10-05 09:20:45.352 INFO  checkout-api   order.received order_id=ORD-88422 cart_items=1 customer=c_9146
+2026-10-05 09:20:45.372 INFO  checkout-api   cart.validated order_id=ORD-88422 subtotal=26790
+2026-10-05 09:20:45.402 INFO  search-svc     catalogue.lookup order_id=ORD-88422 results=3 in 56ms
+2026-10-05 09:20:45.458 INFO  payment-svc    payment.authorised order_id=ORD-88422 amount=20790 provider_ref=pa_5932 in 216ms
+2026-10-05 09:20:45.758 INFO  notify-svc     email.queued order_id=ORD-88422 template=order_confirmed
+2026-10-05 09:20:45.778 INFO  checkout-api   order.completed order_id=ORD-88422 status=200 in 747ms
+2026-10-05 09:21:51.660 INFO  checkout-api   order.received order_id=ORD-88423 cart_items=2 customer=c_6611
+2026-10-05 09:21:51.680 INFO  checkout-api   cart.validated order_id=ORD-88423 subtotal=24590
+2026-10-05 09:21:51.710 INFO  search-svc     catalogue.lookup order_id=ORD-88423 results=18 in 71ms
+2026-10-05 09:21:51.781 INFO  payment-svc    payment.authorised order_id=ORD-88423 amount=18690 provider_ref=pa_7631 in 350ms
+2026-10-05 09:21:52.081 INFO  inventory-svc  stock.reserved order_id=ORD-88423 sku=SKU-132 qty=2 warehouse=wh-3
+2026-10-05 09:21:52.181 INFO  notify-svc     email.queued order_id=ORD-88423 template=order_confirmed
+2026-10-05 09:21:52.201 INFO  checkout-api   order.completed order_id=ORD-88423 status=200 in 620ms
+2026-10-05 09:23:12.480 INFO  checkout-api   order.received order_id=ORD-88424 cart_items=2 customer=c_4509
+2026-10-05 09:23:12.500 INFO  checkout-api   cart.validated order_id=ORD-88424 subtotal=21590
+2026-10-05 09:23:12.530 INFO  search-svc     catalogue.lookup order_id=ORD-88424 results=40 in 54ms
+2026-10-05 09:23:12.584 INFO  payment-svc    payment.authorised order_id=ORD-88424 amount=18190 provider_ref=pa_4438 in 214ms
+2026-10-05 09:23:12.884 INFO  inventory-svc  stock.reserved order_id=ORD-88424 sku=SKU-117 qty=4 warehouse=wh-2
+2026-10-05 09:23:12.984 INFO  notify-svc     email.queued order_id=ORD-88424 template=order_confirmed
+2026-10-05 09:23:13.004 INFO  checkout-api   order.completed order_id=ORD-88424 status=200 in 828ms
+2026-10-05 09:24:40.178 INFO  checkout-api   order.received order_id=ORD-88425 cart_items=1 customer=c_2050
+2026-10-05 09:24:40.198 INFO  checkout-api   cart.validated order_id=ORD-88425 subtotal=16090
+2026-10-05 09:24:40.228 INFO  search-svc     catalogue.lookup order_id=ORD-88425 results=10 in 50ms
+2026-10-05 09:24:40.278 ERROR payment-svc    payment.declined order_id=ORD-88425 reason=insufficient_funds provider_ref=pa_8383
+2026-10-05 09:24:40.328 ERROR checkout-api   order.failed order_id=ORD-88425 status=402 in 1027ms
+2026-10-05 09:24:41.328 INFO  checkout-api   order.received order_id=ORD-88426 cart_items=4 customer=c_5508
+2026-10-05 09:24:41.348 INFO  checkout-api   cart.validated order_id=ORD-88426 subtotal=12890
+2026-10-05 09:24:41.378 INFO  search-svc     catalogue.lookup order_id=ORD-88426 results=27 in 66ms
+2026-10-05 09:24:41.444 INFO  payment-svc    payment.authorised order_id=ORD-88426 amount=28590 provider_ref=pa_9091 in 352ms
+2026-10-05 09:24:41.744 INFO  notify-svc     email.queued order_id=ORD-88426 template=order_confirmed
+2026-10-05 09:24:41.764 INFO  checkout-api   order.completed order_id=ORD-88426 status=200 in 561ms
