@@ -30,7 +30,7 @@ A 10-minute narrated walkthrough, built from real captured output — every
 number on screen comes from a live run against
 [`examples/shipyard.log`](examples/shipyard.log), not a mock-up:
 
-[![Watch the walkthrough](demo-video/poster.jpg)](https://github.com/nathishdev-netizen/aegis-sre/releases/download/v0.1.0/aegis-demo.mp4)
+https://github.com/user-attachments/assets/818d4a1c-4399-455f-be79-76b4e944fc27
 
 It starts with an order every dashboard calls green, and ends with the fix
 being graded five minutes after it shipped. Subtitled
