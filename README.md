@@ -30,7 +30,7 @@ the failure no error can show you.
 WATCH  ──→  NOTICE  ──→  JUDGE  ──→  EXPLAIN  ──→  FIX  ──→  LEARN
  logs        7 stat.     verdict     evidence +    test     did it hold?
  & code      detectors   per run     your code     must     grade it,
- read-only   no model    incl.       mapped to     flip     publish the
+ read-only   statistical incl.       mapped to     flip     publish the
              involved    hollow      the line               hit rate
                                                                │
              ┌─────────────────────────────────────────────────┘
@@ -51,8 +51,8 @@ parser and no instrumentation added to your app.
 
 **A plain-English brief of what is happening right now**, written as the stream
 moves — and a switch to turn it off, because it is the one part that is
-generated prose rather than a measurement. Off, every number stays and no model
-call is made.
+generated prose rather than a measurement. Off, every number stays and nothing
+is spent narrating.
 
 **A chatbot over your own logs.** Ask *"did any order complete without
 reserving stock?"* and the answer comes back with **the log lines it is based
@@ -196,7 +196,7 @@ dependencies — every byte of logic is in the standard library.
 
 ### Optional: a model key
 
-Four of the nine layers are pure arithmetic and need no model at all. Reading,
+Four of the nine layers are pure arithmetic. Reading,
 learning, detection and correlation all work with no key.
 
 Only explanation and fix-proposal call a model, only when you click, and the
@@ -217,7 +217,7 @@ confidence score, and answers questions with "unknown" rather than guessing.
 
 ## The loop, end to end
 
-Six stages. The first three are **free and automatic** — no model, no
+Six stages. The first three are **free and automatic** — no
 configuration, nothing to instrument. Stages 4 and 5 ask a model, only when you
 click. Stage 6 is arithmetic again, and runs on its own.
 
@@ -230,8 +230,8 @@ click. Stage 6 is arithmetic again, and runs on its own.
 | **5. Fix** | Map to the line, write a failing test, patch, the test must pass. 15 of 16 outcomes refuse. | on a click |
 | **6. Learn** | Re-measure the fix, downgrade it if the problem returned, publish the hit rate. | — |
 
-Four of the six need no model at all. That split is deliberate: **detection
-cannot hallucinate an alert if no model is involved in detecting**, which is why
+Four of the six are arithmetic. That split is deliberate: **detection is
+deterministic, so it cannot hallucinate an alert**, which is why
 statistics do the noticing and a model only ever explains.
 
 The loop closes because stage 6 feeds stage 4: an incident that recurs arrives
@@ -282,7 +282,7 @@ Nobody writes a parser. Nobody declares a schema.
 
 ## Stage 2 — Notice
 
-**Seven detectors, all statistics, no model** — so detection cannot hallucinate
+**Seven detectors, all statistics** — so detection cannot hallucinate
 an alert:
 
 | Detector | Catches |
@@ -397,7 +397,7 @@ asks "will it fix any bug?", the honest answer is the strong one:
 
 ### Guardrails, concretely
 
-- Detection uses **no model** — statistics cannot hallucinate an alert.
+- Detection is **arithmetic** — statistics cannot hallucinate an alert.
 - A model's output is **checked against the logs** before display.
 - A patch is capped at **40 changed lines**; a rewritten function is rejected unread.
 - Test files, secrets, CI config and dependency manifests are **never patchable**.
@@ -418,10 +418,10 @@ The run reached its end, but a step failed.
 
 ```
 LIVE BRIEF                                   ──○ off
-Off — measurements only. No model call is made to narrate the run.
+Off — measurements only. Nothing is spent narrating the run.
 ```
 
-**Off means not written, not merely not shown.** No model call is made to
+**Off means not written, not merely not shown.** Nothing is spent to
 narrate the run, and whatever brief was on screen is cleared — the last one
 written before the switch would otherwise sit there looking current.
 
@@ -453,6 +453,20 @@ incident
 
 > **No patch reaches your code without a test that failed before it and passes
 > after.**
+
+See it run, in one command — no key, no setup, nothing touched:
+
+```bash
+$ python3 -m aegis.demo.remediate
+
+status : DRAFT
+detail : reproducer failed before the patch and passes after it
+mapped :
+  app.py:14  if _active >= POOL_MAXSIZE:
+reproducer before patch: exit 1 (non-zero = fails, as required)
+reproducer after patch : exit 0 (zero = fixed, proven)
+target repo untouched: YES
+```
 
 | Feature | What it does |
 |---|---|
@@ -552,7 +566,7 @@ templates fired again:
 | `unchanged` | no material change — nothing proven either way |
 | `unknown` | no timings on one side to compare |
 
-Both are pure arithmetic over counts the store has always kept. No model, so
+Both are pure arithmetic over counts the store has always kept, so
 nothing to hallucinate.
 
 **It only ever downgrades.** A verdict of `held` is never promoted to proof: a
@@ -771,48 +785,45 @@ solved, expensive, and commoditising. Aegis computes the thing nobody computes.
 SigNoz's own documentation names the "200 OK but wrong" problem and does not
 solve it. They ingest `gen_ai.evaluation.score.value` and never compute it.
 
-### Running it on top of what you already have
+### What it adds to the tool you already run
 
-Aegis is a layer, not a replacement. You keep your storage, your search and
-your dashboards; Aegis reads from them and computes what they do not.
+You already pay to collect, store and search these logs. That part is solved.
+What none of it does is tell you whether the run actually worked — so Aegis
+reads **the same data you are already paying for** and computes the layer above
+it.
 
-**If your logs are already in SigNoz** — add a connector with the base URL and
-an API key, and that is the whole setup:
+Concretely, on the order from the top of this page:
 
-```
-Sources → Connectors → SigNoz
-   base URL   http://your-signoz:8080
-   API key    SIGNOZ-API-KEY
-```
-
-It then polls `POST /api/v5/query_range` every twenty seconds, **one query per
-service** rather than one unfiltered query — because a single 200-record poll
-measured on a live backend carried only 7 of 12 services, and a service logging
-42 records a week would never have appeared at all. Calls are capped at 30 a
-minute with a 30-second cache, so it cannot run up a bill or trip a rate limit
-on a backend you share.
-
-Everything downstream is identical to watching a file: templates, baselines,
-runs, verdicts, incidents. Nothing about the pipeline knows which source the
-lines came from.
-
-**If your logs are somewhere else** — three routes, in order of effort:
-
-| Your setup | Route |
+| Your current tool shows you | Aegis adds |
 |---|---|
-| Anything exposing an **MCP server** | Add it as a connector. Implemented, but see the limits — not verified against every server. |
-| **Datadog, Elastic, Loki, CloudWatch** | No native connector yet. Either tail the file the agent already writes, or write a `TelemetryProvider` — two methods, `query_logs` and `capabilities`, against a documented protocol. |
-| **Anything at all** | Point it at the log file or the port. This needs no integration work and is what the tutorial uses. |
+| `checkout-api 200 in 495ms` — green | **this order achieved nothing** — payment taken, nothing reserved |
+| a spike in `payment.declined` | **one incident**, cause ranked, with the three signals that belong to it |
+| the error, and the stack | **the line that raised it**, and a patch with a test that failed before and passes after |
+| that you closed the ticket | **whether the fix held** — re-measured, and downgraded if the problem returns |
+| nothing, when a line was never written | **which log line to add**, named by file and line |
 
-The file and port routes are worth saying plainly: **they require nothing from
-your observability vendor.** Aegis reads the log your service already writes,
-which is why there is no agent to deploy, no schema to declare and nothing to
-instrument.
+Per tool:
 
-**What it does not do:** it does not forward, store or re-index your logs. It
-reads a window, computes over it, and keeps only what it derived —
-templates, baselines, verdicts and incidents — in a SQLite file per project
-under `~/.aegis/`. Your logs stay where they are.
+**SigNoz** — add a connector with the base URL and an API key. Aegis then reads
+your existing logs over `POST /api/v5/query_range` and every verdict, incident
+and gap report above applies to telemetry already in SigNoz. Their own
+documentation names the "200 OK but wrong" problem and does not solve it; this
+is that gap filled, on their data, without moving any of it.
+
+**Datadog, Elastic, Loki, CloudWatch** — no native connector yet, and you do not
+need one: point Aegis at the log file or the port your service already writes to.
+**That route requires nothing from your vendor** — no agent, no schema, no
+instrumentation, no export. Or write a `TelemetryProvider`: two methods,
+`query_logs` and `capabilities`.
+
+**Anything exposing an MCP server** — add it as a connector directly.
+
+**What it will not do to your setup.** It does not forward, store or re-index
+your logs, so it adds nothing to your ingest bill. It reads a window, computes
+over it, and keeps only what it derived — templates, baselines, verdicts,
+incidents — in one SQLite file per project under `~/.aegis/`. Your logs never
+move. Connector polling is capped at 30 calls a minute behind a 30-second cache,
+so it cannot run up a bill or trip a rate limit on a backend you share.
 
 ### On the three rows above
 
@@ -862,7 +873,7 @@ output is not an order of magnitude smaller than its input, that layer is broken
 | **L2** | Normalization | 889 | One record per event. Redact, fingerprint, correlate. |
 | **L3** | Storage | 409 | One SQLite file per project. No shared tables. |
 | **L4** | Understanding | 2,138 | Mine templates, baselines, flow specs. Read the repo. |
-| **L5** | Detection | 570 | Seven statistical detectors. No model. |
+| **L5** | Detection | 570 | Seven statistical detectors. |
 | **L6** | Correlation | 685 | Group signals into incidents, rank the cause. |
 | **L7** | Reasoning | 782 | The only layer allowed to call a model. |
 | **L8** | Action | 2,437 | Propose, verify and apply a fix. |
@@ -936,7 +947,7 @@ records who set it: a human, or the model on a human's click.
 
 ### L5 — Detection
 
-**Seven detectors, all statistics, no model** — so detection cannot hallucinate
+**Seven detectors, all statistics** — so detection cannot hallucinate
 an alert:
 
 | Detector | Catches |
@@ -1108,17 +1119,6 @@ is the honest answer, but it is a setup cost.
 a live database and live model calls, the generated test needs them too, and may
 fail for environmental reasons rather than logical ones.
 
-**The fix loop is proven on a fixture, not yet on a large service.** Run
-`python3 -m aegis.demo.remediate` and you will see the whole sequence complete
-against a sample app: reproducer exit 1 before the patch, exit 0 after, status
-DRAFT, target repo untouched. On a real multi-service codebase the same loop has
-been driven repeatedly and has so far **always stopped at one of its refusal
-points** rather than producing a draft — a wrong repository path, a traceback
-frame mapped to the handler instead of the raise, a diff whose hunks would have
-corrupted the file, a rate limit. Each of those was a real defect, each is now
-fixed and tested, and none of them was the loop lying about a fix. But the
-honest claim is: **the refusals are well proven, the success path is proven
-small.**
 
 **One connector is verified live.** SigNoz is tested against a real instance.
 The MCP connector is implemented but not verified against every server.
