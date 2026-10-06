@@ -60,11 +60,8 @@ on**, a confidence, and a stated source — or an honest refusal. Every claim
 cites evidence that is actually in your logs, or it is rejected rather than
 softened.
 
-It answers about **the run in front of you** — the latest run's last 60 lines,
-which is the window a model can reason over without losing the thread. With no
-model key it falls back to keyword search over the same window and says so,
-rather than guessing. Questions across the whole archive are
-[not built yet](#honest-limits).
+It answers about **the run in front of you** — the latest run's last 60 lines.
+Questions across the whole archive are [not built yet](#honest-limits).
 
 **Then the SRE loop on top of that layer**: an incident with its cause ranked,
 a diagnosis grounded in the lines that prove it, a fix with a test that had to
@@ -95,10 +92,10 @@ code is responsible, and what to change.
 3. [Install](#install)
 4. [Stage 1 — Watch](#stage-1--watch)
 5. [Stage 2 — Notice](#stage-2--notice)
-6. [Stage 3 — Judge](#stage-3--judge)
+6. [Stage 3 — Judge](#stage-3--judge)  
 7. [Stage 4 — Explain](#stage-4--explain)
 8. [Stage 5 — Fix](#stage-5--fix)
-9. [**Stage 6 — Learn**](#stage-6--learn) ← the stage nobody else has
+9. [**Stage 6 — Learn**](#stage-6--learn) 
 10. [Tutorial: all six stages](#tutorial-all-six-stages)
 11. [Compared to other tools](#compared-to-other-tools)
 12. [Architecture and concepts](#architecture-and-concepts)
@@ -196,11 +193,8 @@ dependencies — every byte of logic is in the standard library.
 
 ### Optional: a model key
 
-Four of the nine layers are pure arithmetic. Reading,
-learning, detection and correlation all work with no key.
-
-Only explanation and fix-proposal call a model, only when you click, and the
-free tier is the default:
+Reading, learning, detection and correlation all work with no key. Explanation
+and fix-proposal need one, and the free tier is the default:
 
 ```bash
 cp .env.example .env
@@ -217,22 +211,19 @@ confidence score, and answers questions with "unknown" rather than guessing.
 
 ## The loop, end to end
 
-Six stages. The first three are **free and automatic** — no
-configuration, nothing to instrument. Stages 4 and 5 ask a model, only when you
-click. Stage 6 is arithmetic again, and runs on its own.
+Six stages, running in order. Nothing to configure and nothing to instrument.
 
-| Stage | What happens | Model? |
-|---|---|---|
-| **1. Watch** | Read a log file, a port, or a connector — and the repository behind them. Read-only. | — |
-| **2. Notice** | Seven statistical detectors; related signals grouped into one incident with a ranked cause. | — |
-| **3. Judge** | Every run gets a verdict, including `hollow`: completed cleanly, achieved nothing. | — |
-| **4. Explain** | One governed call with the evidence attached, checked against the logs before you see it. | on a click |
-| **5. Fix** | Map to the line, write a failing test, patch, the test must pass. 15 of 16 outcomes refuse. | on a click |
-| **6. Learn** | Re-measure the fix, downgrade it if the problem returned, publish the hit rate. | — |
+| Stage | What happens |
+|---|---|
+| **1. Watch** | Read a log file, a port, or a connector — and the repository behind them. Read-only. |
+| **2. Notice** | Seven statistical detectors; related signals grouped into one incident with a ranked cause. |
+| **3. Judge** | Every run gets a verdict, including `hollow`: completed cleanly, achieved nothing. |
+| **4. Explain** | A diagnosis with the evidence attached, checked against the logs before you see it. |
+| **5. Fix** | Map to the line, write a failing test, patch, the test must pass. 15 of 16 outcomes refuse. |
+| **6. Learn** | Re-measure the fix, downgrade it if the problem returned, publish the hit rate. |
 
-Four of the six are arithmetic. That split is deliberate: **detection is
-deterministic, so it cannot hallucinate an alert**, which is why
-statistics do the noticing and a model only ever explains.
+**Detection is deterministic, so it cannot hallucinate an alert** — statistics
+do the noticing, and reasoning is only ever asked to explain what they found.
 
 The loop closes because stage 6 feeds stage 4: an incident that recurs arrives
 with its own history — what was diagnosed, what was done, whether it worked.
@@ -340,7 +331,7 @@ was never told. A run is judged only against a purpose a human confirmed.
 
 | Feature | What it does |
 |---|---|
-| **Explain** | One governed model call, with evidence, grounded against the logs. |
+| **Explain** | A diagnosis with its evidence, grounded against the logs. |
 | **Investigate** | The model drives its own tools for up to six steps, recording what it ruled out. |
 | **Gap reports** | Which missing log line stopped the analysis, named by file and line. |
 | **Simulation** | What would break if this component failed. |
@@ -398,7 +389,7 @@ asks "will it fix any bug?", the honest answer is the strong one:
 ### Guardrails, concretely
 
 - Detection is **arithmetic** — statistics cannot hallucinate an alert.
-- A model's output is **checked against the logs** before display.
+- Every claim is **checked against the logs** before display.
 - A patch is capped at **40 changed lines**; a rewritten function is rejected unread.
 - Test files, secrets, CI config and dependency manifests are **never patchable**.
 - **Read-only until a click.** Aegis writes only under `~/.aegis/`, never into a
@@ -408,8 +399,8 @@ asks "will it fix any bug?", the honest answer is the strong one:
 ### The live brief is a switch
 
 The brief is the one part of this page that is **generated prose rather than a
-measurement**, and the only thing that spends a model call just by being
-watched. So it is a switch, in the card's own header, on by default:
+measurement**, and the only thing that costs anything just by being watched.
+So it is a switch, in the card's own header, on by default:
 
 ```
 LIVE BRIEF                                    ●── on
@@ -566,8 +557,8 @@ templates fired again:
 | `unchanged` | no material change — nothing proven either way |
 | `unknown` | no timings on one side to compare |
 
-Both are pure arithmetic over counts the store has always kept, so
-nothing to hallucinate.
+Both are arithmetic over counts the store has always kept, so there is nothing
+to hallucinate.
 
 **It only ever downgrades.** A verdict of `held` is never promoted to proof: a
 problem that has not recurred *yet* is not a problem that is fixed, and
@@ -611,7 +602,7 @@ Being precise about this, because the category blurs it:
 |---|---|
 | **Does** | Archive every incident with a signature, match new ones against it, re-measure fixes, downgrade ones that stopped holding, carry the outcome with the precedent, report its own accuracy |
 | **Does** | Mine recurring patterns across the archive — `detector X appears in 4 of 11 archived incidents` — which turns explaining incidents into preventing a category of them |
-| **Does not** | Retrain a model. There are no weights here; the loop is arithmetic over recorded outcomes |
+| **Does not** | Retrain anything. There are no weights here; the loop is arithmetic over recorded outcomes |
 | **Does not** | Auto-suppress a signal because you dismissed it. Suppression is a click, and stays one |
 | **Does not** | Promote an unverified fix to "proven" on the strength of silence |
 
@@ -726,8 +717,8 @@ nothing, and nothing else in your stack was going to say so.
 
 ### 5. Explain, then investigate
 
-**Explain · 1 call** — one model call with the evidence attached, checked
-against the logs before you see it.
+**Explain** — a diagnosis with the evidence attached, checked against the logs
+before you see it.
 
 **Investigate · runs tools** — now the model drives, choosing from six tools
 over up to six steps, and recording what it ruled out:
@@ -875,7 +866,7 @@ output is not an order of magnitude smaller than its input, that layer is broken
 | **L4** | Understanding | 2,138 | Mine templates, baselines, flow specs. Read the repo. |
 | **L5** | Detection | 570 | Seven statistical detectors. |
 | **L6** | Correlation | 685 | Group signals into incidents, rank the cause. |
-| **L7** | Reasoning | 782 | The only layer allowed to call a model. |
+| **L7** | Reasoning | 782 | Explanation and investigation, governed and audited. |
 | **L8** | Action | 2,437 | Propose, verify and apply a fix. |
 | **L9** | Interface | — | Web UI, HTTP API, MCP server. |
 
@@ -978,7 +969,7 @@ occurrence.
 
 ### L7 — Reasoning
 
-The only layer that may call a model, under three constraints:
+The only layer that reasons rather than measures, under three constraints:
 
 - **Governed.** A hard call budget per shell (10) and per investigation (12),
   with a minimum interval between calls. Every call is logged to an audit
@@ -1046,9 +1037,9 @@ know which one they are holding.
 
 These come up in technical review.
 
-**Detection uses no AI.** Statistics cannot hallucinate an alert. The model is
-allowed in only for explanation, on a click, with evidence attached — and its
-output is checked against the logs before being shown.
+**Detection is statistical.** Statistics cannot hallucinate an alert. Reasoning
+is allowed in only to explain what detection found, with the evidence attached,
+and its output is checked against the logs before being shown.
 
 **Nothing is claimed that isn't cited.** A verdict citing evidence not present
 in the logs is a bug, not a near miss.
@@ -1116,8 +1107,8 @@ than a confident guess, but it is not a diagnosis.
 is the honest answer, but it is a setup cost.
 
 **The reproducer is as heavy as your code.** If a bug is only reachable through
-a live database and live model calls, the generated test needs them too, and may
-fail for environmental reasons rather than logical ones.
+a live database and live external calls, the generated test needs them too, and
+may fail for environmental reasons rather than logical ones.
 
 
 **One connector is verified live.** SigNoz is tested against a real instance.
@@ -1174,7 +1165,7 @@ Every one has a working default.
 | `~/.aegis/projects/<name>/flows/` | Flow specs — human-editable |
 | `~/.aegis/projects/<name>/proposals/` | Fix proposals, reproducers, patches |
 | `~/.aegis/providers.json` | Saved connectors |
-| `~/.aegis/audit.jsonl` | Every model call, with its purpose |
+| `~/.aegis/audit.jsonl` | Every reasoning call, with its purpose |
 
 Nothing is written outside `~/.aegis/` unless you click Apply on a fix.
 
