@@ -1,10 +1,7 @@
 # Aegis
 
-**An agent that reads your logs, finds what broke, fixes it with proof, and
-then checks its own work.**
-
-Every observability tool tells you what happened. None of them tell you whether
-it worked — and none of them do anything about it.
+**Every observability tool tells you what happened. None of them tell you
+whether it worked.**
 
 One order from [`examples/shipyard.log`](examples/shipyard.log). Every tool on
 the market renders it green:
@@ -41,23 +38,8 @@ WATCH  ──→  NOTICE  ──→  JUDGE  ──→  EXPLAIN  ──→  FIX  
       what it learned changes what it does next
 ```
 
-Six stages, **no dependencies**, and at four of them the agent decides rather
-than reports:
-
-- **it picks its own tools** — up to six investigation steps, choosing from
-  logs, baselines, your source, the dependency map, past verdicts and
-  precedents, recording why it chose each and what it ruled out
-- **it writes its own test** — then refuses to show you a patch until that test
-  flips from failing to passing
-- **it refuses** — 15 of the 16 outcomes in the fix protocol are refusals, each
-  naming what it tried and where it stopped
-- **it grades itself** — re-measuring every fix it proposed, downgrading the
-  ones that stopped holding, and publishing its own hit rate
-
-The last stage is the point: **every other tool in this category stops at FIX.**
-Nothing in open source asks whether a fix held, learns from recorded outcomes,
-or reports its own accuracy — [Stage 6](#stage-6--learn) names the projects
-checked and what each one does instead.
+Six stages, one tool, **no dependencies**. The last one is the point: every
+other tool in this category stops at FIX.
 
 - **Language:** Python 3.10+
 - **Dependencies:** none. The standard library only, by design.
