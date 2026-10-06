@@ -48,3 +48,8 @@ pipe.py
 # cannot be regenerated from a fresh clone.
 !demo-video/shots/*.jpg
 !demo-video/ui/vid/*.png
+
+# The rendered video ships as a GitHub release asset, not in the tree: a
+# 26MB binary in every clone is a tax on anyone who just wants the code.
+# Rebuild it with: python3 demo-video/build.py
+demo-video/out/*.mp4
