@@ -54,4 +54,3 @@ pipe.py
 # megabytes and renders as nothing. The README links a poster image instead.
 demo-video/*.mp4
 demo-video/out/*.mp4
-!demo-video/poster.jpg

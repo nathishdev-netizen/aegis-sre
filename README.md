@@ -32,17 +32,6 @@ number on screen comes from a live run against
 
 https://github.com/user-attachments/assets/818d4a1c-4399-455f-be79-76b4e944fc27
 
-It starts with an order every dashboard calls green, and ends with the fix
-being graded five minutes after it shipped. Subtitled
-([.srt](https://github.com/nathishdev-netizen/aegis-sre/releases/download/v0.1.0/aegis-demo.srt)).
-
-Or run the walkthrough yourself, scene by scene, against your own log:
-
-```bash
-./demo.sh              # eight scenes, pausing between each
-./demo.sh --check      # verify the environment, run nothing
-```
-
 **Then it does something about it, and then it checks whether that worked.**
 
 ```
@@ -80,7 +69,6 @@ cites evidence that is actually in your logs, or it is rejected rather than
 softened.
 
 It answers about **the run in front of you** — the latest run's last 60 lines.
-Questions across the whole archive are [not built yet](#honest-limits).
 
 **Then the SRE loop on top of that layer**: an incident with its cause ranked,
 a diagnosis grounded in the lines that prove it, a fix with a test that had to
