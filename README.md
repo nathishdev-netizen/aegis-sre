@@ -26,10 +26,6 @@ the failure no error can show you.
 
 ### See it run
 
-A 10-minute narrated walkthrough, built from real captured output — every
-number on screen comes from a live run against
-[`examples/shipyard.log`](examples/shipyard.log), not a mock-up:
-
 https://github.com/user-attachments/assets/818d4a1c-4399-455f-be79-76b4e944fc27
 
 **Then it does something about it, and then it checks whether that worked.**
