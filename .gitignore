@@ -49,8 +49,9 @@ pipe.py
 !demo-video/shots/*.jpg
 !demo-video/ui/vid/*.png
 
-# The full-resolution render ships as a release asset; a 960px version small
-# enough to play inline lives in the tree, because a video the README cannot
-# actually play is just a link.
+# The video ships as a release asset, never in the tree: GitHub strips the
+# <video> tag from a README anyway, so an in-repo copy costs every cloner
+# megabytes and renders as nothing. The README links a poster image instead.
+demo-video/*.mp4
 demo-video/out/*.mp4
-!demo-video/aegis-demo.mp4
+!demo-video/poster.jpg
