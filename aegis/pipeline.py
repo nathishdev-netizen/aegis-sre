@@ -171,6 +171,9 @@ class Pipeline:
         self.detect.suppressed.add(template_id)
 
     def unsuppress_template(self, template_id: str) -> None:
+        """Undo a mute, on disk as well as live - otherwise the row outlives
+        the undo and the next restart silently re-applies it."""
+        self.store.remove_suppression(template_id)
         self.detect.suppressed.discard(template_id)
 
     def close(self) -> None:

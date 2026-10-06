@@ -1,0 +1,523 @@
+<title>Aegis Walkthrough</title>
+<style>
+  /* Layout: a fixed stage holding real product screenshots, driven by a
+     numbered stage rail. Dark-first, because the product itself is dark and
+     the screenshots have to sit on their own ground without a seam. */
+  :root {
+    --bg: #080b11;
+    --panel: #0e1320;
+    --panel-2: #131a2a;
+    --line: #1f2940;
+    --fg: #e6ecf7;
+    --dim: #8b9ab5;
+    --faint: #5d6b86;
+    --accent: #6ee7b7;
+    --accent-dim: #2a7f63;
+    --blue: #79c0ff;
+    --amber: #f0b429;
+    --red: #f87171;
+    --violet: #c084fc;
+    --radius: 14px;
+    --display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --body: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6fa; --panel: #ffffff; --panel-2: #eef1f7; --line: #d9dfeb;
+    --fg: #121826; --dim: #4e5a72; --faint: #7a869e;
+    --accent: #0f9d76; --accent-dim: #8fd9c4; --blue: #1f6feb;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f6fa; --panel: #ffffff; --panel-2: #eef1f7; --line: #d9dfeb;
+      --fg: #121826; --dim: #4e5a72; --faint: #7a869e;
+      --accent: #0f9d76; --accent-dim: #8fd9c4; --blue: #1f6feb;
+      color-scheme: light;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--body); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 0 72px; }
+
+  /* ---- masthead ---- */
+  header.top { padding-block: 56px 28px; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--display); font-size: clamp(30px, 5.4vw, 52px);
+    line-height: 1.04; margin: 0 0 16px; font-weight: 600;
+    letter-spacing: -.02em; text-wrap: balance; max-width: 16ch;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede { font-size: clamp(15px, 2vw, 18px); color: var(--dim); max-width: 62ch; margin: 0; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .fact {
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+    background: var(--panel);
+  }
+  .fact b { color: var(--fg); font-weight: 600; }
+
+  /* ---- stage rail ---- */
+  .rail {
+    display: flex; gap: 6px; overflow-x: auto; padding-block: 18px 16px;
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+    background: linear-gradient(var(--bg) 78%, transparent);
+    scrollbar-width: thin;
+  }
+  .rail button {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    font-family: var(--body); font-size: 13px; color: var(--dim);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px 7px 9px; cursor: pointer;
+    transition: color .16s, border-color .16s, background .16s;
+    white-space: nowrap;
+  }
+  .rail button:hover { color: var(--fg); border-color: var(--accent-dim); }
+  .rail button[aria-selected="true"] {
+    color: var(--bg); background: var(--accent); border-color: var(--accent);
+    font-weight: 600;
+  }
+  .rail button[aria-selected="true"] .n { background: rgba(0,0,0,.26); color: var(--bg); }
+  .rail .n {
+    font-family: var(--mono); font-size: 10.5px; width: 20px; height: 20px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: var(--panel-2); color: var(--faint);
+  }
+  .rail button:focus-visible, .ctl:focus-visible, .hot:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  /* ---- stage ---- */
+  .stage { padding-block: 10px 0; }
+  .stage-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .stage-head h2 {
+    font-family: var(--display); font-size: clamp(21px, 3.2vw, 29px);
+    margin: 0; font-weight: 600; letter-spacing: -.015em;
+  }
+  .where {
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px;
+  }
+  .stage-say { color: var(--dim); max-width: 70ch; margin: 0 0 20px; font-size: 15.5px; }
+
+  /* screenshot frame */
+  .shot {
+    position: relative; border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden; background: #0b0f18; min-width: 0;
+  }
+  .chrome {
+    display: flex; align-items: center; gap: 7px; padding: 9px 13px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .url {
+    font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+    margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+
+  /* hotspots sit over the screenshot in % coordinates */
+  .hot {
+    position: absolute; border: 2px solid var(--accent); border-radius: 7px;
+    background: rgba(110,231,183,.09); cursor: pointer; padding: 0;
+    animation: pulse 2.6s ease-in-out infinite;
+  }
+  .hot::after {
+    content: attr(data-n); position: absolute; top: -11px; left: -11px;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+    color: #05281e; font-family: var(--mono); font-size: 11px; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  .hot[aria-expanded="true"] { background: rgba(110,231,183,.2); }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(110,231,183,.34) } 55% { box-shadow: 0 0 0 9px rgba(110,231,183,0) } }
+  @media (prefers-reduced-motion: reduce) { .hot { animation: none } }
+
+  .callout {
+    margin-top: 14px; border: 1px solid var(--accent-dim); border-left-width: 3px;
+    border-radius: 9px; background: var(--panel); padding: 13px 16px;
+  }
+  .callout[hidden] { display: none !important; }
+  .callout h4 { margin: 0 0 5px; font-size: 13.5px; font-family: var(--display); letter-spacing: -.01em; }
+  .callout p { margin: 0; font-size: 14px; color: var(--dim); }
+
+  .hint { margin-top: 12px; font-size: 12.5px; color: var(--faint); font-family: var(--mono); }
+
+  /* notes under the stage */
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 22px; }
+  .note { border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px; background: var(--panel); min-width: 0; }
+  .note h5 {
+    margin: 0 0 6px; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--accent);
+  }
+  .note p { margin: 0; font-size: 13.5px; color: var(--dim); }
+  .note code { font-family: var(--mono); font-size: 12.5px; color: var(--fg); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+
+  /* nav */
+  .ctls { display: flex; gap: 10px; align-items: center; margin-top: 26px; flex-wrap: wrap; }
+  .ctl {
+    font-family: var(--body); font-size: 13.5px; font-weight: 500;
+    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 16px; cursor: pointer;
+  }
+  .ctl:hover:not(:disabled) { border-color: var(--accent-dim); }
+  .ctl:disabled { opacity: .36; cursor: default; }
+  .ctl.primary { background: var(--accent); color: #05281e; border-color: var(--accent); font-weight: 600; }
+  .count { font-family: var(--mono); font-size: 12px; color: var(--faint); margin-left: auto; }
+
+  /* verdict legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+  .lg { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--dim); }
+  .sw { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
+
+  footer {
+    margin-top: 56px; padding-top: 26px; border-top: 1px solid var(--line);
+    color: var(--faint); font-size: 13px;
+  }
+  footer code { font-family: var(--mono); color: var(--dim); }
+  .theme {
+    position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 40; width: 36px; height: 36px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    cursor: pointer; font-size: 15px; line-height: 1;
+  }
+  @media (max-width: 640px) {
+    .hot::after { width: 18px; height: 18px; font-size: 10px; top: -9px; left: -9px; }
+    .rail { padding-block: 12px 10px; }
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Interactive walkthrough · real screens</p>
+    <h1>Every tool tells you what happened. None tell you <em>whether it worked</em>.</h1>
+    <p class="lede">
+      Aegis reads the same logs your dashboards read, and answers a question none of them ask:
+      did this run actually do its job? Below is the product itself, running on a 26-order
+      checkout log. Click the numbered markers on each screen.
+    </p>
+    <div class="facts">
+      <span class="fact"><b>26</b> orders</span>
+      <span class="fact"><b>3</b> hollow</span>
+      <span class="fact"><b>175</b> log lines → <b>9</b> templates</span>
+      <span class="fact"><b>0</b> dependencies</span>
+      <span class="fact"><b>379</b> tests</span>
+    </div>
+  </header>
+
+  <nav class="rail" id="rail" role="tablist" aria-label="Walkthrough stages"></nav>
+
+  <main class="stage">
+    <div class="stage-head">
+      <h2 id="s-title"></h2>
+      <span class="where" id="s-where"></span>
+    </div>
+    <p class="stage-say" id="s-say"></p>
+
+    <div class="shot">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="url" id="s-url"></span>
+      </div>
+      <img id="s-img" alt="" />
+      <div id="s-hots"></div>
+    </div>
+
+    <div class="callout" id="s-callout" hidden>
+      <h4 id="s-ch"></h4>
+      <p id="s-cp"></p>
+    </div>
+    <p class="hint" id="s-hint"></p>
+
+    <div class="notes" id="s-notes"></div>
+
+    <div class="ctls">
+      <button class="ctl" id="prev">← Back</button>
+      <button class="ctl primary" id="next">Next →</button>
+      <span class="count" id="count"></span>
+    </div>
+  </main>
+
+  <footer>
+    <p style="margin:0 0 8px">
+      Screens captured from Aegis running against <code>examples/shipyard.log</code>.
+      Every number shown was measured from that file — nothing is mocked.
+    </p>
+    <p style="margin:0">
+      <code>python3 run.py</code> → <code>localhost:3000</code> &nbsp;·&nbsp;
+      <code>./demo.sh</code> for the terminal walkthrough &nbsp;·&nbsp; Python 3.10+, no dependencies, MIT
+    </p>
+  </footer>
+</div>
+
+<button class="theme" id="theme" aria-label="Toggle theme">◐</button>
+
+<script>
+const S = [
+  {
+    key: "brief", n: "Brief", where: "Detail → Brief", url: "localhost:3000/#/overview",
+    img: "shots/overview.jpg",
+    title: "It explains itself before you ask",
+    say: "Point Aegis at a log and within two seconds it has built this. Two things happen in a deliberate order: anything sensitive is removed before a line touches disk, then the text is collapsed into shapes. Everything above that layer counts templates, not lines — which is what makes the rest affordable.",
+    hots: [
+      { x: 15.6, y: 15.6, w: 54.7, h: 19.3, h4: "The live brief",
+        p: "Written as the stream moves, and switchable off — it is the one part that is generated prose rather than a measurement. Off, every number stays." },
+      { x: 15.6, y: 38.8, w: 82.8, h: 6.2, h4: "The funnel: 175 → 9",
+        p: "175 log lines collapsed into 9 distinct shapes. Everything above this layer counts templates, not lines — which is what makes detection affordable at 400,000 lines a day." },
+      { x: 15.6, y: 49.8, w: 50.0, h: 3.8, h4: "20 achieved · 3 hollow · 2 failed · 1 degraded",
+        p: "An error-based tool finds the 2 failures. The 3 hollow orders took money and shipped nothing, and nothing errored." },
+      { x: 66.8, y: 55.2, w: 32.0, h: 18.8, h4: "Ask about this run",
+        p: "Questions answered from the lines on this page. Each answer is one governed model call and quotes the evidence it rests on — or refuses." }
+    ],
+    notes: [
+      { h: "No setup", p: "No schema, no parser, no instrumentation added to your app." },
+      { h: "Read-only", p: "Your log is never copied. Only derived numbers are stored, under <code>~/.aegis/</code>." }
+    ]
+  },
+  {
+    key: "runs", n: "Verdicts", where: "Runs", url: "localhost:3000/#/runs",
+    img: "shots/runs.jpg",
+    title: "A verdict on every run, not just the failed ones",
+    say: "26 orders, each judged against what a run of this kind is supposed to do. Green achieved it. Amber did the work but took six seconds against a one-second p95. Red failed. And the purple cards are the ones no other tool computes: finished, achieved nothing.",
+    hots: [
+      { x: 15.8, y: 39.8, w: 20.2, h: 10.5, h4: "ORD-88409 — finished, achieved nothing",
+        p: "Completed cleanly. No errors. Normal teardown. And none of its purpose steps ever ran. The card says it in plain English rather than in a status code." },
+      { x: 78.3, y: 52.8, w: 20.3, h: 8.5, h4: "ORD-88416 — worked, but abnormally",
+        p: "Achieved its purpose, but took 6s against a 1s p95. Degraded is its own verdict because slow-but-correct is a different problem from wrong." },
+      { x: 15.7, y: 13.8, w: 46.0, h: 3.5, h4: "The question, asked plainly",
+        p: "“Did each run actually work?” is the whole product in five words. Everything else exists to answer it honestly." }
+    ],
+    notes: [
+      { h: "Grep-able", p: "Order ids are shown whole, so every verdict can be checked against the raw log." },
+      { h: "Three in 26", p: "ORD-88409, ORD-88422, ORD-88426 — the three that charged a card and reserved nothing." }
+    ]
+  },
+  {
+    key: "flow", n: "Flow & spec", where: "Detail → Flow & spec", url: "localhost:3000/#/flow",
+    img: "shots/flow.jpg",
+    title: "It reads your code, not only your logs",
+    say: "Analyze parses the repository and the page fills in: the ways in, the work it does with real medians, and every dependency marked where the code never guards it. The spec sits below, with the purpose step marked by a human.",
+    hots: [
+      { x: 17, y: 8.7, w: 48, h: 2.3, h4: "22 ways in \u00b7 25 dependencies \u00b7 13 unguarded calls",
+        p: "Assembled from your code and your logs \u2014 no model. Parsed from 144 files with Python's own syntax tree. Solid nodes were seen running; dashed ones are declared in code but never observed." },
+      { x: 17, y: 19.2, w: 38, h: 3.6, h4: "The work it does",
+        p: "Real medians from real runs: checkout 593ms over 26 samples, payment 329ms over 24. The code says what exists; the logs say what it costs." },
+      { x: 17, y: 23.5, w: 77, h: 8.5, h4: "What it leans on",
+        p: "Every dependency the code actually has, each flagged where it is never guarded. A dependency that is never guarded is flagged <em>before</em> it fails, not after \u2014 the piece logs can never tell you." },
+      { x: 17, y: 46.5, w: 77, h: 5, h4: "Analyze \u2014 read-only",
+        p: "Point it at a repository and it parses routes, external calls, and what is guarded. No model reads your code: an LLM reading a whole repo is unverifiable and exceeds any context window." },
+      { x: 17, y: 63, w: 77, h: 5.5, h4: "Project brief \u2014 one governed model call",
+        p: "What this project <em>is</em>, written from the analysis and the measured telemetry \u2014 never from raw source or raw logs. Every name is checked against the facts; fabrications are dropped. It also states what it cannot know." }
+    ],
+    notes: [
+      { h: "Human-editable", p: "Edit <code>critical</code> in the spec file and the verdicts follow your spec, not the model's." },
+      { h: "Solid vs dashed", p: "Solid nodes were seen running. Dashed ones are declared in code but never observed — dead paths." }
+    ]
+  },
+  {
+    key: "incidents", n: "Incidents", where: "Incidents", url: "localhost:3000/#/incidents",
+    img: "shots/incidents.jpg",
+    title: "One incident per story, not forty alerts",
+    say: "Signals that belong to the same story become one incident, not forty alerts. Expanded here: its members with the cause ranked first and the reasoning shown, a precedent from memory carrying its own score, a grounded explanation, and a draft fix.",
+    hots: [
+      { x: 16.5, y: 27.7, w: 81, h: 3.2, h4: "RANKED CAUSE",
+        p: "Two signals, one incident, and the first is tagged as the cause. Below it: <em>why ranked</em> — earliest onset of 2 members, both sharing trace ORD-88415, ranked by timing alone. It shows its reasoning rather than asserting it." },
+      { x: 17, y: 36.6, w: 80, h: 3.0, h4: "memory: INC-2 (sim 0.9)",
+        p: "A past incident with a similar signature, its outcome, and the words <em>precedent, not conclusion</em>. Systems change, and a stale match asserted as fact is worse than no memory at all." },
+      { x: 17, y: 39.8, w: 22, h: 3.2, h4: "Explain · 1 call",
+        p: "Exactly one governed model call, budget-counted and audited. Beside it, Investigate, which runs tools over six bounded steps instead of answering from one payload." },
+      { x: 17, y: 45.5, w: 80, h: 15, h4: "GROUNDED · high",
+        p: "The answer, with the two log lines it rests on quoted exactly. Fabricated citations are dropped and counted; if none survive, the label reads UNVERIFIED and confidence is forced to low. Then <em>now</em> and <em>later</em>: what to do immediately, and what stops it recurring." },
+      { x: 17, y: 60, w: 82, h: 9.5, h4: "propose a fix — draft only",
+        p: "“Your repo is read, never written.” The fix arrives as a draft bundle with a reproducer that had to fail before the patch and pass after it. Applying it is a human act; there is no merge path at any tier." }
+    ],
+    notes: [
+      { h: "Resolving is archiving", p: "Every resolved incident becomes a retrievable precedent automatically. Nobody has to remember." },
+      { h: "Precedent, not conclusion", p: "A match arrives with its score and those words attached. Systems change." }
+    ]
+  },
+  {
+    key: "fix", n: "Fix", where: "Incidents \u2192 Propose fix", url: "localhost:3000/#/incidents",
+    img: "shots/fix.jpg",
+    title: "It proposes only what it has proven",
+    say: "A different service, a real crash, a real repository. Aegis mapped the evidence to source, wrote a reproducer, proved it failed, and drafted a patch. Then it refused to propose it.",
+    hots: [
+      { x: 17, y: 24.5, w: 22, h: 3.3, h4: "Explain \u00b7 1 call",
+        p: "One governed model call to explain. Investigate instead runs tools over six bounded steps \u2014 the literature's error-accumulation ceiling, halved \u2014 and stops when confident or when the budget ends, saying which." },
+      { x: 17, y: 29.5, w: 80, h: 6.5, h4: "propose a fix \u2014 your repo is read, never written",
+        p: "Point it at the repository. The fix arrives as a draft bundle under <code>~/.aegis/</code>. There is no merge path in this codebase at any tier, at any confidence level \u2014 <code>can_merge()</code> returns False and is the documentation of that fact." },
+      { x: 17, y: 39, w: 81, h: 6, h4: "BLOCKED \u2014 the gate rejected the patch",
+        p: "Two hunks removed the same line, so the second could not apply once the first had run. Blocked rather than shipped. The diff stays in the bundle to read as a suggestion, but \u201cAegis proposes only what it has proven, and it could not prove this one.\u201d A tool that hands you a confident, untested patch is the thing this exists to avoid." }
+    ],
+    notes: [
+      { h: "Reproducer first", p: "It must FAIL before the patch. If it passes already, the diagnosis was wrong and the agent stops." },
+      { h: "Minimal or nothing", p: "Over 40 changed lines, or any test file touched, and the patch is rejected before it is considered." },
+      { h: "Auto-revert", p: "Applied patches that break your own suite are reverted with the failures quoted." }
+    ]
+  },
+  {
+    key: "improve", n: "Improve", where: "Detail → Improve", url: "localhost:3000/#/improve",
+    img: "shots/improve.jpg",
+    title: "When the evidence isn't there, it names the line to add",
+    say: "Research on root-cause analysis found 26.9% of failures could not be diagnosed because the evidence was never captured in the first place. No model, however good, recovers a log line that was never written — so this page names the line to add.",
+    hots: [
+      { x: 15.7, y: 24.6, w: 83.0, h: 4.0, h4: "What to log next",
+        p: "Gaps the analysis actually hit, each with the measurement that proves it. Here there are none — everything claimed was grounded. When there are, this is the only tool in the category that tells you which line would have closed them." },
+      { x: 15.7, y: 40.2, w: 83.0, h: 4.6, h4: "Recurring patterns",
+        p: "A theme across incidents is a candidate for a fix at the source. This is where explaining incidents turns into preventing a category of them." },
+      { x: 15.7, y: 51.5, w: 83.0, h: 5.0, h4: "Quiet notes · paging nobody",
+        p: "Signals that matched no incident are kept visible but page no one. Being seen and being alerted on are different things." }
+    ],
+    notes: [
+      { h: "The third problem", p: "Storage and search are solved. Missing evidence is not, and nobody else reports it." },
+      { h: "Pairs with the skill", p: "The instrumentation skill turns each gap into a concrete logging change." }
+    ]
+  },
+  {
+    key: "audit", n: "Audit", where: "Audit", url: "localhost:3000/#/audit",
+    img: "shots/audit.jpg",
+    title: "Did the fix actually hold?",
+    say: "This is the stage every other tool in the category skips. Marking a fix as working freezes the numbers to judge it by, and five minutes later those numbers are measured again — because what a human believed and what the measurements did are two different facts, and they can disagree.",
+    hots: [
+      { x: 15.7, y: 18.0, w: 68.0, h: 10.0, h4: "Two measures, because one does not generalise",
+        p: "Latency answers a slow-flow incident. For an error, a novelty, or a run of hollow checkouts the timing never moves — so the measure that always works is whether the incident's own templates fired again." }
+    ],
+    notes: [
+      { h: "held", p: "None of its templates has fired since the fix." },
+      { h: "recurred", p: "<code>T-65b79888 has fired 14 more time(s) since the fix</code> — downgraded, with the count that proves it." },
+      { h: "too-early", p: "Fewer than 8 new runs. Not enough to mean anything yet, and it says so." }
+    ]
+  },
+  {
+    key: "connectors", n: "Sources", where: "Connectors", url: "localhost:3000/#/connectors",
+    img: "shots/connectors.jpg",
+    title: "It sits beside what you already run",
+    say: "Storage, search and dashboards are solved problems. Aegis reads from SigNoz as one of its sources. What it adds is the layer above: the per-run verdict, the ranked incident, the proven fix.",
+    hots: [
+      { x: 15.7, y: 20.0, w: 68.0, h: 12.0, h4: "A file, a port, or a connector",
+        p: "Point it at any of the three and it is reading within two seconds. A dead connector reports the error rather than quietly showing “0 records”." }
+    ],
+    notes: [
+      { h: "Not a replacement", p: "Your dashboards keep telling you checkout-api returns 200 in 495ms. Aegis tells you three of those orders never reserved stock." },
+      { h: "Per-project isolation", p: "One SQLite file per project. No shared table for a query to get wrong." }
+    ]
+  }
+];
+
+const LIMITS = [
+  ["never merges", "can_merge() returns False — at any tier, at any confidence. Not a setting."],
+  ["never edits a test", "A patch touching a test file is rejected before it is even considered."],
+  ["never writes to your repo", "A fix is a draft bundle. Applying it is a human act."],
+  ["not built yet", "Questions across the whole archive; the chatbot answers about the run in front of you."]
+];
+
+let i = 0, openHot = -1;
+const el = id => document.getElementById(id);
+
+const rail = el("rail");
+S.forEach((s, k) => {
+  const b = document.createElement("button");
+  b.setAttribute("role", "tab");
+  b.innerHTML = '<span class="n">' + (k + 1) + "</span>" + s.n;
+  b.onclick = () => go(k);
+  rail.appendChild(b);
+});
+
+function go(k) {
+  i = Math.max(0, Math.min(S.length - 1, k));
+  openHot = -1;
+  const s = S[i];
+
+  [...rail.children].forEach((b, n) => b.setAttribute("aria-selected", n === i));
+  el("s-title").textContent = s.title;
+  el("s-where").textContent = s.where;
+  el("s-say").textContent = s.say;
+  el("s-url").textContent = s.url;
+  const img = el("s-img");
+  img.src = s.img;
+  img.alt = "Aegis " + s.where + " screen";
+
+  const hots = el("s-hots");
+  hots.innerHTML = "";
+  s.hots.forEach((h, n) => {
+    const b = document.createElement("button");
+    b.className = "hot";
+    b.style.cssText = `left:${h.x}%;top:${h.y}%;width:${h.w}%;height:${h.h}%`;
+    b.dataset.n = n + 1;
+    b.setAttribute("aria-expanded", "false");
+    b.setAttribute("aria-label", h.h4);
+    b.onclick = () => showHot(n);
+    hots.appendChild(b);
+  });
+
+  el("s-callout").hidden = true;
+  el("s-hint").textContent = s.hots.length
+    ? "Click the " + s.hots.length + " markers on the screen above."
+    : "";
+
+  const notes = el("s-notes");
+  notes.innerHTML = "";
+  (s.notes || []).forEach(nt => {
+    const d = document.createElement("div");
+    d.className = "note";
+    d.innerHTML = "<h5>" + nt.h + "</h5><p>" + nt.p + "</p>";
+    notes.appendChild(d);
+  });
+
+  el("prev").disabled = i === 0;
+  el("next").textContent = i === S.length - 1 ? "Back to start" : "Next →";
+  el("count").textContent = (i + 1) + " / " + S.length;
+
+  try { history.replaceState(null, "", "#" + s.key); } catch (e) {}
+  rail.children[i].scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+}
+
+function showHot(n) {
+  const s = S[i];
+  const hots = [...el("s-hots").children];
+  if (openHot === n) {
+    openHot = -1;
+    el("s-callout").hidden = true;
+    hots.forEach(b => b.setAttribute("aria-expanded", "false"));
+    return;
+  }
+  openHot = n;
+  hots.forEach((b, k) => b.setAttribute("aria-expanded", k === n));
+  el("s-ch").textContent = s.hots[n].h4;
+  el("s-cp").innerHTML = s.hots[n].p;
+  el("s-callout").hidden = false;
+}
+
+el("next").onclick = () => go(i === S.length - 1 ? 0 : i + 1);
+el("prev").onclick = () => go(i - 1);
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") go(i + 1);
+  if (e.key === "ArrowLeft") go(i - 1);
+});
+
+// Theme toggle, remembered per viewer. Storage can throw in a private
+// window or during thumbnail capture, so every access is guarded and the
+// page renders correctly when it comes back empty.
+const root = document.documentElement;
+try {
+  const saved = localStorage.getItem("aegis-wt-theme");
+  if (saved) root.setAttribute("data-theme", saved);
+} catch (e) {}
+el("theme").onclick = () => {
+  const dark = !(root.getAttribute("data-theme") === "light");
+  const next = dark ? "light" : "dark";
+  root.setAttribute("data-theme", next);
+  try { localStorage.setItem("aegis-wt-theme", next); } catch (e) {}
+};
+
+const start = S.findIndex(s => "#" + s.key === location.hash);
+go(start >= 0 ? start : 0);
+</script>

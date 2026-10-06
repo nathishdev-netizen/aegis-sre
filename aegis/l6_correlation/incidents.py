@@ -127,6 +127,12 @@ class IncidentManager:
         # Service topology, mined from traces - lets a cause be ranked by
         # what calls what, not merely by which signal fired first.
         self.topology = None
+        # Called with one incident dict the moment it resolves. C15's archive
+        # subscribes here (see Pipeline), so resolving IS archiving and no
+        # caller has to remember to do it. Assigned-but-never-called is how
+        # this started: the hook existed on the Pipeline side only, so every
+        # archive stayed empty and memory could never match a precedent.
+        self.on_resolve = None
 
     def set_topology(self, topology) -> None:
         self.topology = topology
@@ -372,6 +378,14 @@ class IncidentManager:
                     "detail": f"no further signals for {self.RESOLVE_QUIET_S:.0f}s"
                               " - sustained recovery",
                 })
+                if self.on_resolve is not None:
+                    try:
+                        self.on_resolve(incident.to_dict())
+                    except Exception:
+                        # Archiving is memory's enhancement, not correlation's
+                        # job. A store problem must never stop an incident
+                        # resolving, which is what the operator is watching.
+                        pass
 
     # -- reporting -----------------------------------------------------------
 

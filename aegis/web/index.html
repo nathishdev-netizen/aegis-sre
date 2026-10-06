@@ -485,7 +485,11 @@ function renderRuns(state) {
   el("runs").innerHTML = verdicts.map(function (v) {
     return '<div class="run ' + esc(v.verdict) + '">' +
       '<span class="tag">' + esc(v.verdict.toUpperCase()) + "</span>" +
-      '<span class="meta">' + esc(v.trace_id.slice(0, 8)) + " · @" +
+      // 8 chars silently merges ids sharing a prefix: ORD-88409 and
+      // ORD-88422 both read "ORD-8840"-ish, so three hollow orders look
+      // interchangeable and none can be grepped in the raw log. 14 keeps an
+      // application's own ids whole and still shortens a uuid.
+      '<span class="meta">' + esc(v.trace_id.slice(0, 14)) + " · @" +
       esc(v.opened_at) + " · " + esc(v.duration_s) + "s</span>" +
       "<p>" + esc(v.reason) + "</p></div>";
   }).join("");

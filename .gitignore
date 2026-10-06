@@ -41,3 +41,10 @@ private/
 tmp/
 vtest2.js
 pipe.py
+
+# The demo video's own assets are the exception to the image ignores above:
+# walkthrough.html renders shots/, and build.py rebuilds the video from
+# ui/vid/. Without them the published page is broken links and the video
+# cannot be regenerated from a fresh clone.
+!demo-video/shots/*.jpg
+!demo-video/ui/vid/*.png

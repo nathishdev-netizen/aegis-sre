@@ -1,0 +1,200 @@
+AEGIS — narration script
+Timestamps are where each scene STARTS in aegis-demo.mp4.
+Re-record these lines with any voice and rebuild to swap the audio.
+
+[00:00]  00-title
+    Every observability tool tells you what happened. None of them tell you
+    whether it worked. Here is why that matters, and what a tool built
+    around it actually looks like.
+
+[00:09]  THE PROBLEM
+    Start with one order, from a checkout platform of five services. This is
+    everything it logged. Order received. Cart validated. Catalogue
+    searched. Payment authorised, seventeen thousand four hundred and
+    ninety. Email queued. Order completed, status two hundred, four hundred
+    and ninety five milliseconds. No errors. Fast. Card charged, customer
+    happy. Every dashboard you own calls this green, and every one of them
+    is wrong.
+
+[00:36]  THE PROBLEM
+    The failure is not in those lines. It is in a line that is not there. A
+    healthy order logs this: inventory service, stock reserved. Order eight
+    eight four zero nine has no such line. Inventory never ran. So the money
+    left the account, the confirmation email went out, and no warehouse
+    knows to ship anything. Nothing to alert on, because nothing errored.
+    The run completed. Status two hundred. The only thing that failed was
+    the point of the order, and no tool out there has an opinion about what
+    an order is for.
+
+[01:07]  THE PROBLEM
+    Aegis gives that a name: hollow. Completed cleanly, achieved nothing.
+    Name it and you can count it, and in this one file it happens three
+    times in twenty six orders. Compare the two tools. An error based tool
+    reports two failures, and it is right about both, those are the declined
+    payments. It says nothing about the three orders that took money and
+    delivered nothing. That gap is the product.
+
+[01:32]  WHAT IT DOES
+    So, six stages. It watches your logs and your code, read only. It
+    notices what matters using statistics, not a model. It judges every run,
+    hollow ones included. It explains, with the lines that prove it. It
+    fixes, with a test that had to fail first. And then it checks whether
+    that fix actually held. Watch for that last one, because every other
+    tool in this space stops at fix.
+
+[01:56]  THE TOOL
+    This is Aegis, pointed at that platform with one command. Down the left,
+    the pages. Across the top, the tabs that do the work. In the middle a
+    live brief, written as the stream moves, and you can switch it off,
+    because it is the one thing here that is prose rather than a
+    measurement. Below that the funnel, then run quality: twenty achieved,
+    three hollow, two failed, one degraded. Every number got there by
+    counting.
+
+[02:20]  STAGE 1 — WATCH
+    Stage one. No schema, no parser, nothing added to your app. Two things
+    happen, and the order matters. First, anything sensitive is stripped
+    before a line touches disk. That ordering is the whole privacy story:
+    there is no unredacted copy downstream to leak, because it never
+    existed. Second, the text collapses into shapes. A hundred and seventy
+    five lines become nine templates. Everything above this counts
+    templates, not lines, and that is what makes the rest affordable.
+
+[02:49]  STAGE 1 — WATCH
+    And look at the counts, because the bug is already sitting there. Twenty
+    six orders received. Twenty four payments authorised, the two missing
+    ones are the declines. Twenty four completed. But only twenty one
+    reserved stock. Twenty four minus twenty one is three. Three orders
+    returned two hundred to a paying customer and reserved nothing. Nobody
+    set that check up. It falls out of counting.
+
+[03:11]  STAGE 2 — NOTICE
+    Stage two. Seven detectors decide what deserves attention, and every one
+    is arithmetic: counting, ratios, medians. No model here at all, and that
+    split is deliberate. A threshold decides whether to speak. A model,
+    later and only once, decides what to say. Flip that and you are sending
+    every log line to an LLM, which nobody can afford or verify at four
+    hundred thousand lines a day.
+
+[03:35]  STAGE 3 — JUDGE
+    Stage three, and this is the bit no other vendor computes. To judge a
+    run you need to know what it was meant to do, so Aegis mines that from
+    the project's own traces. Here is the flow spec: every step, and how
+    often it shows up. Order received, a hundred percent. Payment, ninety
+    two. Stock reserved, eighty one. Now look at the badge on that row.
+    Critical, human.
+
+[03:58]  STAGE 3 — JUDGE
+    Stage three also reads your code. Analyze parses the source with
+    Python's own syntax tree. No model reads your repo, because that would
+    be unverifiable and blow past any context window. From a hundred and
+    forty four files: twenty two ways in, twenty five dependencies, thirteen
+    unguarded calls. And every dependency is flagged red where the code
+    never guards it, which your logs could never have told you.
+
+[04:22]  STAGE 3 — JUDGE
+    So, that badge. Payment shows up in twenty four orders, stock in twenty
+    one. By frequency, payment looks more essential. But what are we
+    hunting? An order that charged the card and reserved nothing. Payment
+    ran. Stock did not. Here is the principle, and it is the sharpest idea
+    in the product: the step that makes a run worth having only shows up in
+    the runs that worked, which is exactly why counting can never find it.
+    So a human marks it, and the spec records who.
+
+[04:49]  STAGE 3 — JUDGE
+    With that spec, every order gets a verdict. Green did its job. Amber did
+    the work but took six seconds against a one second p ninety five. Red
+    failed. And the purple cards are hollow: eight eight four zero nine,
+    four two two, four two six. Each one says it plainly. Completed cleanly,
+    no errors, normal teardown, and not one of its purpose steps ran. Grep
+    those numbers in the raw log and check them yourself.
+
+[05:16]  STAGE 3 — JUDGE
+    Signals do not turn into forty alerts. The ones belonging to a single
+    story become one incident. Members listed, first one tagged ranked
+    cause, and underneath, why it ranked: earliest onset, both sharing a
+    trace, ranked on timing alone. It shows its working instead of just
+    asserting. Then memory: a past incident at zero point nine similarity,
+    carrying the words precedent, not conclusion.
+
+[05:41]  STAGE 4 — EXPLAIN
+    Stage four is the first time a model runs at all, under three
+    constraints that are enforced in code. It is budgeted, because an outage
+    is exactly when an ungoverned reasoning layer would spend the most. It
+    is audited, and the record is written before the call, not after. And it
+    only ever sees redacted text, because there is no other version to send.
+
+[06:02]  STAGE 4 — EXPLAIN
+    Hit Explain, and one governed call runs. The answer comes back tagged
+    grounded, high. Payment was declined for insufficient funds, which made
+    the checkout API record an order failure. And underneath, the two log
+    lines it rests on, quoted exactly. That check is not decoration. Every
+    citation gets matched against the evidence the model was handed.
+    Anything it made up is dropped and counted, and if nothing survives, it
+    reads unverified and confidence drops to low. The research is blunt
+    here: a good explanation makes you trust wrong answers just as much as
+    right ones. Only a checkable source fixes that.
+
+[06:40]  STAGE 5 — FIX
+    Stage five has a hard problem first. A log line has no pointer to the
+    code that wrote it. The two worlds share no identifier. So Aegis parses
+    your source and matches format strings back to the lines they produced.
+    That bridge is what lets it say reserve dot py, line eighty nine,
+    instead of something went wrong somewhere. And it pulls double duty: the
+    file it mapped to becomes the only file a patch is allowed to touch.
+    Then write a test that fails. If it passes before the patch, the
+    diagnosis was wrong, and it stops.
+
+[07:12]  STAGE 5 — FIX
+    Here it is on a real service with a real crash. Aegis mapped the
+    evidence to source, wrote a reproducer, proved it failed, drafted a
+    patch. Then the gate rejected it. Two hunks removed the same line, so
+    the second could never apply. Blocked. Aegis proposes only what it has
+    proven, and it could not prove this one.
+
+[07:32]  STAGE 5 — FIX
+    And when the trail goes cold, it says so. Research found twenty seven
+    percent of failures could not be diagnosed, because the evidence was
+    never captured. No model recovers a log line nobody wrote. So this page
+    tells you what to log next: the gaps the analysis actually hit, each
+    with the measurement that proves it.
+
+[07:50]  STAGE 6 — LEARN
+    Stage six is the one nobody else has. A survey of the open source field
+    turned up nothing that asks whether a fix held, nothing that learns from
+    recorded outcomes, nothing that reports its own accuracy. The one
+    project with a real learning loop marks that feature closed source in
+    its own docs. A vendor picking this as its moat is the best evidence
+    going of which part is worth having.
+
+[08:14]  STAGE 6 — LEARN
+    Every resolved incident gets archived automatically, as a structured
+    signature rather than prose. Resolving is archiving, so nobody has to
+    remember. When something similar turns up later, memory hands the
+    investigation its own history before any hypothesis forms. And a
+    remembered wrong diagnosis is kept just as carefully as a right one,
+    because it stops the same bad answer coming back with a precedent's
+    authority.
+
+[08:39]  STAGE 6 — LEARN
+    And then the measurement nobody does. Mark a fix as working and it
+    freezes the numbers to judge it by, then measures them again later. Two
+    measures, because one does not generalise. Latency answers a slow flow.
+    But for an error, or a run of hollow checkouts, the timing never moves,
+    so the thing that always works is whether the incident's own templates
+    fired again. Held, recurred with the count that proves it, or too early,
+    which says so instead of guessing.
+
+[09:08]  HONEST LIMITS
+    Finally, what it does not do. It never merges, and that is not a
+    setting: the capability does not exist at any tier. It never edits a
+    test to make a patch pass. It never writes to the repo it is diagnosing.
+    One project's data is one file on disk. And the chatbot answers about
+    the run in front of you, not the whole archive. That is not built yet,
+    and the docs say so.
+
+[09:30]  17-end
+    One sentence to finish. Your dashboards will keep telling you checkout
+    returns two hundred in four hundred and ninety five milliseconds, and
+    they are right. Aegis tells you three of those orders never reserved
+    stock, which line of code did it, and whether the fix you shipped held.

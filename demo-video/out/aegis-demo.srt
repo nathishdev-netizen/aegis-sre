@@ -1,0 +1,907 @@
+1
+00:00:00,000 --> 00:00:02,407
+Every observability tool tells you what
+happened.
+
+2
+00:00:02,407 --> 00:00:04,371
+None of them tell you whether it worked.
+
+3
+00:00:04,371 --> 00:00:08,202
+Here is why that matters, and what a tool
+built around it actually looks like.
+
+4
+00:00:09,802 --> 00:00:13,544
+Start with one order, from a checkout
+platform of five services.
+
+5
+00:00:13,544 --> 00:00:15,240
+This is everything it logged.
+
+6
+00:00:15,240 --> 00:00:16,117
+Order received.
+
+7
+00:00:16,117 --> 00:00:16,994
+Cart validated.
+
+8
+00:00:16,994 --> 00:00:18,105
+Catalogue searched.
+
+9
+00:00:18,105 --> 00:00:21,789
+Payment authorised, seventeen thousand
+four hundred and ninety.
+
+10
+00:00:21,789 --> 00:00:22,549
+Email queued.
+
+11
+00:00:22,549 --> 00:00:27,168
+Order completed, status two hundred, four
+hundred and ninety five milliseconds.
+
+12
+00:00:27,168 --> 00:00:27,753
+No errors.
+
+13
+00:00:27,753 --> 00:00:28,045
+Fast.
+
+14
+00:00:28,045 --> 00:00:29,741
+Card charged, customer happy.
+
+15
+00:00:29,741 --> 00:00:34,009
+Every dashboard you own calls this green,
+and every one of them is wrong.
+
+16
+00:00:36,209 --> 00:00:38,152
+The failure is not in those lines.
+
+17
+00:00:38,152 --> 00:00:40,096
+It is in a line that is not there.
+
+18
+00:00:40,096 --> 00:00:43,583
+A healthy order logs this: inventory
+service, stock reserved.
+
+19
+00:00:43,583 --> 00:00:46,441
+Order eight eight four zero nine has no
+such line.
+
+20
+00:00:46,441 --> 00:00:47,584
+Inventory never ran.
+
+21
+00:00:47,584 --> 00:00:49,298
+So the money left the account,
+
+22
+00:00:49,298 --> 00:00:53,471
+the confirmation email went out, and no
+warehouse knows to ship anything.
+
+23
+00:00:53,471 --> 00:00:56,043
+Nothing to alert on, because nothing
+errored.
+
+24
+00:00:56,043 --> 00:00:57,072
+The run completed.
+
+25
+00:00:57,072 --> 00:00:58,158
+Status two hundred.
+
+26
+00:00:58,158 --> 00:01:01,245
+The only thing that failed was the point
+of the order,
+
+27
+00:01:01,245 --> 00:01:04,903
+and no tool out there has an opinion about
+what an order is for.
+
+28
+00:01:07,303 --> 00:01:09,167
+Aegis gives that a name: hollow.
+
+29
+00:01:09,167 --> 00:01:11,265
+Completed cleanly, achieved nothing.
+
+30
+00:01:11,265 --> 00:01:12,954
+Name it and you can count it,
+
+31
+00:01:12,954 --> 00:01:16,741
+and in this one file it happens three
+times in twenty six orders.
+
+32
+00:01:16,741 --> 00:01:18,023
+Compare the two tools.
+
+33
+00:01:18,023 --> 00:01:20,411
+An error based tool reports two failures,
+
+34
+00:01:20,411 --> 00:01:23,907
+and it is right about both, those are the
+declined payments.
+
+35
+00:01:23,907 --> 00:01:28,393
+It says nothing about the three orders
+that took money and delivered nothing.
+
+36
+00:01:28,393 --> 00:01:29,791
+That gap is the product.
+
+37
+00:01:32,191 --> 00:01:33,066
+So, six stages.
+
+38
+00:01:33,066 --> 00:01:35,748
+It watches your logs and your code, read
+only.
+
+39
+00:01:35,748 --> 00:01:38,896
+It notices what matters using statistics,
+not a model.
+
+40
+00:01:38,896 --> 00:01:41,345
+It judges every run, hollow ones included.
+
+41
+00:01:41,345 --> 00:01:43,794
+It explains, with the lines that prove it.
+
+42
+00:01:43,794 --> 00:01:46,418
+It fixes, with a test that had to fail
+first.
+
+43
+00:01:46,418 --> 00:01:49,333
+And then it checks whether that fix
+actually held.
+
+44
+00:01:49,333 --> 00:01:53,823
+Watch for that last one, because every
+other tool in this space stops at fix.
+
+45
+00:01:56,023 --> 00:01:59,141
+This is Aegis, pointed at that platform
+with one command.
+
+46
+00:01:59,141 --> 00:02:00,509
+Down the left, the pages.
+
+47
+00:02:00,509 --> 00:02:02,807
+Across the top, the tabs that do the work.
+
+48
+00:02:02,807 --> 00:02:04,284
+In the middle a live brief,
+
+49
+00:02:04,284 --> 00:02:11,341
+written as the stream moves, and you can
+switch it off, because it is the one thing
+here that is prose rather than a
+measurement.
+
+50
+00:02:11,341 --> 00:02:12,545
+Below that the funnel,
+
+51
+00:02:12,545 --> 00:02:16,593
+then run quality: twenty achieved, three
+hollow, two failed, one degraded.
+
+52
+00:02:16,593 --> 00:02:18,508
+Every number got there by counting.
+
+53
+00:02:20,508 --> 00:02:21,089
+Stage one.
+
+54
+00:02:21,089 --> 00:02:23,880
+No schema, no parser, nothing added to
+your app.
+
+55
+00:02:23,880 --> 00:02:26,264
+Two things happen, and the order matters.
+
+56
+00:02:26,264 --> 00:02:30,043
+First, anything sensitive is stripped
+before a line touches disk.
+
+57
+00:02:30,043 --> 00:02:35,218
+That ordering is the whole privacy story:
+there is no unredacted copy downstream to
+leak,
+
+58
+00:02:35,218 --> 00:02:36,671
+because it never existed.
+
+59
+00:02:36,671 --> 00:02:38,939
+Second, the text collapses into shapes.
+
+60
+00:02:38,939 --> 00:02:42,137
+A hundred and seventy five lines become
+nine templates.
+
+61
+00:02:42,137 --> 00:02:44,404
+Everything above this counts templates,
+
+62
+00:02:44,404 --> 00:02:47,544
+not lines, and that is what makes the rest
+affordable.
+
+63
+00:02:49,544 --> 00:02:52,737
+And look at the counts, because the bug is
+already sitting there.
+
+64
+00:02:52,737 --> 00:02:54,064
+Twenty six orders received.
+
+65
+00:02:54,064 --> 00:02:57,552
+Twenty four payments authorised, the two
+missing ones are the declines.
+
+66
+00:02:57,552 --> 00:02:58,633
+Twenty four completed.
+
+67
+00:02:58,633 --> 00:03:00,352
+But only twenty one reserved stock.
+
+68
+00:03:00,352 --> 00:03:02,219
+Twenty four minus twenty one is three.
+
+69
+00:03:02,219 --> 00:03:05,953
+Three orders returned two hundred to a
+paying customer and reserved nothing.
+
+70
+00:03:05,953 --> 00:03:07,181
+Nobody set that check up.
+
+71
+00:03:07,181 --> 00:03:08,409
+It falls out of counting.
+
+72
+00:03:11,009 --> 00:03:11,614
+Stage two.
+
+73
+00:03:11,614 --> 00:03:14,458
+Seven detectors decide what deserves
+attention,
+
+74
+00:03:14,458 --> 00:03:17,787
+and every one is arithmetic: counting,
+ratios, medians.
+
+75
+00:03:17,787 --> 00:03:20,873
+No model here at all, and that split is
+deliberate.
+
+76
+00:03:20,873 --> 00:03:23,112
+A threshold decides whether to speak.
+
+77
+00:03:23,112 --> 00:03:26,138
+A model, later and only once, decides what
+to say.
+
+78
+00:03:26,138 --> 00:03:29,466
+Flip that and you are sending every log
+line to an LLM,
+
+79
+00:03:29,466 --> 00:03:33,763
+which nobody can afford or verify at four
+hundred thousand lines a day.
+
+80
+00:03:35,763 --> 00:03:39,046
+Stage three, and this is the bit no other
+vendor computes.
+
+81
+00:03:39,046 --> 00:03:42,215
+To judge a run you need to know what it
+was meant to do,
+
+82
+00:03:42,215 --> 00:03:45,045
+so Aegis mines that from the project's own
+traces.
+
+83
+00:03:45,045 --> 00:03:48,497
+Here is the flow spec: every step, and how
+often it shows up.
+
+84
+00:03:48,497 --> 00:03:50,421
+Order received, a hundred percent.
+
+85
+00:03:50,421 --> 00:03:51,553
+Payment, ninety two.
+
+86
+00:03:51,553 --> 00:03:53,081
+Stock reserved, eighty one.
+
+87
+00:03:53,081 --> 00:03:55,005
+Now look at the badge on that row.
+
+88
+00:03:55,005 --> 00:03:55,911
+Critical, human.
+
+89
+00:03:58,111 --> 00:03:59,891
+Stage three also reads your code.
+
+90
+00:03:59,891 --> 00:04:02,911
+Analyze parses the source with Python's
+own syntax tree.
+
+91
+00:04:02,911 --> 00:04:04,259
+No model reads your repo,
+
+92
+00:04:04,259 --> 00:04:07,926
+because that would be unverifiable and
+blow past any context window.
+
+93
+00:04:07,926 --> 00:04:10,946
+From a hundred and forty four files:
+twenty two ways in,
+
+94
+00:04:10,946 --> 00:04:13,696
+twenty five dependencies, thirteen
+unguarded calls.
+
+95
+00:04:13,696 --> 00:04:17,309
+And every dependency is flagged red where
+the code never guards it,
+
+96
+00:04:17,309 --> 00:04:19,574
+which your logs could never have told you.
+
+97
+00:04:22,174 --> 00:04:22,993
+So, that badge.
+
+98
+00:04:22,993 --> 00:04:26,267
+Payment shows up in twenty four orders,
+stock in twenty one.
+
+99
+00:04:26,267 --> 00:04:28,614
+By frequency, payment looks more
+essential.
+
+100
+00:04:28,614 --> 00:04:29,924
+But what are we hunting?
+
+101
+00:04:29,924 --> 00:04:32,761
+An order that charged the card and
+reserved nothing.
+
+102
+00:04:32,761 --> 00:04:33,416
+Payment ran.
+
+103
+00:04:33,416 --> 00:04:34,180
+Stock did not.
+
+104
+00:04:34,180 --> 00:04:35,381
+Here is the principle,
+
+105
+00:04:35,381 --> 00:04:44,659
+and it is the sharpest idea in the
+product: the step that makes a run worth
+having only shows up in the runs that
+worked, which is exactly why counting can
+never find it.
+
+106
+00:04:44,659 --> 00:04:47,169
+So a human marks it, and the spec records
+who.
+
+107
+00:04:49,769 --> 00:04:52,350
+With that spec, every order gets a
+verdict.
+
+108
+00:04:52,350 --> 00:04:53,430
+Green did its job.
+
+109
+00:04:53,430 --> 00:04:57,931
+Amber did the work but took six seconds
+against a one second p ninety five.
+
+110
+00:04:57,931 --> 00:04:58,591
+Red failed.
+
+111
+00:04:58,591 --> 00:05:02,192
+And the purple cards are hollow: eight
+eight four zero nine,
+
+112
+00:05:02,192 --> 00:05:03,812
+four two two, four two six.
+
+113
+00:05:03,812 --> 00:05:05,312
+Each one says it plainly.
+
+114
+00:05:05,312 --> 00:05:10,353
+Completed cleanly, no errors, normal
+teardown, and not one of its purpose steps
+ran.
+
+115
+00:05:10,353 --> 00:05:13,834
+Grep those numbers in the raw log and
+check them yourself.
+
+116
+00:05:16,434 --> 00:05:18,676
+Signals do not turn into forty alerts.
+
+117
+00:05:18,676 --> 00:05:22,038
+The ones belonging to a single story
+become one incident.
+
+118
+00:05:22,038 --> 00:05:22,923
+Members listed,
+
+119
+00:05:22,923 --> 00:05:30,179
+first one tagged ranked cause, and
+underneath, why it ranked: earliest onset,
+both sharing a trace, ranked on timing
+alone.
+
+120
+00:05:30,179 --> 00:05:32,952
+It shows its working instead of just
+asserting.
+
+121
+00:05:32,952 --> 00:05:36,432
+Then memory: a past incident at zero point
+nine similarity,
+
+122
+00:05:36,432 --> 00:05:39,087
+carrying the words precedent, not
+conclusion.
+
+123
+00:05:41,287 --> 00:05:43,933
+Stage four is the first time a model runs
+at all,
+
+124
+00:05:43,933 --> 00:05:46,634
+under three constraints that are enforced
+in code.
+
+125
+00:05:46,634 --> 00:05:47,444
+It is budgeted,
+
+126
+00:05:47,444 --> 00:05:52,035
+because an outage is exactly when an
+ungoverned reasoning layer would spend the
+most.
+
+127
+00:05:52,035 --> 00:05:55,707
+It is audited, and the record is written
+before the call, not after.
+
+128
+00:05:55,707 --> 00:05:59,974
+And it only ever sees redacted text,
+because there is no other version to send.
+
+129
+00:06:02,374 --> 00:06:04,735
+Hit Explain, and one governed call runs.
+
+130
+00:06:04,735 --> 00:06:07,331
+The answer comes back tagged grounded,
+high.
+
+131
+00:06:07,331 --> 00:06:09,928
+Payment was declined for insufficient
+funds,
+
+132
+00:06:09,928 --> 00:06:12,996
+which made the checkout API record an
+order failure.
+
+133
+00:06:12,996 --> 00:06:16,655
+And underneath, the two log lines it rests
+on, quoted exactly.
+
+134
+00:06:16,655 --> 00:06:18,366
+That check is not decoration.
+
+135
+00:06:18,366 --> 00:06:22,497
+Every citation gets matched against the
+evidence the model was handed.
+
+136
+00:06:22,497 --> 00:06:25,035
+Anything it made up is dropped and
+counted,
+
+137
+00:06:25,035 --> 00:06:29,342
+and if nothing survives, it reads
+unverified and confidence drops to low.
+
+138
+00:06:29,342 --> 00:06:35,480
+The research is blunt here: a good
+explanation makes you trust wrong answers
+just as much as right ones.
+
+139
+00:06:35,480 --> 00:06:37,545
+Only a checkable source fixes that.
+
+140
+00:06:40,145 --> 00:06:42,218
+Stage five has a hard problem first.
+
+141
+00:06:42,218 --> 00:06:45,212
+A log line has no pointer to the code that
+wrote it.
+
+142
+00:06:45,212 --> 00:06:47,227
+The two worlds share no identifier.
+
+143
+00:06:47,227 --> 00:06:52,237
+So Aegis parses your source and matches
+format strings back to the lines they
+produced.
+
+144
+00:06:52,237 --> 00:06:54,943
+That bridge is what lets it say reserve
+dot py,
+
+145
+00:06:54,943 --> 00:06:58,398
+line eighty nine, instead of something
+went wrong somewhere.
+
+146
+00:06:58,398 --> 00:07:04,041
+And it pulls double duty: the file it
+mapped to becomes the only file a patch is
+allowed to touch.
+
+147
+00:07:04,041 --> 00:07:05,711
+Then write a test that fails.
+
+148
+00:07:05,711 --> 00:07:09,684
+If it passes before the patch, the
+diagnosis was wrong, and it stops.
+
+149
+00:07:12,484 --> 00:07:15,077
+Here it is on a real service with a real
+crash.
+
+150
+00:07:15,077 --> 00:07:17,062
+Aegis mapped the evidence to source,
+
+151
+00:07:17,062 --> 00:07:20,041
+wrote a reproducer, proved it failed,
+drafted a patch.
+
+152
+00:07:20,041 --> 00:07:21,475
+Then the gate rejected it.
+
+153
+00:07:21,475 --> 00:07:25,060
+Two hunks removed the same line, so the
+second could never apply.
+
+154
+00:07:25,060 --> 00:07:25,502
+Blocked.
+
+155
+00:07:25,502 --> 00:07:29,473
+Aegis proposes only what it has proven,
+and it could not prove this one.
+
+156
+00:07:32,273 --> 00:07:34,423
+And when the trail goes cold, it says so.
+
+157
+00:07:34,423 --> 00:07:38,145
+Research found twenty seven percent of
+failures could not be diagnosed,
+
+158
+00:07:38,145 --> 00:07:40,242
+because the evidence was never captured.
+
+159
+00:07:40,242 --> 00:07:42,444
+No model recovers a log line nobody wrote.
+
+160
+00:07:42,444 --> 00:07:46,429
+So this page tells you what to log next:
+the gaps the analysis actually hit,
+
+161
+00:07:46,429 --> 00:07:48,578
+each with the measurement that proves it.
+
+162
+00:07:50,978 --> 00:07:52,995
+Stage six is the one nobody else has.
+
+163
+00:07:52,995 --> 00:07:57,410
+A survey of the open source field turned
+up nothing that asks whether a fix held,
+
+164
+00:07:57,410 --> 00:08:01,879
+nothing that learns from recorded
+outcomes, nothing that reports its own
+accuracy.
+
+165
+00:08:01,879 --> 00:08:06,839
+The one project with a real learning loop
+marks that feature closed source in its
+own docs.
+
+166
+00:08:06,839 --> 00:08:11,799
+A vendor picking this as its moat is the
+best evidence going of which part is worth
+having.
+
+167
+00:08:14,399 --> 00:08:17,232
+Every resolved incident gets archived
+automatically,
+
+168
+00:08:17,232 --> 00:08:19,630
+as a structured signature rather than
+prose.
+
+169
+00:08:19,630 --> 00:08:22,354
+Resolving is archiving, so nobody has to
+remember.
+
+170
+00:08:22,354 --> 00:08:24,424
+When something similar turns up later,
+
+171
+00:08:24,424 --> 00:08:28,510
+memory hands the investigation its own
+history before any hypothesis forms.
+
+172
+00:08:28,510 --> 00:08:32,542
+And a remembered wrong diagnosis is kept
+just as carefully as a right one,
+
+173
+00:08:32,542 --> 00:08:36,792
+because it stops the same bad answer
+coming back with a precedent's authority.
+
+174
+00:08:39,192 --> 00:08:41,348
+And then the measurement nobody does.
+
+175
+00:08:41,348 --> 00:08:45,076
+Mark a fix as working and it freezes the
+numbers to judge it by,
+
+176
+00:08:45,076 --> 00:08:46,882
+then measures them again later.
+
+177
+00:08:46,882 --> 00:08:49,562
+Two measures, because one does not
+generalise.
+
+178
+00:08:49,562 --> 00:08:51,193
+Latency answers a slow flow.
+
+179
+00:08:51,193 --> 00:08:52,184
+But for an error,
+
+180
+00:08:52,184 --> 00:09:00,165
+or a run of hollow checkouts, the timing
+never moves, so the thing that always
+works is whether the incident's own
+templates fired again.
+
+181
+00:09:00,165 --> 00:09:00,456
+Held,
+
+182
+00:09:00,456 --> 00:09:05,583
+recurred with the count that proves it, or
+too early, which says so instead of
+guessing.
+
+183
+00:09:08,383 --> 00:09:09,974
+Finally, what it does not do.
+
+184
+00:09:09,974 --> 00:09:10,851
+It never merges,
+
+185
+00:09:10,851 --> 00:09:14,635
+and that is not a setting: the capability
+does not exist at any tier.
+
+186
+00:09:14,635 --> 00:09:16,994
+It never edits a test to make a patch
+pass.
+
+187
+00:09:16,994 --> 00:09:19,462
+It never writes to the repo it is
+diagnosing.
+
+188
+00:09:19,462 --> 00:09:21,601
+One project's data is one file on disk.
+
+189
+00:09:21,601 --> 00:09:25,824
+And the chatbot answers about the run in
+front of you, not the whole archive.
+
+190
+00:09:25,824 --> 00:09:28,182
+That is not built yet, and the docs say
+so.
+
+191
+00:09:30,782 --> 00:09:31,838
+One sentence to finish.
+
+192
+00:09:31,838 --> 00:09:36,978
+Your dashboards will keep telling you
+checkout returns two hundred in four
+hundred and ninety five milliseconds,
+
+193
+00:09:36,978 --> 00:09:37,850
+and they are right.
+
+194
+00:09:37,850 --> 00:09:40,559
+Aegis tells you three of those orders
+never reserved stock,
+
+195
+00:09:40,559 --> 00:09:43,496
+which line of code did it, and whether the
+fix you shipped held.

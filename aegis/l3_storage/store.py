@@ -31,6 +31,11 @@ AEGIS_HOME = Path(os.path.expanduser("~/.aegis"))
 # watch does not grow without limit.
 KEEP_PER_OPERATION = 500
 
+# Precedents worth keeping. Memory's value is recency as much as volume: a
+# match against a system that has since been rewritten is the kind of stale
+# precedent C15 warns about, so the archive is a window, not a ledger.
+MAX_ARCHIVED_INCIDENTS = 500
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS templates (
     id          TEXT PRIMARY KEY,
@@ -141,6 +146,10 @@ class TraceIndex:
 
 
 class ProjectStore:
+    # How many archives between prunes. A DELETE scan per incident would put
+    # database work in a path that runs on every resolution for no gain.
+    PRUNE_EVERY = 50
+
     """One project's derived data, in that project's own database file."""
 
     def __init__(self, project: str, root: Path | str | None = None) -> None:
@@ -152,6 +161,7 @@ class ProjectStore:
         self._lock = threading.Lock()
         self._conn = self._open_resilient()
         self._pending = 0
+        self._archived_since_prune = 0
 
     def _connect(self) -> sqlite3.Connection:
         """One connection, configured for this store's actual access pattern.
@@ -261,6 +271,21 @@ class ProjectStore:
                 f" VALUES ({','.join('?' for _ in columns)})",
                 tuple(str(record.get(c, "")) for c in columns),
             )
+            self._archived_since_prune += 1
+            # The doc allows no unbounded table, and this is the one that
+            # would grow forever: every resolution archives a row. Pruned
+            # periodically rather than on every insert, so a long watch does
+            # not pay for a DELETE scan per incident. The oldest precedents
+            # age out first - a match against a year-old system is the one
+            # least likely to still be true.
+            if self._archived_since_prune >= self.PRUNE_EVERY:
+                self._archived_since_prune = 0
+                self._conn.execute(
+                    "DELETE FROM incident_archive WHERE id NOT IN ("
+                    "  SELECT id FROM incident_archive"
+                    "  ORDER BY archived_at DESC, id DESC LIMIT ?)",
+                    (MAX_ARCHIVED_INCIDENTS,),
+                )
 
     def add_suppression(self, template_id: str, reason: str = "") -> None:
         import time as _time
@@ -269,6 +294,19 @@ class ProjectStore:
                 "INSERT OR REPLACE INTO suppressions (template_id, reason, added_at)"
                 " VALUES (?, ?, ?)",
                 (template_id, reason, _time.strftime("%Y-%m-%d %H:%M")))
+            self._conn.commit()
+
+    def remove_suppression(self, template_id: str) -> None:
+        """Unmute a template, on disk as well as in memory.
+
+        Without this an undo only cleared the running detector's set, so the
+        row survived and the next restart re-applied a mute the operator had
+        already taken back - the exact mirror of the bug persistence was
+        added to fix.
+        """
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM suppressions WHERE template_id = ?", (template_id,))
             self._conn.commit()
 
     def suppressions(self) -> list[dict[str, Any]]:

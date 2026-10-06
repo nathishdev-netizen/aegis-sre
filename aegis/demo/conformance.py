@@ -1,12 +1,18 @@
 """Phase 7 verification - the moat: did each run actually achieve anything?
 
-    python3 -m aegis.demo.conformance [logfile] [--no-llm]
+    python3 -m aegis.demo.conformance [logfile] [--no-llm] [--use-saved-spec]
 
 Mines the flow spec from the project's own traces, has the FlowSynthesizer
 model mark which steps are the run's PURPOSE (C6's only model step - exactly
 one call, skipped with --no-llm), then gives every trace a verdict. The case
 this exists for: a run that completed cleanly - no errors, normal teardown,
 green on every dashboard - and achieved nothing.
+
+--use-saved-spec reads the spec already on disk instead of re-mining and
+re-marking it. Without it a human's `critical` edits are overwritten on every
+run, so the demo could invite you to edit the spec file and then ignore what
+you wrote. Marking the purpose step is the human's call (see flowspec.py), and
+a demo that discards it cannot show that.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from app.config import load_env  # noqa: E402
 load_env()
 
 from aegis.l4_understanding.conformance import ConformanceEngine  # noqa: E402
-from aegis.l4_understanding.flowspec import FlowMiner, synthesize_critical  # noqa: E402
+from aegis.l4_understanding.flowspec import FlowMiner, FlowSpec, synthesize_critical  # noqa: E402
 from aegis.l7_reasoning.governance import Budget  # noqa: E402
 from aegis.l7_reasoning.router import ModelRouter  # noqa: E402
 from aegis.pipeline import Pipeline  # noqa: E402
@@ -41,6 +47,7 @@ def rule(title: str) -> None:
 def main(argv: list[str]) -> int:
     args = [a for a in argv[1:] if not a.startswith("--")]
     use_llm = "--no-llm" not in argv
+    use_saved = "--use-saved-spec" in argv
     path = Path(args[0]) if args else Path(DEFAULT_LOG)
     # A FILE, not just something that exists. DEFAULT_LOG is empty unless
     # AEGIS_DEMO_LOG is set, and Path("") is ".", which exists - so running
@@ -69,8 +76,16 @@ def main(argv: list[str]) -> int:
     print("\nAEGIS PHASE 7 - flow conformance (C6+C7). The differentiator.")
     print(f"Source: {path}")
 
-    rule("1. THE SPEC, MINED FROM THIS PROJECT'S OWN TRACES")
-    spec = FlowMiner().mine(traces, name=f"{project}-call")
+    saved_path = AEGIS_HOME / "projects" / project / "flows" / f"{project}-call.json"
+    reused = False
+    if use_saved and saved_path.is_file():
+        spec = FlowSpec.load(saved_path)
+        reused = True
+        rule("1. THE SPEC ALREADY ON DISK (--use-saved-spec, not re-mined)")
+        print(f"  {saved_path}")
+    else:
+        rule("1. THE SPEC, MINED FROM THIS PROJECT'S OWN TRACES")
+        spec = FlowMiner().mine(traces, name=f"{project}-call")
     print(f"  {spec.traces_mined} traces mined -> {len(spec.steps)} steps,"
           f" typical duration p50={spec.expected_duration_s.get('p50')}s"
           f" p95={spec.expected_duration_s.get('p95')}s")
@@ -79,7 +94,9 @@ def main(argv: list[str]) -> int:
         print(f"    {step.presence:>4.0%}  {flags:8}  {step.label[:56]}")
 
     rule("2. MARKING THE PURPOSE STEPS (C6's only model call)")
-    if use_llm:
+    if reused:
+        print("  --use-saved-spec: whatever the spec file says, kept as-is.")
+    elif use_llm:
         router = ModelRouter(budget=Budget(max_calls=1, min_interval_s=0))
         print(f"  {synthesize_critical(spec, router)}")
     else:
@@ -88,8 +105,13 @@ def main(argv: list[str]) -> int:
         if step.critical:
             print(f"    CRITICAL ({step.critical_source}): {step.label[:56]}")
 
-    spec_path = spec.save(AEGIS_HOME / "projects" / project / "flows")
-    print(f"\n  spec saved, human-editable: {spec_path}")
+    if reused:
+        print(f"\n  spec left untouched: {saved_path}")
+    else:
+        spec_path = spec.save(AEGIS_HOME / "projects" / project / "flows")
+        print(f"\n  spec saved, human-editable: {spec_path}")
+        print("  edit `critical` there, then rerun with --use-saved-spec to"
+              " judge against YOUR spec")
 
     rule("3. EVERY TRACE, JUDGED AGAINST THE SPEC")
     engine = ConformanceEngine(mode="shadow")
@@ -103,7 +125,12 @@ def main(argv: list[str]) -> int:
     print()
     for report in reports:
         when = traces[report.trace_id][0].ts
-        print(f"  {report.verdict.upper():9} {report.trace_id[:8]} @{when}"
+        # 8 chars fits a uuid prefix but SILENTLY MERGES ids that share one:
+        # ORD-88409 and ORD-88422 both printed as "ORD-8842", so three hollow
+        # orders looked like four and no id in the output could be grepped in
+        # the raw log. An application's own ids are the readable ones - show
+        # enough of them to be unique, and uuids are still distinct at 14.
+        print(f"  {report.verdict.upper():9} {report.trace_id[:14]:14} @{when}"
               f"  ({report.duration_s:.0f}s)")
         print(f"            {report.reason[:70]}")
 
