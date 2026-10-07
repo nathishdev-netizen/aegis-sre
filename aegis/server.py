@@ -167,6 +167,10 @@ class AegisApp:
         self._spec: FlowSpec | None = None
         self.code_analysis: dict | None = None
         self._stop = threading.Event()
+        # Liveness bookkeeping: _last_tick is stamped by the ingest loop, so
+        # /healthz can tell "serving HTTP" apart from "actually reading".
+        self._started_at = time.time()
+        self._last_tick = 0.0
         if log_path:
             self.attach(log_path, project)
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -175,6 +179,7 @@ class AegisApp:
     def _loop(self) -> None:
         ticks = 0
         while not self._stop.is_set():
+            self._last_tick = time.time()
             try:
                 with self._lock:
                     if self.pipeline is not None:
@@ -708,6 +713,49 @@ class AegisApp:
                     "detail": path, "healthy": True}
         return {"kind": "none", "label": "not reading anything",
                 "detail": "", "healthy": False}
+
+    # A liveness probe has to fail when the thing is actually broken, or it
+    # is worse than none: a 200 that only proves the HTTP thread is alive
+    # will keep a dead ingest loop in service behind a load balancer.
+    # Degraded means attached but the reader has stopped moving.
+    STALE_AFTER_S = 120.0
+
+    def health(self) -> dict:
+        now = time.time()
+        last = getattr(self, "_last_tick", 0.0)
+        thread_alive = bool(self._thread and self._thread.is_alive())
+        silent_for = round(now - last, 1) if last else None
+
+        # Only judge the reader when there is something to read. An
+        # unattached Aegis sitting at the source picker is healthy: it is
+        # doing exactly what it should, and a probe that calls that "down"
+        # would restart a perfectly good process on every deploy.
+        status = "ok"
+        if self.pipeline is not None:
+            if not thread_alive:
+                status = "down"                  # attached, but loop has died
+            elif last and (now - last) > self.STALE_AFTER_S:
+                status = "degraded"              # attached, but not reading
+
+        payload = {
+            "ok": status == "ok",
+            "status": status,
+            "service": "aegis",
+            "version": _aegis_version(),
+            "attached": self.pipeline is not None,
+            "project": self.project or None,
+            "ingest_thread": "alive" if thread_alive else "dead",
+            "seconds_since_tick": silent_for,
+            "uptime_s": round(now - getattr(self, "_started_at", now), 1),
+        }
+        if self.pipeline is not None:
+            try:
+                stats = self.pipeline.stats()
+                payload["events"] = stats.get("events")
+                payload["incidents"] = stats.get("incidents")
+            except Exception:
+                pass
+        return payload
 
     def state(self) -> dict:
         if self.pipeline is None:
@@ -1618,24 +1666,11 @@ def make_handler(app: AegisApp):
                 self._json(app.sources())
             elif self.path.startswith("/api/providers"):
                 self._json(app.providers())
-            elif self.path.startswith("/api/providers"):
-                self._json(app.providers())
-            elif self.path.startswith("/api/providers"):
-                self._json(app.providers())
-            elif self.path.startswith("/api/providers"):
-                self._json(app.providers())
-            elif self.path.startswith("/api/providers"):
-                self._json(app.providers())
-            elif self.path.startswith("/api/sources"):
-                self._json(app.sources())
             elif self.path == "/healthz":
                 # Anything running this as a service needs a liveness probe,
                 # and the version it answers with is how a deploy confirms
                 # WHICH build is up.
-                self._json({"ok": True, "service": "aegis",
-                            "version": _aegis_version()})
-            elif self.path.startswith("/api/sources"):
-                self._json(app.sources())
+                self._json(app.health())
             elif self.path == "/" or self.path.startswith("/index"):
                 page = (WEB_DIR / "index.html").read_bytes()
                 self.send_response(200)

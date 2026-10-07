@@ -27,6 +27,25 @@ from aegis.contracts.events import Event
 
 AEGIS_HOME = Path(os.path.expanduser("~/.aegis"))
 
+
+def _today() -> str:
+    """This machine's date, for keys that must not wrap at midnight."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _days_ago(days: int) -> str:
+    """The cutoff key for a retention window, in the same shape as a minute."""
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+# How long per-minute template counts are kept. They answer one question -
+# did this exact problem come back after the fix - and a 90-day window is
+# far longer than any verification needs while bounding the one table that
+# would otherwise grow for the life of the install.
+MINUTE_RETENTION_DAYS = 90
+
 # Enough history for a p95 to mean something, bounded so a long-running
 # watch does not grow without limit.
 KEEP_PER_OPERATION = 500
@@ -149,6 +168,10 @@ class ProjectStore:
     # How many archives between prunes. A DELETE scan per incident would put
     # database work in a path that runs on every resolution for no gain.
     PRUNE_EVERY = 50
+    # Batches of 50 events between minute-table prunes, i.e. once every
+    # ~5,000 events. Often enough to bound the table, rare enough to stay
+    # off the ingest path.
+    MINUTE_PRUNE_EVERY = 100
 
     """One project's derived data, in that project's own database file."""
 
@@ -162,6 +185,7 @@ class ProjectStore:
         self._conn = self._open_resilient()
         self._pending = 0
         self._archived_since_prune = 0
+        self._minute_batches = 0
 
     def _connect(self) -> sqlite3.Connection:
         """One connection, configured for this store's actual access pattern.
@@ -219,7 +243,14 @@ class ProjectStore:
 
     def record_event(self, event: Event) -> None:
         """Fold one event into the derived tables. Raw text is NOT stored."""
-        minute = event.ts[:5] if event.ts else ""
+        # Dated, because the log line's own time is usually just HH:MM:SS.
+        # Keyed on that alone, today's 09:15 collides with yesterday's: the
+        # counts wrap every 24 hours, so "has this template fired since the
+        # fix?" compares a number against its own future self and a problem
+        # that came back overnight reads as if it never left. The date comes
+        # from this machine's clock for the same reason runs.recorded_at
+        # does - a bare HH:MM carries none.
+        minute = f"{_today()} {event.ts[:5]}" if event.ts else ""
         with self._lock:
             self._conn.execute(
                 "INSERT INTO templates (id, pattern, service, count, first_seen,"
@@ -258,6 +289,18 @@ class ProjectStore:
             if self._pending >= 50:
                 self._conn.commit()
                 self._pending = 0
+                self._minute_batches += 1
+                # Now that the key carries a date, this table grows with time
+                # rather than wrapping, so it needs the window the archive
+                # already has. Pruned once every few thousand events, not per
+                # event: a DELETE scan on the ingest path buys nothing.
+                if self._minute_batches >= self.MINUTE_PRUNE_EVERY:
+                    self._minute_batches = 0
+                    self._conn.execute(
+                        "DELETE FROM template_minutes WHERE minute < ?",
+                        (_days_ago(MINUTE_RETENTION_DAYS),),
+                    )
+                    self._conn.commit()
 
     def archive_incident(self, record: dict[str, Any]) -> None:
         columns = ("id", "opened_at", "resolved_at", "severity", "signature",

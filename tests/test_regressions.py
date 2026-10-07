@@ -1897,6 +1897,32 @@ def test_the_documented_groq_key_is_enough_for_the_ask_box():
     assert explicit == "http://local"
 
 
+
+def test_minute_counts_do_not_wrap_at_midnight():
+    """template_minutes was keyed on a bare HH:MM from the log line, so
+    today's 09:15 landed on yesterday's row. The counts that answer "did
+    this problem come back after the fix?" then compared a number against
+    its own future self, and an incident that recurred overnight read as
+    though it never had."""
+    import sqlite3
+    import tempfile
+    from aegis.contracts.events import Event
+    from aegis.l3_storage.store import ProjectStore
+
+    store = ProjectStore("wrapcheck", root=tempfile.mkdtemp())
+    store.record_event(Event(id="1", ts="09:15:00", service="s", level="INFO",
+                             text_redacted="x", template_id="T-1"))
+    store.flush()
+    minute = sqlite3.connect(str(store.path)).execute(
+        "SELECT minute FROM template_minutes").fetchone()[0]
+    store.close()
+
+    assert len(minute) > 5, (
+        f"minute key {minute!r} carries no date, so it collides across days")
+    assert minute[:2] == "20" and minute.count("-") == 2, (
+        f"expected a YYYY-MM-DD prefix, got {minute!r}")
+
+
 if __name__ == "__main__":
     import sys
 
