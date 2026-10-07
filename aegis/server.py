@@ -83,6 +83,25 @@ def _in_time_order(events: list) -> list:
 _TRACE_FILE = re.compile(r'File "([^"]+)", line \d+')
 
 
+def _disk_free(path) -> dict | None:
+    """Free space on the volume holding the store, or None if unknowable.
+
+    Returns None rather than raising: a health check that itself fails is
+    not a health check. On a container where the path does not exist yet,
+    the nearest existing parent is good enough - it is the same volume.
+    """
+    import shutil
+    probe = Path(path)
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    try:
+        usage = shutil.disk_usage(probe)
+    except Exception:
+        return None
+    return {"free_mb": round(usage.free / 1048576),
+            "used_pct": round(usage.used / usage.total * 100, 1) if usage.total else None}
+
+
 def _aegis_version() -> str:
     try:
         import aegis
@@ -708,9 +727,21 @@ class AegisApp:
                              else ("streaming all of " + name),
                     "detail": service, "healthy": True}
         if path:
+            # healthy was hardcoded True, so a log that could no longer be
+            # opened still showed "reading app.log" on the page. The only
+            # honest source of that answer is whether the last poll worked.
+            trouble = ""
+            if self.pipeline is not None:
+                try:
+                    reads = self.pipeline.read_health()
+                    if reads["failing"]:
+                        trouble = reads["errors"][0]["error"]
+                except Exception:
+                    pass
             return {"kind": "file", "name": path,
-                    "label": "reading " + path.rsplit("/", 1)[-1],
-                    "detail": path, "healthy": True}
+                    "label": ("reading " + path.rsplit("/", 1)[-1]) if not trouble
+                             else ("CANNOT READ " + path.rsplit("/", 1)[-1]),
+                    "detail": trouble or path, "healthy": not trouble}
         return {"kind": "none", "label": "not reading anything",
                 "detail": "", "healthy": False}
 
@@ -719,6 +750,10 @@ class AegisApp:
     # will keep a dead ingest loop in service behind a load balancer.
     # Degraded means attached but the reader has stopped moving.
     STALE_AFTER_S = 120.0
+    # Below this the store cannot be trusted to keep accepting writes, and a
+    # box that silently stopped learning is the failure this whole check
+    # exists to prevent.
+    LOW_DISK_MB = 200
 
     def health(self) -> dict:
         now = time.time()
@@ -731,11 +766,35 @@ class AegisApp:
         # doing exactly what it should, and a probe that calls that "down"
         # would restart a perfectly good process on every deploy.
         status = "ok"
+        reason = ""
         if self.pipeline is not None:
             if not thread_alive:
-                status = "down"                  # attached, but loop has died
+                status, reason = "down", "ingest thread is not running"
             elif last and (now - last) > self.STALE_AFTER_S:
-                status = "degraded"              # attached, but not reading
+                status, reason = "degraded", "ingest loop has not ticked"
+            else:
+                # The loop ticking proves nothing about whether the file is
+                # readable: run_once() is wrapped in `except Exception: pass`,
+                # so a log that lost its permissions is read zero times a
+                # second, forever, with no error anywhere. This is the check
+                # that catches it.
+                try:
+                    reads = self.pipeline.read_health()
+                    if reads["failing"]:
+                        first = reads["errors"][0]
+                        status = "degraded"
+                        reason = (f"cannot read {first['path']}: "
+                                  f"{first['error']}")
+                except Exception:
+                    pass
+
+        # A full disk is the same shape of problem: writes fail, the failure
+        # is swallowed to keep ingestion alive, and Aegis quietly stops
+        # learning anything. Cheap to check, invisible otherwise.
+        disk = _disk_free(AEGIS_HOME)
+        if disk and disk["free_mb"] < self.LOW_DISK_MB:
+            status = "degraded" if status == "ok" else status
+            reason = reason or f"only {disk['free_mb']}MB free on the store volume"
 
         payload = {
             "ok": status == "ok",
@@ -748,6 +807,10 @@ class AegisApp:
             "seconds_since_tick": silent_for,
             "uptime_s": round(now - getattr(self, "_started_at", now), 1),
         }
+        if reason:
+            payload["reason"] = reason
+        if disk:
+            payload["disk"] = disk
         if self.pipeline is not None:
             try:
                 stats = self.pipeline.stats()

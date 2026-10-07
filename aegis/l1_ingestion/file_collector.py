@@ -12,6 +12,7 @@ project's log; it must never be able to change that project.
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -55,6 +56,15 @@ class FileCollector:
         self._partial = ""
         self._inode = 0
         self.backfill_note = ""
+        # Why the last poll read nothing, when the reason was a failure
+        # rather than an idle file. The caller swallows exceptions so that
+        # one unreadable source cannot stop the others, which means a
+        # permissions change or a full disk is otherwise completely silent:
+        # the process stays up, the probe says ok, and nothing is read. The
+        # count is what separates "quiet log" from "cannot read this file".
+        self.read_error = ""
+        self.consecutive_failures = 0
+        self.last_read_at = 0.0
         if self.path.exists():
             stat = self.path.stat()
             self._inode = stat.st_ino
@@ -68,6 +78,15 @@ class FileCollector:
                     f" of a {_size(stat.st_size)} file")
         self._skip_partial_first = getattr(self, "_skip_partial_first", False)
 
+    def _note_failure(self, reason: str) -> None:
+        self.consecutive_failures += 1
+        self.read_error = reason
+
+    def _note_success(self) -> None:
+        self.consecutive_failures = 0
+        self.read_error = ""
+        self.last_read_at = time.time()
+
     def poll(self) -> Iterator[RawRecord]:
         """Everything new since the last poll, as complete lines only.
 
@@ -79,9 +98,19 @@ class FileCollector:
           finishes it. Emitting half a line would hand L2 a record that never
           existed.
         """
-        if not self.path.exists():
+        # Every filesystem call below can fail in ways that are invisible
+        # otherwise: the file deleted, its mode changed, the mount gone, the
+        # disk full. Recording WHY beats raising, because the caller catches
+        # and discards exceptions so one bad source cannot stop the rest.
+        try:
+            if not self.path.exists():
+                self._note_failure("file does not exist")
+                return
+            stat = self.path.stat()
+        except OSError as exc:
+            self._note_failure(f"{exc.__class__.__name__}: {exc.strerror or exc}")
             return
-        stat = self.path.stat()
+
         size = stat.st_size
         if self._inode and stat.st_ino != self._inode:
             # Rotated: same name, new file. Start it from the top.
@@ -92,12 +121,18 @@ class FileCollector:
             self._offset = 0
             self._partial = ""
         if size == self._offset:
+            self._note_success()        # nothing new, but the file is readable
             return
 
-        with self.path.open("r", errors="replace") as handle:
-            handle.seek(self._offset)
-            chunk = handle.read()
-            self._offset = handle.tell()
+        try:
+            with self.path.open("r", errors="replace") as handle:
+                handle.seek(self._offset)
+                chunk = handle.read()
+                self._offset = handle.tell()
+        except OSError as exc:
+            self._note_failure(f"{exc.__class__.__name__}: {exc.strerror or exc}")
+            return
+        self._note_success()
 
         text = self._partial + chunk
         lines = text.split("\n")

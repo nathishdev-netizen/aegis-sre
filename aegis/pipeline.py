@@ -145,6 +145,25 @@ class Pipeline:
         except Exception:
             pass
 
+    def read_health(self) -> dict[str, Any]:
+        """Whether every source is actually readable, and why not.
+
+        run_once() is called inside a bare `except Exception: pass`, so that
+        one broken source cannot stop the others. The cost of that is silence:
+        without this, a log whose permissions changed looks exactly like a log
+        with nothing new in it.
+        """
+        collectors = [self.collector] + [c for c, _n in self.secondaries]
+        failing = [c for c in collectors if c.consecutive_failures]
+        return {
+            "sources": len(collectors),
+            "failing": len(failing),
+            "errors": [{"path": str(c.path),
+                        "error": c.read_error,
+                        "consecutive_failures": c.consecutive_failures}
+                       for c in failing],
+        }
+
     def stats(self) -> dict[str, Any]:
         return {
             "project": self.project,

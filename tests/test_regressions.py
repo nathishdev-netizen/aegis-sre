@@ -1923,6 +1923,61 @@ def test_minute_counts_do_not_wrap_at_midnight():
         f"expected a YYYY-MM-DD prefix, got {minute!r}")
 
 
+
+def test_an_unreadable_log_is_reported_not_swallowed():
+    """run_once() is called inside `except Exception: pass`, so one broken
+    source cannot stop the others. The cost is silence: a log whose
+    permissions changed is read zero times a second, forever, while the
+    process stays up and the probe says ok. The collector has to record WHY
+    it read nothing, or a monitoring tool silently stops monitoring."""
+    import os
+    import tempfile
+    from aegis.l1_ingestion.file_collector import FileCollector
+
+    path = os.path.join(tempfile.mkdtemp(), "app.log")
+    with open(path, "w") as handle:
+        handle.write("first line\n")
+
+    collector = FileCollector(path)
+    list(collector.poll())
+    assert collector.consecutive_failures == 0, "a readable file reported a failure"
+    assert collector.read_error == ""
+
+    # Grow it, then make it unreadable: poll() must try to open it and fail.
+    os.chmod(path, 0o200)
+    with open(path, "a") as handle:
+        handle.write("second line\n")
+    os.chmod(path, 0o000)
+
+    list(collector.poll())
+    assert collector.consecutive_failures == 1, (
+        "an unreadable log reported no failure - this is the silent mode")
+    assert "Permission" in collector.read_error, collector.read_error
+
+    os.chmod(path, 0o644)
+    list(collector.poll())
+    assert collector.consecutive_failures == 0, "recovery did not clear the error"
+
+
+def test_a_deleted_log_is_reported_not_silent():
+    """Same class: the file is gone, poll() returns nothing, and without a
+    recorded reason that is indistinguishable from an idle service."""
+    import os
+    import tempfile
+    from aegis.l1_ingestion.file_collector import FileCollector
+
+    path = os.path.join(tempfile.mkdtemp(), "gone.log")
+    with open(path, "w") as handle:
+        handle.write("a line\n")
+    collector = FileCollector(path)
+    list(collector.poll())
+
+    os.remove(path)
+    list(collector.poll())
+    assert collector.consecutive_failures >= 1
+    assert "exist" in collector.read_error, collector.read_error
+
+
 if __name__ == "__main__":
     import sys
 
