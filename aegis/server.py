@@ -1694,18 +1694,36 @@ def make_handler(app: AegisApp):
 
 
 def main(argv: list[str]) -> int:
+    # Flags are pulled out before the positionals, so `--port` can sit
+    # anywhere. It used to be positional slot 3, which meant the supervisor
+    # spawning `<log> <project> --port 3001` passed "--port" as the project
+    # name and every child wrote to a store called "--port".
+    port = DEFAULT_PORT
+    host = "127.0.0.1"
+    rest: list[str] = []
+    n = 1
+    while n < len(argv):
+        token = argv[n]
+        if token == "--port" and n + 1 < len(argv):
+            port = int(argv[n + 1]); n += 2; continue
+        if token == "--host" and n + 1 < len(argv):
+            host = argv[n + 1]; n += 2; continue
+        rest.append(token); n += 1
+
     log_path = None
     project = None
-    if len(argv) > 1:
-        log_path = str(Path(argv[1]).expanduser())
+    if rest:
+        log_path = str(Path(rest[0]).expanduser())
         if not Path(log_path).exists():
             print(f"No such log file: {log_path}")
             return 1
-        project = argv[2] if len(argv) > 2 else None
-    port = int(argv[3]) if len(argv) > 3 else DEFAULT_PORT
+        project = rest[1] if len(rest) > 1 else None
+        # Backwards compatible: `aegis.server <log> <project> 3001` still works.
+        if len(rest) > 2 and rest[2].isdigit():
+            port = int(rest[2])
 
     app = AegisApp(project, log_path)
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
+    server = ThreadingHTTPServer((host, port), make_handler(app))
     if log_path:
         print(f"Aegis watching '{app.project}' -> http://127.0.0.1:{port}")
     else:

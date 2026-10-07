@@ -1,0 +1,54 @@
+[Unit]
+Description=Aegis - log intelligence that closes the loop
+Documentation=https://github.com/nathishdev-netizen/aegis-sre
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aegis
+Group=aegis
+WorkingDirectory=/opt/aegis
+Environment=PYTHONUNBUFFERED=1
+# Aegis reads this for its model key. Absent, everything still runs and the
+# reasoning layer simply returns nothing - detection never depended on it.
+EnvironmentFile=-/opt/aegis/.env
+
+ExecStart=/usr/bin/python3 -m aegis.supervisor /etc/aegis/services.yml --port 3000
+
+# The supervisor stops its children on SIGTERM; the group kill is the
+# backstop for a child that ignores it.
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+Restart=always
+RestartSec=5
+# If it cannot stay up for five minutes across five tries, something is
+# wrong that restarting will not fix - stop and leave the logs intact.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Aegis reads logs and writes only under its own state directory. Nothing
+# here is required for it to work; all of it limits what a bug could reach.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Where ~/.aegis lives. Everything else on the box is read-only to it.
+StateDirectory=aegis
+Environment=HOME=/var/lib/aegis
+# The log directories it is allowed to read. Add one line per path in
+# services.yml that is not already under /var/log.
+ReadOnlyPaths=/var/log
+ReadWritePaths=/var/lib/aegis
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aegis
+
+[Install]
+WantedBy=multi-user.target
