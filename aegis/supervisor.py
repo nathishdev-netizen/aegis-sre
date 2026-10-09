@@ -44,8 +44,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 DEFAULT_PORT = 3000
-# Children are numbered from here, so the supervisor's own port stays free.
-CHILD_PORT_BASE = 3001
+# Children are numbered from the supervisor's own port + 1, not from a fixed
+# 3001: a box where 3000 was taken got --port 3010 for the supervisor while
+# its children still tried 3001, which another service already held. The
+# children follow wherever the supervisor was moved to.
+CHILD_PORT_OFFSET = 1
 
 HEALTH_EVERY_S = 5.0
 HEALTH_TIMEOUT_S = 3.0
@@ -116,7 +119,8 @@ class Supervisor:
         self.port = port
         self.python = python or sys.executable
         self.services = [
-            Service(name=name, log_path=path, port=CHILD_PORT_BASE + n)
+            Service(name=name, log_path=path,
+                    port=port + CHILD_PORT_OFFSET + n)
             for n, (name, path) in enumerate(services)
         ]
         self._stop = threading.Event()

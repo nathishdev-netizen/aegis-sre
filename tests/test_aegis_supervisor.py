@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from aegis.supervisor import (  # noqa: E402
-    CHILD_PORT_BASE,
+    CHILD_PORT_OFFSET,
     RESTART_BACKOFF_S,
     Service,
     Supervisor,
@@ -43,10 +43,24 @@ def test_a_malformed_line_is_skipped_not_fatal():
 def test_each_service_gets_its_own_port():
     """Two children on one port is the one failure that looks like a crash
     loop while actually being a config problem."""
-    supervisor = Supervisor([("a", "/a.log"), ("b", "/b.log"), ("c", "/c.log")])
+    supervisor = Supervisor([("a", "/a.log"), ("b", "/b.log"), ("c", "/c.log")],
+                            port=3000)
     ports = [s.port for s in supervisor.services]
-    assert ports == [CHILD_PORT_BASE, CHILD_PORT_BASE + 1, CHILD_PORT_BASE + 2]
+    base = 3000 + CHILD_PORT_OFFSET
+    assert ports == [base, base + 1, base + 2]
     assert len(set(ports)) == 3
+
+
+def test_children_follow_the_supervisor_off_a_busy_port():
+    """Child ports were a fixed 3001, independent of --port. On a box where
+    3000 was already taken, moving the supervisor to 3010 left its children
+    still reaching for 3001 - which another service held - so they bound,
+    failed and restarted forever while the supervisor itself looked fine."""
+    supervisor = Supervisor([("a", "/a.log"), ("b", "/b.log")], port=3010)
+    ports = [s.port for s in supervisor.services]
+    assert ports == [3011, 3012], (
+        f"children did not follow the supervisor to 3010: {ports}")
+    assert supervisor.port not in ports, "a child collides with the supervisor"
 
 
 def test_overview_is_not_ok_when_a_service_is_down():
