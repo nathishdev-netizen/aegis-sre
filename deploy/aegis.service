@@ -6,8 +6,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=aegis
-Group=aegis
+# Discovery runs `lsof` to list every listening port and find the log each
+# process has open. A user can only see its OWN processes that way, so as a
+# dedicated `aegis` user the port list came back empty on a box running
+# anything interesting. root sees them all.
+#
+# The trade is real, so it is stated: this reads your logs as root. The
+# hardening below is what bounds it - the filesystem is read-only apart
+# from its own state directory, and it can gain no new privileges. To run
+# unprivileged instead, set User=aegis and accept that the port list will
+# be empty; attaching by path still works.
+User=root
 WorkingDirectory=/opt/aegis
 Environment=PYTHONUNBUFFERED=1
 # The model key. Absent, everything still runs and the reasoning layer
@@ -36,20 +45,22 @@ StartLimitBurst=5
 KillSignal=SIGTERM
 TimeoutStopSec=30
 
-# Aegis reads logs and writes only under its own state directory. None of
-# this is required for it to work; all of it limits what a bug could reach.
+# Running as root makes this hardening load-bearing rather than optional.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# read-only, not true: PM2 and many app servers write their logs under a
+# user's home, and `true` hides those directories entirely - the one place
+# this box's own service logs actually live.
+ProtectHome=read-only
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 # Where ~/.aegis and the session file live.
 StateDirectory=aegis
 Environment=HOME=/var/lib/aegis
-# The log directories it may read. Add a line per path outside /var/log.
-ReadOnlyPaths=/var/log
+# The log directories it may read. Add a line per path outside these.
+ReadOnlyPaths=/var/log /home
 ReadWritePaths=/var/lib/aegis
 
 StandardOutput=journal

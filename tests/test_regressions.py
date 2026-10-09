@@ -1999,6 +1999,31 @@ def test_the_dashboard_resolves_its_api_against_its_own_path():
         f"proxy: {stragglers[:3]}")
 
 
+
+def test_discovery_keeps_server_logs_and_skips_the_os():
+    """The path filter excluded all of /var/ - correct on a Mac, where an
+    app's logs sit under the project, and wrong on a server, where
+    /var/log IS where every service writes. Deployed, that discarded
+    nginx, postgres and every systemd unit, so the port list came back
+    empty and the feature looked broken rather than filtered."""
+    from app.core.sources import _OS_LOG_PREFIXES
+
+    def skipped(path):
+        return any(path.startswith(prefix) for prefix in _OS_LOG_PREFIXES)
+
+    for path in ("/var/log/nginx/error.log",
+                 "/var/log/postgresql/postgresql.log",
+                 "/home/ubuntu/.pm2/logs/api-out.log",
+                 "/opt/app/logs/app.log"):
+        assert not skipped(path), f"{path} is an application log, not the OS's"
+
+    for path in ("/var/log/apt/history.log",
+                 "/var/log/journal/system.log",
+                 "/var/log/amazon/ssm/agent.log",
+                 "/System/Library/x.log"):
+        assert skipped(path), f"{path} is the OS's own and should be filtered"
+
+
 if __name__ == "__main__":
     import sys
 

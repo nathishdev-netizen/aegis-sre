@@ -161,6 +161,19 @@ def describe_source(
     }
 
 
+# Logs that belong to the machine rather than to anything worth watching.
+# /var/log itself is deliberately NOT here: on a server that is where the
+# application logs are, and excluding it is what made discovery useless
+# there. The named subdirectories below are the OS's own.
+_OS_LOG_PREFIXES = (
+    "/System/", "/Library/", "/private/var/log/asl",
+    "/var/log/journal", "/var/log/apt", "/var/log/dpkg",
+    "/var/log/unattended-upgrades", "/var/log/landscape",
+    "/var/log/amazon", "/var/log/sysstat", "/var/log/btmp",
+    "/var/log/wtmp", "/var/log/lastlog",
+)
+
+
 def log_files_for_pid(pid: int) -> list[str]:
     """Log files the process on this port already has open for writing.
 
@@ -187,8 +200,13 @@ def log_files_for_pid(pid: int) -> list[str]:
         path = parts[-1]
         if not path.startswith("/") or not path.endswith(".log"):
             continue
-        # Skip the OS and other apps' logs - we want this project's own output.
-        if any(path.startswith(prefix) for prefix in ("/private/var/", "/var/", "/System/", "/Library/")):
+        # Skip the OS's own logs. The list used to exclude all of /var/,
+        # which is correct on a Mac - where an app's logs live under the
+        # project - and wrong on a server, where /var/log IS where every
+        # service writes. On a deployed box that filter discarded nginx,
+        # postgres and every systemd unit, so the port list came back
+        # empty and the feature looked broken rather than filtered.
+        if any(path.startswith(prefix) for prefix in _OS_LOG_PREFIXES):
             continue
         # FD 1 and 2 are stdout and stderr: a shell redirect, not a file the
         # app chose to open. It usually holds a few startup lines while the
