@@ -10,17 +10,21 @@ User=aegis
 Group=aegis
 WorkingDirectory=/opt/aegis
 Environment=PYTHONUNBUFFERED=1
-# Aegis reads this for its model key. Absent, everything still runs and the
-# reasoning layer simply returns nothing - detection never depended on it.
+# The model key. Absent, everything still runs and the reasoning layer
+# simply returns nothing - detection never depended on it.
 EnvironmentFile=-/opt/aegis/.env
 
-ExecStart=/usr/bin/python3 -m aegis.supervisor /etc/aegis/services.yml --port 3000
+# The app binds 127.0.0.1:3000 by default and is reached through nginx.
+# Both are overridable here rather than in code: a box where 3000 is taken
+# needs a port change, not a patch.
+Environment=LOG_AGENT_HOST=127.0.0.1
+Environment=LOG_AGENT_PORT=3000
 
-# The supervisor stops its children on SIGTERM; the group kill is the
-# backstop for a child that ignores it.
-KillMode=control-group
-KillSignal=SIGTERM
-TimeoutStopSec=30
+# run.py is the whole product: the dashboard, the Aegis engine behind it,
+# and the source picker. Sources are attached from the browser and the
+# last one is remembered in ~/.loganalyst-session.json, so a restart
+# resumes watching rather than coming back empty.
+ExecStart=/usr/bin/python3 /opt/aegis/run.py
 
 Restart=always
 RestartSec=5
@@ -29,8 +33,11 @@ RestartSec=5
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
-# Aegis reads logs and writes only under its own state directory. Nothing
-# here is required for it to work; all of it limits what a bug could reach.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Aegis reads logs and writes only under its own state directory. None of
+# this is required for it to work; all of it limits what a bug could reach.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -38,11 +45,10 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-# Where ~/.aegis lives. Everything else on the box is read-only to it.
+# Where ~/.aegis and the session file live.
 StateDirectory=aegis
 Environment=HOME=/var/lib/aegis
-# The log directories it is allowed to read. Add one line per path in
-# services.yml that is not already under /var/log.
+# The log directories it may read. Add a line per path outside /var/log.
 ReadOnlyPaths=/var/log
 ReadWritePaths=/var/lib/aegis
 
