@@ -1978,6 +1978,27 @@ def test_a_deleted_log_is_reported_not_silent():
     assert "exist" in collector.read_error, collector.read_error
 
 
+
+def test_the_dashboard_resolves_its_api_against_its_own_path():
+    """Behind the supervisor's proxy a child is served under /<port>/, so
+    an absolute fetch("/api/state") escapes to the proxy and is answered by
+    the SUPERVISOR instead of the child. The dashboard then rendered an
+    empty source picker and "updated undefined" for a service that was
+    reading fine - it had simply asked the wrong process."""
+    from pathlib import Path
+
+    page = (Path(__file__).resolve().parents[1]
+            / "aegis" / "web" / "index.html").read_text()
+
+    assert 'function api(' in page, "the base-path helper is gone"
+
+    stragglers = [line.strip() for line in page.splitlines()
+                  if 'fetch("/api/' in line]
+    assert not stragglers, (
+        "these call the API from the site root, which breaks under a "
+        f"proxy: {stragglers[:3]}")
+
+
 if __name__ == "__main__":
     import sys
 

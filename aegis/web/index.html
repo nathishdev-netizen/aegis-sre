@@ -284,6 +284,17 @@
 </div>
 
 <script>
+// Every API path is resolved against wherever this page was served from,
+// never from the site root. Behind the supervisor's reverse proxy the
+// dashboard lives under /<port>/, so an absolute "/api/state" escapes to
+// the proxy instead of reaching this child - which answered with the
+// supervisor's own state and rendered an empty picker and "updated
+// undefined" on a service that was reading fine.
+function api(path) {
+  var base = window.location.pathname.replace(/\/[^/]*$/, "/");
+  return base + path.replace(/^\//, "");
+}
+
 "use strict";
 
 function el(id) { return document.getElementById(id); }
@@ -622,7 +633,7 @@ function render(state) {
       renderPicker(state);
     } else {
       // attached but switching: the picker lists come from their own endpoint
-      fetch("/api/sources").then(function (r) { return r.json(); })
+      fetch(api("/api/sources")).then(function (r) { return r.json(); })
         .then(function (sources) { renderPicker({ sources: sources }); })
         .catch(function () {});
     }
@@ -645,7 +656,7 @@ function render(state) {
 }
 
 function refresh() {
-  fetch("/api/state").then(function (r) { return r.json(); })
+  fetch(api("/api/state")).then(function (r) { return r.json(); })
     .then(function (state) {
       lastGood = Date.now();
       el("live-dot").style.background = "var(--green)";
@@ -671,7 +682,7 @@ document.addEventListener("click", function (event) {
     var incId = explainBtn.getAttribute("data-explain");
     explaining[incId] = true;
     refresh();
-    fetch("/api/explain/" + incId, { method: "POST" })
+    fetch(api("/api/explain/") + incId, { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function () { explaining[incId] = false; refresh(); })
       .catch(function () { explaining[incId] = false; refresh(); });
@@ -695,7 +706,7 @@ function sendQuestion() {
   input.value = "";
   addMsg("q", question);
   var pending = addMsg("a", "thinking — one governed call…");
-  fetch("/api/ask", {
+  fetch(api("/api/ask"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question: question }),
@@ -726,7 +737,7 @@ document.addEventListener("click", function (event) {
 });
 
 function doAttach(path, project) {
-  fetch("/api/attach", {
+  fetch(api("/api/attach"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: path, project: project }),
@@ -760,7 +771,7 @@ document.addEventListener("click", function (event) {
 });
 
 function doAttach(path, project) {
-  fetch("/api/attach", {
+  fetch(api("/api/attach"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: path, project: project }),
@@ -794,7 +805,7 @@ document.addEventListener("click", function (event) {
 });
 
 function doAttach(path, project) {
-  fetch("/api/attach", {
+  fetch(api("/api/attach"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: path, project: project }),
@@ -828,7 +839,7 @@ document.addEventListener("click", function (event) {
 });
 
 function doAttach(path, project) {
-  fetch("/api/attach", {
+  fetch(api("/api/attach"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: path, project: project }),
@@ -862,7 +873,7 @@ document.addEventListener("click", function (event) {
 });
 
 function doAttach(path, project) {
-  fetch("/api/attach", {
+  fetch(api("/api/attach"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: path, project: project }),
@@ -890,7 +901,7 @@ el("mark-btn").addEventListener("click", function () {
   var btn = el("mark-btn");
   btn.disabled = true;
   btn.textContent = "asking the model…";
-  fetch("/api/mark-purpose", { method: "POST" })
+  fetch(api("/api/mark-purpose"), { method: "POST" })
     .then(function (r) { return r.json(); })
     .then(function () {
       btn.textContent = "Mark purpose steps";
