@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from aegis.supervisor import (  # noqa: E402
     CHILD_PORT_OFFSET,
+    _public_link,
     RESTART_BACKOFF_S,
     Service,
     Supervisor,
@@ -121,6 +122,33 @@ class _FakeProcess:
 
     def poll(self):
         return None if self._alive else -9
+
+
+def test_a_child_link_is_never_the_supervisors_own_loopback():
+    """127.0.0.1:3011 is the address the supervisor polls, and the one
+    address a reader must never be sent to: through a proxy or down a
+    tunnel it points at the reader's own machine, so every link on the
+    overview page led nowhere."""
+    assert "127.0.0.1" not in _public_link(3011, proxied=True)
+    assert "127.0.0.1" not in _public_link(3011, proxied=False)
+
+
+def test_links_differ_for_a_proxy_and_a_tunnel():
+    """Behind nginx the children sit under a path the proxy maps, so a
+    relative link is right. Down a tunnel nothing rewrites anything, and
+    the forwarded port on the reader's own localhost is."""
+    assert _public_link(3011, proxied=True) == "./3011/"
+    assert _public_link(3011, proxied=False) == "http://localhost:3011/"
+
+
+def test_public_base_overrides_both():
+    """For the case a path cannot reach: children behind a different host."""
+    import os
+    os.environ["AEGIS_PUBLIC_BASE"] = "https://ops.example.com/aegis"
+    try:
+        assert _public_link(3011) == "https://ops.example.com/aegis/3011/"
+    finally:
+        del os.environ["AEGIS_PUBLIC_BASE"]
 
 
 if __name__ == "__main__":

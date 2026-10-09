@@ -205,7 +205,7 @@ class Supervisor:
 
     # -- reporting -----------------------------------------------------------
 
-    def overview(self) -> dict:
+    def overview(self, proxied: bool = False) -> dict:
         rows = []
         for service in self.services:
             health = service.last_health
@@ -213,6 +213,14 @@ class Supervisor:
                 "name": service.name,
                 "log_path": service.log_path,
                 "url": service.url,
+                # Where a BROWSER should go. 127.0.0.1 is right for the
+                # supervisor polling a child on the same box and wrong for
+                # everyone else: behind a reverse proxy, or down an SSH
+                # tunnel, that address is the reader's own machine. A path
+                # relative to wherever the overview is being served works
+                # in all three, and AEGIS_PUBLIC_BASE overrides it when the
+                # children sit somewhere a path cannot reach.
+                "link": _public_link(service.port, proxied),
                 "port": service.port,
                 "status": service.status(),
                 "pid": service.process.pid if service.alive and service.process else None,
@@ -272,6 +280,12 @@ def make_handler(supervisor: Supervisor):
         def log_message(self, *_args):            # quiet; children log their own
             return
 
+        def _proxied(self) -> bool:
+            """Whether a reverse proxy sits in front, per its own headers.
+            nginx sets these with `proxy_set_header`; a tunnel sets none."""
+            return any(self.headers.get(h) for h in
+                       ("X-Forwarded-For", "X-Forwarded-Proto", "X-Real-IP"))
+
         def _json(self, payload: dict, code: int = 200) -> None:
             body = json.dumps(payload, indent=1).encode()
             self.send_response(code)
@@ -282,13 +296,13 @@ def make_handler(supervisor: Supervisor):
 
         def do_GET(self):
             if self.path in ("/healthz", "/api/overview"):
-                data = supervisor.overview()
+                data = supervisor.overview(self._proxied())
                 # A probe on the supervisor should fail when a service it is
                 # responsible for is down, not only when the supervisor
                 # itself has crashed.
                 self._json(data, 200 if data["ok"] else 503)
             elif self.path == "/" or self.path.startswith("/index"):
-                page = _page(supervisor.overview()).encode()
+                page = _page(supervisor.overview(self._proxied())).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
@@ -299,6 +313,26 @@ def make_handler(supervisor: Supervisor):
                 self._json({"ok": False, "detail": "not found"}, 404)
 
     return Handler
+
+
+def _public_link(port: int, proxied: bool = False) -> str:
+    """The href for one child, as a browser on the other side should see it.
+
+    127.0.0.1 is right for the supervisor polling a child on the same box
+    and wrong for every reader: behind a reverse proxy, or down an SSH
+    tunnel, that address is the reader's own machine.
+
+    Two readers, two answers. Behind a proxy the children live under a path
+    the proxy maps, so a relative one is correct and portable. Down a
+    tunnel there is no proxy rewriting anything, and the forwarded port on
+    the reader's own localhost is exactly right.
+    """
+    base = os.environ.get("AEGIS_PUBLIC_BASE", "").rstrip("/")
+    if base:
+        return f"{base}/{port}/"
+    if proxied:
+        return f"./{port}/"
+    return f"http://localhost:{port}/"
 
 
 def _page(data: dict) -> str:
@@ -314,7 +348,7 @@ def _page(data: dict) -> str:
             if s["events"] is not None else "waiting for first read")
         restarts = (f" · restarted {s['restarts']}x" if s["restarts"] else "")
         rows.append(f"""
-      <a class="row" href="{s['url']}">
+      <a class="row" href="{s['link']}">
         <span class="dot" style="background:{dot}"></span>
         <span class="name">{s['name']}</span>
         <span class="status">{s['status']}</span>
