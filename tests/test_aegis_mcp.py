@@ -128,3 +128,38 @@ if __name__ == "__main__":
     print(f"\n{'FAILED' if failures else 'All MCP tests passed'}"
           f"{f' ({failures} failing)' if failures else ''}")
     sys.exit(1 if failures else 0)
+
+
+def test_a_run_is_returned_line_by_line():
+    """get_run is the "show me this one email" tool: every line of one run."""
+    mcp = _mcp()
+    result, lines = _call(mcp, "get_run", {"run_id": "aaaa0001-1111"})
+    assert not result["isError"]
+    assert any("CALL START" in row["line"] for row in lines)
+
+
+def test_an_unknown_run_is_an_honest_miss():
+    result, payload = _call(_mcp(), "get_run", {"run_id": "nope"})
+    assert result["isError"] and "not among" in payload["error"]
+
+
+def test_declared_http_tools_are_listed_and_callable():
+    from aegis.l1_ingestion.http_tools import HttpToolbox
+    calls = []
+
+    def transport(url, headers, timeout_s, max_bytes):
+        calls.append(url)
+        return 200, b'[{"status": "QUARANTINED"}]'
+
+    toolbox = HttpToolbox.from_dict({
+        "services": {"ms": {"base_url": "http://127.0.0.1:8090/gmail"}},
+        "tools": [{"name": "quarantined", "service": "ms",
+                   "path": "/admin/queue/quarantined",
+                   "description": "Messages no company matched."}]}, transport=transport)
+    mcp = _mcp()
+    mcp.toolbox = toolbox
+    listed = mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    assert "quarantined" in [t["name"] for t in listed["result"]["tools"]]
+    result, payload = _call(mcp, "quarantined")
+    assert not result["isError"] and "QUARANTINED" in payload["body"]
+    assert calls == ["http://127.0.0.1:8090/gmail/admin/queue/quarantined"]

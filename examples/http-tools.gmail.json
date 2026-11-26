@@ -1,0 +1,81 @@
+{
+  "_about": "Read-only tools over a Gmail intake service (MS) and its email agent. Copy to /etc/aegis/http-tools.json, point AEGIS_HTTP_TOOLS at it, and put GMAIL_MS_ADMIN_KEY and GMAIL_MS_AGENT_KEY in /opt/aegis/.env. Deliberately absent: GET /admin/diag/agent (it POSTs a synthetic email to the agent) and /admin/oauth/start.",
+  "services": {
+    "ms_admin": {
+      "base_url": "http://127.0.0.1:8090/gmail",
+      "headers": {"X-Admin-Key": "${GMAIL_MS_ADMIN_KEY}"}
+    },
+    "ms_threads": {
+      "base_url": "http://127.0.0.1:8090/gmail",
+      "headers": {"X-MS-KEY": "${GMAIL_MS_AGENT_KEY}"}
+    },
+    "agent": {
+      "base_url": "http://127.0.0.1:8091/emailagent/v1"
+    }
+  },
+  "tools": [
+    {
+      "name": "ms_mailboxes",
+      "service": "ms_admin",
+      "path": "/admin/mailboxes",
+      "description": "Every watched mailbox with its health, company and Gmail watch state. Use first for 'is the system healthy' and 'is the watch about to expire'."
+    },
+    {
+      "name": "ms_mailbox",
+      "service": "ms_admin",
+      "path": "/admin/mailboxes/{email}",
+      "path_params": {"email": "the mailbox address, e.g. reservations@company.com"},
+      "description": "One mailbox in detail: company, OAuth health, watch expiry, last history id."
+    },
+    {
+      "name": "ms_pending_deliveries",
+      "service": "ms_admin",
+      "path": "/admin/queue/pending-delivery",
+      "query": {"mailbox": "optional mailbox address to filter by", "limit": "max rows, 1-500 (default 100)"},
+      "description": "Emails received but not yet delivered to the agent. Non-empty for long = delivery is stuck."
+    },
+    {
+      "name": "ms_failed_deliveries",
+      "service": "ms_admin",
+      "path": "/admin/queue/failed-delivery",
+      "query": {"mailbox": "optional mailbox address to filter by", "limit": "max rows, 1-500 (default 100)"},
+      "description": "Emails whose delivery to the agent failed permanently after retries."
+    },
+    {
+      "name": "ms_quarantined",
+      "service": "ms_admin",
+      "path": "/admin/queue/quarantined",
+      "query": {"mailbox": "optional mailbox address to filter by", "limit": "max rows, 1-500 (default 100)"},
+      "description": "Emails held back because no company could be matched to the sender. The answer to 'we never got their email'."
+    },
+    {
+      "name": "ms_workers",
+      "service": "ms_admin",
+      "path": "/admin/workers",
+      "description": "Background workers (watch renewal, delivery retry, sync): alive or not, last run, last error."
+    },
+    {
+      "name": "ms_thread_conversation",
+      "service": "ms_threads",
+      "path": "/threads/{thread_id}/conversation",
+      "path_params": {"thread_id": "the gmail_thread_id"},
+      "query": {"include_draft": "true to include unsent drafts", "order": "asc or desc (default desc)"},
+      "description": "The whole thread as the system stored it: every inbound email and every reply we sent, with bodies. Read from the service's own database, no Gmail call. Use to see what the customer wrote and what we answered."
+    },
+    {
+      "name": "agent_action_queue",
+      "service": "agent",
+      "path": "/action-queue",
+      "query": {"status": "PENDING (default), DONE, or empty for all"},
+      "fixed_query": {"page_size": "20"},
+      "description": "Items the agent handed to a human: manual takeover, ambiguous field, employee identity, per-diem, work address. Each listing costs the CRM a call - do not repeat it in a loop."
+    },
+    {
+      "name": "agent_action_item",
+      "service": "agent",
+      "path": "/action-queue/{name}",
+      "path_params": {"name": "the action-queue item id"},
+      "description": "One handover item in full: why the agent gave up and what it needs from a human."
+    }
+  ]
+}

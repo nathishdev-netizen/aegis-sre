@@ -1,6 +1,10 @@
 """C12 Direction B - Aegis as an MCP server.
 
     python3 -m aegis.mcp_server <logfile> [project] [--allow-model]
+                                [--combine=<log>:<service> ...]
+
+Read-only HTTP tools from AEGIS_HTTP_TOOLS=<file> are offered alongside;
+see aegis/l1_ingestion/http_tools.py and examples/http-tools.gmail.json.
 
 Lets any MCP client - Claude Code, an IDE assistant, another agent - query
 what Aegis knows: incidents with evidence, run verdicts, the flow spec,
@@ -33,6 +37,11 @@ from app.config import load_env  # noqa: E402
 load_env()
 
 from aegis.server import AegisApp  # noqa: E402
+from aegis.l1_ingestion.http_tools import HttpToolbox  # noqa: E402
+
+BUILTIN_TOOLS = {"aegis_overview", "list_incidents", "get_incident",
+                 "get_run_verdicts", "get_flow_spec", "query_incident_history",
+                 "explain_incident", "get_run"}
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -54,9 +63,14 @@ class AegisMcp:
     Separated from the stdio loop so every behaviour is testable in-process.
     """
 
-    def __init__(self, app: AegisApp, allow_model: bool = False) -> None:
+    def __init__(self, app: AegisApp, allow_model: bool = False,
+                 toolbox: HttpToolbox | None = None) -> None:
         self.app = app
         self.allow_model = allow_model
+        # The watched system's own read-only GET endpoints, declared in a file
+        # (AEGIS_HTTP_TOOLS). Logs say what happened; these say where a thing
+        # is NOW - queued, quarantined, an unsent draft.
+        self.toolbox = toolbox
 
     # -- JSON-RPC ------------------------------------------------------------
 
@@ -119,7 +133,16 @@ class AegisMcp:
                   "lines and diagnoses. A match is a precedent, not a "
                   "conclusion - systems change.",
                   {"query": {"type": "string"}}, ["query"]),
+            _tool("get_run",
+                  "Every line of ONE run, in order, across every watched "
+                  "service - e.g. one email from intake to reply when runs are "
+                  "keyed by its message id. Only recent runs are held.",
+                  {"run_id": {"type": "string",
+                              "description": "the run's key, e.g. a gmail_message_id"}},
+                  ["run_id"]),
         ]
+        if self.toolbox is not None:
+            tools.extend(self.toolbox.catalogue())
         if self.allow_model:
             tools.append(_tool(
                 "explain_incident",
@@ -139,8 +162,12 @@ class AegisMcp:
             "get_flow_spec": self._flow_spec,
             "query_incident_history": self._history,
             "explain_incident": self._explain,
+            "get_run": self._get_run,
         }
         handler = handlers.get(name)
+        if handler is None and self.toolbox is not None and name in self.toolbox.names():
+            result = self.toolbox.call(name, arguments)
+            return self._text(result, is_error=not result.get("ok"))
         if handler is None:
             return self._text({"error": f"no such tool: {name}"}, is_error=True)
         return handler(arguments)
@@ -214,6 +241,15 @@ class AegisMcp:
         rows.sort(key=lambda r: -r["score"])
         return self._text(rows[:5])
 
+    def _get_run(self, arguments: dict) -> dict[str, Any]:
+        wanted = str(arguments.get("run_id", "")).strip()
+        events = self.app.pipeline.trace_index.traces().get(wanted)
+        if not events:
+            return self._text({"error": f"run {wanted!r} is not among the recent runs "
+                                        "held in memory"}, is_error=True)
+        return self._text([{"ts": e.ts, "service": e.service, "level": e.level,
+                            "line": e.text_redacted} for e in events])
+
     def _explain(self, arguments: dict) -> dict[str, Any]:
         if not self.allow_model:
             return self._text(
@@ -223,8 +259,9 @@ class AegisMcp:
         return self._text(result, is_error=not result.get("ok"))
 
 
-def serve(app: AegisApp, allow_model: bool) -> None:
-    core = AegisMcp(app, allow_model=allow_model)
+def serve(app: AegisApp, allow_model: bool,
+          toolbox: HttpToolbox | None = None) -> None:
+    core = AegisMcp(app, allow_model=allow_model, toolbox=toolbox)
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -242,6 +279,9 @@ def serve(app: AegisApp, allow_model: bool) -> None:
 def main(argv: list[str]) -> int:
     args = [a for a in argv[1:] if not a.startswith("--")]
     allow_model = "--allow-model" in argv
+    # --combine=<log>:<service> watches another service's log in the same
+    # pipeline, so a run keyed on a shared id spans both.
+    combine = [a.split("=", 1)[1] for a in argv[1:] if a.startswith("--combine=")]
     if not args:
         print(__doc__, file=sys.stderr)
         return 1
@@ -250,9 +290,13 @@ def main(argv: list[str]) -> int:
         print(f"No such log file: {log_path}", file=sys.stderr)
         return 1
     project = args[1] if len(args) > 1 else log_path.stem
+    toolbox = HttpToolbox.from_env(reserved=BUILTIN_TOOLS)
     app = AegisApp(project, str(log_path))
+    for spec in combine:
+        path, _, service = spec.partition(":")
+        app.combine(path, service)
     try:
-        serve(app, allow_model)
+        serve(app, allow_model, toolbox)
     finally:
         app.close()
     return 0
