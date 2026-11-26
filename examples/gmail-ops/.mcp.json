@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "aegis": {
+      "command": "ssh",
+      "args": [
+        "-i", "${AEGIS_SSH_KEY:-~/.ssh/id_ed25519}",
+        "-o", "BatchMode=yes",
+        "-o", "ServerAliveInterval=30",
+        "${AEGIS_SSH_TARGET:-ubuntu@16.112.129.113}",
+        "/usr/local/bin/aegis-gmail-mcp"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y", "@playwright/mcp@0.0.85",
+        "--headless",
+        "--user-data-dir", "${HOME}/.gmail-ops/browser-profile"
+      ]
+    }
+  }
+}

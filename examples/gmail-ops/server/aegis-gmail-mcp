@@ -1,0 +1,25 @@
+#!/bin/bash
+# Server side of the gmail-ops agent team: one Aegis MCP process per Claude
+# session, started over SSH, talking JSON-RPC on stdin/stdout.
+#
+# Install on the Aegis server:
+#   sudo install -m 755 aegis-gmail-mcp /usr/local/bin/aegis-gmail-mcp
+#
+# It reads the two journal feeds as ONE pipeline, so a run keyed on
+# gmail_message_id spans intake and agent. It keeps its own learned data in
+# the caller's ~/.aegis, separate from the Aegis web service, and opens no
+# port. Secrets come from /etc/aegis/mcp.env (mode 600, owned by the SSH
+# user) - not from /opt/aegis/.env, which the web service does not need them in.
+set -euo pipefail
+
+if [ -r /etc/aegis/mcp.env ]; then
+  set -a; . /etc/aegis/mcp.env; set +a
+fi
+: "${AEGIS_RUN_KEYS:=gmail_message_id,gmail_thread_id}"
+: "${AEGIS_HTTP_TOOLS:=/etc/aegis/http-tools.json}"
+export AEGIS_RUN_KEYS AEGIS_HTTP_TOOLS
+
+cd /opt/aegis
+exec /opt/aegis/.venv/bin/python -m aegis.mcp_server \
+  /var/log/aegis-feeds/cbt-gmail.log gmail \
+  --combine=/var/log/aegis-feeds/cbt-gmail-agent.log:gmail-agent

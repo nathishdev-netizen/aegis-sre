@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Read-only window onto the Gmail agent and Gmail MS repos, at the commit that
+# is DEPLOYED rather than whatever the local working copy has checked out.
+# Every subcommand reads git objects; none checks out, resets, commits or
+# pushes, so the developer's working copy is never touched.
+#
+# Configure (defaults shown):
+#   GMAIL_AGENT_REPO   local clone of the agent
+#   GMAIL_MS_REPO      local clone of the MS
+#   AEGIS_SSH_TARGET   ubuntu@16.112.129.113
+#   AEGIS_SSH_KEY      ~/.ssh/id_ed25519
+#   DEPLOYED_AGENT_DIR /opt/cbt/GMAIL_MULTI_DESTINATION/GMAIL_AGENT
+#   DEPLOYED_MS_DIR    /opt/cbt/GMAIL_MS
+set -euo pipefail
+
+: "${GMAIL_AGENT_REPO:=$HOME/Desktop/Nathish/tt/email/gmail/GMAIL_AGENT}"
+: "${GMAIL_MS_REPO:=$HOME/Desktop/Nathish/tt/email/gmail/GMAIL_MS}"
+: "${AEGIS_SSH_TARGET:=ubuntu@16.112.129.113}"
+: "${AEGIS_SSH_KEY:=$HOME/.ssh/id_ed25519}"
+: "${DEPLOYED_AGENT_DIR:=/opt/cbt/GMAIL_MULTI_DESTINATION/GMAIL_AGENT}"
+: "${DEPLOYED_MS_DIR:=/opt/cbt/GMAIL_MS}"
+
+die() { echo "code: $*" >&2; exit 2; }
+
+repo_dir() {
+  case "${1:-}" in
+    agent) echo "$GMAIL_AGENT_REPO" ;;
+    ms)    echo "$GMAIL_MS_REPO" ;;
+    *)     die "repo must be 'agent' or 'ms', got '${1:-}'" ;;
+  esac
+}
+
+deployed_dir() {
+  case "$1" in agent) echo "$DEPLOYED_AGENT_DIR" ;; ms) echo "$DEPLOYED_MS_DIR" ;; esac
+}
+
+# A revision or path that starts with "-" would be read by git as an option.
+safe_rev()  { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/^~-]*$ ]] || die "bad revision: $1"; echo "$1"; }
+safe_path() {
+  [[ -z "$1" || ( "$1" != -* && "$1" != *..* && "$1" =~ ^[A-Za-z0-9._/-]+$ ) ]] || die "bad path: $1"
+  echo "$1"
+}
+
+usage() {
+  sed -n '2,6p' "$0"
+  cat <<'EOF'
+
+  code deployed agent|ms
+  code fetch    agent|ms
+  code ls       agent|ms <sha> [dir]
+  code grep     agent|ms <sha> <regex> [dir]
+  code show     agent|ms <sha> <path>
+  code log      agent|ms <sha> [path]
+  code blame    agent|ms <sha> <path> <start>,<end>
+EOF
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  deployed)
+    [[ $# -eq 1 ]] || die "usage: code deployed agent|ms"
+    repo_dir "$1" >/dev/null
+    dir=$(deployed_dir "$1")
+    ssh -i "$AEGIS_SSH_KEY" -o BatchMode=yes -o ConnectTimeout=10 "$AEGIS_SSH_TARGET" \
+      "git -c safe.directory='*' -C '$dir' rev-parse HEAD &&
+       echo \"branch: \$(git -c safe.directory='*' -C '$dir' rev-parse --abbrev-ref HEAD)\" &&
+       changes=\$(git -c safe.directory='*' -C '$dir' status --porcelain --untracked-files=no) &&
+       if [ -n \"\$changes\" ]; then echo 'UNCOMMITTED EDITS ON SERVER:'; echo \"\$changes\"; else echo 'clean: matches the commit'; fi"
+    ;;
+  fetch)
+    [[ $# -eq 1 ]] || die "usage: code fetch agent|ms"
+    repo=$(repo_dir "$1")
+    git -C "$repo" fetch --quiet origin && echo "fetched"
+    ;;
+  ls)
+    [[ $# -ge 2 ]] || die "usage: code ls agent|ms <sha> [dir]"
+    repo=$(repo_dir "$1"); rev=$(safe_rev "$2"); path=$(safe_path "${3:-}")
+    git -C "$repo" ls-tree -r --name-only "$rev" -- $path
+    ;;
+  grep)
+    [[ $# -ge 3 ]] || die "usage: code grep agent|ms <sha> <regex> [dir]"
+    repo=$(repo_dir "$1"); rev=$(safe_rev "$2"); path=$(safe_path "${4:-}")
+    git -C "$repo" grep -n -I -E -e "$3" "$rev" -- $path | head -200
+    ;;
+  show)
+    [[ $# -eq 3 ]] || die "usage: code show agent|ms <sha> <path>"
+    repo=$(repo_dir "$1"); rev=$(safe_rev "$2"); path=$(safe_path "$3")
+    [[ -n "$path" ]] || die "a path is required"
+    git -C "$repo" show "$rev:$path" | cat -n
+    ;;
+  log)
+    [[ $# -ge 2 ]] || die "usage: code log agent|ms <sha> [path]"
+    repo=$(repo_dir "$1"); rev=$(safe_rev "$2"); path=$(safe_path "${3:-}")
+    git -C "$repo" log --date=short --format='%h %ad %an  %s' -n 20 "$rev" -- $path
+    ;;
+  blame)
+    [[ $# -eq 4 && "$4" =~ ^[0-9]+,[0-9]+$ ]] || die "usage: code blame agent|ms <sha> <path> <start>,<end>"
+    repo=$(repo_dir "$1"); rev=$(safe_rev "$2"); path=$(safe_path "$3")
+    [[ -n "$path" ]] || die "a path is required"
+    git -C "$repo" blame --date=short -L "$4" "$rev" -- "$path"
+    ;;
+  ""|-h|--help|help) usage ;;
+  *) die "unknown command '$cmd' (try: code help)" ;;
+esac
