@@ -20,6 +20,7 @@ is how downstream layers know which one they are holding.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -52,6 +53,40 @@ _KEY_PATTERNS = (
                r"|transaction|txn|workflow|run)[_-]?id[\"']?\s*[=:]\s*"
                r"[\"']?([\w-]{4,})", re.I),
 )
+
+# The project's OWN unit of work, named by the operator, outranks all of the
+# above. A generic rule cannot know it: a mail pipeline gives every HTTP call
+# its own trace_id, so one email split into a run per call and its unkeyed
+# lines fell into no run at all - while gmail_message_id, on every line of
+# that email in both services, was ignored because no built-in rule names it.
+#   AEGIS_RUN_KEYS=gmail_message_id,gmail_thread_id
+# Names are tried in order. Unset, nothing changes for any other project.
+RUN_KEYS_ENV = "AEGIS_RUN_KEYS"
+_RUN_KEY_NAME = re.compile(r"[A-Za-z_][\w.-]*")
+
+
+def configured_run_keys() -> tuple[str, ...]:
+    raw = os.environ.get(RUN_KEYS_ENV, "")
+    return tuple(name.strip() for name in raw.split(",") if name.strip())
+
+
+def run_key_patterns(names: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
+    """One pattern per field name, reading both JSON and key=value lines.
+
+    A null value is not a key: JSON loggers print `"gmail_thread_id": null`
+    and console renderers `gmail_thread_id=None` before an id is known, and
+    taking those literally joined every such line into one run named "null".
+    A name that is not a plain field name is skipped rather than compiled, so
+    a typo in the setting cannot turn into a pattern that matches everything.
+    """
+    patterns = []
+    for name in names:
+        if not _RUN_KEY_NAME.fullmatch(name):
+            continue
+        patterns.append(re.compile(
+            r"\b" + re.escape(name) + r"[\"']?\s*[=:]\s*[\"']?"
+            r"(?!(?:null|none|nil|undefined)\b)([\w-]{4,})", re.I))
+    return tuple(patterns)
 
 # Session boundaries, learned from the project's own vocabulary rather than
 # hardcoded. The first attempt said "CALL END" - the reference project's word -
@@ -136,8 +171,13 @@ class _Session:
 class TraceLinker:
     """Stateful: remembers which sessions are open, in arrival order."""
 
-    def __init__(self, idle_timeout_s: float = IDLE_TIMEOUT_S) -> None:
+    def __init__(self, idle_timeout_s: float = IDLE_TIMEOUT_S,
+                 run_keys: tuple[str, ...] | None = None) -> None:
         self.idle_timeout_s = idle_timeout_s
+        if run_keys is None:
+            run_keys = configured_run_keys()
+        self.run_keys = run_keys
+        self._patterns = run_key_patterns(run_keys) + _KEY_PATTERNS
         self._open: dict[str, _Session] = {}
         self._synthetic = 0
         self.extracted = 0
@@ -236,7 +276,7 @@ class TraceLinker:
         return bool(_GENERIC_END.search(text))
 
     def _extract_key(self, text: str) -> str | None:
-        for pattern in _KEY_PATTERNS:
+        for pattern in self._patterns:
             match = pattern.search(text)
             if match:
                 return match.group(1)
